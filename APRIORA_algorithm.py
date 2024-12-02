@@ -475,15 +475,15 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             {'INPUT_RASTER': precipitationYearlyLayer,
              'RASTER_BAND':1,
              'INPUT_VECTOR': JoinCatchmentsSetttlementAreaSummarize,
-             'COLUMN_PREFIX': "PreYearly_",
+             'COLUMN_PREFIX': "PreYearly_",         # this part need to be fix because the output column is "PreYearly_MEAN", remove the "MEAN"
              'STATISTICS': [2]},
             context=context, feedback=feedback)
-        
+
         finalLayer = processing.run("native:zonalstatisticsfb",
             {'INPUT_RASTER': precipitationAugustLayer,
              'RASTER_BAND':1,
              'INPUT': JoinCatchmentsSetttlementAreaSummarize,
-             'COLUMN_PREFIX': "PreAugust_",
+             'COLUMN_PREFIX': "PreAugust_",         # this part need to be fix because the output column is "PreYearly_MEAN", remove the "MEAN"
              'STATISTICS': [2],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
@@ -786,9 +786,11 @@ class CalculateFlow(QgsProcessingAlgorithm):
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
 
-    OUTPUT = 'OUTPUT'
+    OUTPUT_catch = 'OUTPUT_catch'
+    OUTPUT_river = "OUTPUT_river"
     gaugedSubcatchments = 'GaugedSubcatchments'
     ungaugedSubcatchments = 'UngaugedSubcatchments'
+    riverNetwork = "RiverNetwork"
 
     def initAlgorithm(self, config):
         """
@@ -814,16 +816,34 @@ class CalculateFlow(QgsProcessingAlgorithm):
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.riverNetwork,
+                self.tr('River network'),
+                [QgsProcessing.TypeVectorLine]
+            )
+        )
+        
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
         # algorithm is run in QGIS).
         self.addParameter(
             QgsProcessingParameterFeatureSink(
-                self.OUTPUT,
-                self.tr('Output layer')
+                self.OUTPUT_catch,
+                self.tr('Subcatchment level')
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterFeatureSink(
+                self.OUTPUT_river,
+                self.tr('River level')
+            )
+        )
+
+    
+    #def subcatchmentFlowEstimation(self, parameters, context, feedback, final_output, warnow_subcatch_gf, outputput_catch_key )
+    
     def processAlgorithm(self, parameters, context, feedback):
         """
         Here is where the processing itself takes place.
@@ -847,7 +867,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         
         gaug_stat = self.parameterAsSource(parameters, self.gaugedSubcatchments, context)
         warnow_subcatch_gf = self.parameterAsSource(parameters, self.ungaugedSubcatchments, context)
-
+        river_network = self.parameterAsSource(parameters, self.riverNetwork, context)
 
         ##### FIRST PART OF THE MODEL
         # Selecting input (predictors) and output
@@ -856,7 +876,6 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # We also select the output and like we said before, there are 2 outputs of this model: "Mean Low Flow" and "Mean Flow". 
         # In this part of the code we select "Mean Flow" and in a second part we will estimate "Mean Low Flow". [not in this version of the script]
 
-        # Get the field names
         # Get the field names
         field_names = [field.name() for field in gaug_stat.fields()]
 
@@ -955,10 +974,9 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # the flow estimation + the geometry of the ungauged subcatchment.
 
         # create new dataframe
-        output_df = pd.DataFrame({"gbk_lawa": warnow_subcatch_gf_df["gbk_lawa"],"MQ": y_catch})
+        output_df = pd.DataFrame({"gml_id": warnow_subcatch_gf_df["gml_id"],"MQ": y_catch})
 
         # create new shapefile     
-        
         crs = warnow_subcatch_gf.sourceCrs()
         final_output = QgsVectorLayer("Polygon?crs={}".format(crs.authid()), "output test", "memory")
         final_output_provider = final_output.dataProvider()
@@ -967,8 +985,16 @@ class CalculateFlow(QgsProcessingAlgorithm):
         final_output.startEditing()
 
         # creation of my fields
-        for head in output_df:
-            myField = QgsField(head, QVariant.Double)
+        for head in output_df.columns:
+            # determine the column data type
+            if pd.api.types.is_numeric_dtype(output_df[head]):
+                field_type = QVariant.Double
+            elif pd.api.types.is_string_dtype(output_df[head]):
+                field_type = QVariant.String
+            else:
+                field_type = QVariant.String # default to string for other types
+
+            myField = QgsField(head, field_type)
             final_output.addAttribute(myField)
             
         # update
@@ -977,7 +1003,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # addition of features
         for row in output_df.itertuples():
             f = QgsFeature()
-            f.setAttributes([row[1], row[2]])
+            f.setAttributes([row[1], row[2]])  # why only [1] and [2] and not row[1:]?
             final_output.addFeature(f)
             
         # saving changes
@@ -985,8 +1011,11 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
 
         # create a new layer with MQ and gbk_lawa + geometry from warnow_subcatch        
-        (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT,
+        (sink_catch, dest_id_catch) = self.parameterAsSink(parameters, self.OUTPUT_catch,
         context, final_output.fields(), warnow_subcatch_gf.wkbType(), warnow_subcatch_gf.sourceCrs())
+
+        if sink_catch is None:
+            raise QgsProcessingException(self.tr("Failed to create subcatchment sink"))
 
         # iterate over each subcatchment
         for feature, subcatch_feature in zip(final_output.getFeatures(), warnow_subcatch_gf.getFeatures()):
@@ -1002,12 +1031,59 @@ class CalculateFlow(QgsProcessingAlgorithm):
             new_feature.setAttributes(feature.attributes())
             
             # add the new feature to the contributing layer
-            sink.addFeature(new_feature)
+            sink_catch.addFeature(new_feature)
 
-
-        # the output of this code is a polygon file containing the code of every ungauged subcatchment (gbk_lawa),
+        # the output of this code is a polygon file containing the code of every ungauged subcatchment (gbk_lawa or another code),
         # the estimated flow for each ungauged subcatchment (MQ) and the geometry of the relative ungauged subcatchment.
-        return {self.OUTPUT: dest_id}
+        
+        # process to transfer the flow from a subcatchment level to a river level
+        output_catch_layer = context.takeResultLayer(dest_id_catch)
+        if output_catch_layer is None:
+            raise QgsProcessingException(self.tr("Failed to register the subcatchment layer"))
+
+        context.temporaryLayerStore().addMapLayer(output_catch_layer)
+        feedback.pushInfo(f"Layer name: {output_catch_layer.name()} registered")
+        
+        join_result = processing.run("native:joinattributestable", 
+        {'INPUT':parameters[self.riverNetwork],
+        'FIELD':'gml_id',
+        'INPUT_2':output_catch_layer,
+        'FIELD_2':'gml_id',
+        'FIELDS_TO_COPY':['MQ'],
+        'METHOD':1,
+        'DISCARD_NONMATCHING':False,
+        'PREFIX':'',
+        'OUTPUT':'TEMPORARY_OUTPUT'},
+        context=context, feedback=feedback)
+
+        join_output = join_result["OUTPUT"]
+
+        # check if join output contains features
+        if join_output.featureCount() == 0:
+            feedback.pushWarning("Join resulted in an empty layer!")
+        else:
+            feedback.pushInfo("Join completed successfully.")
+
+        # save the layer
+        (sink_river, dest_id_river) = self.parameterAsSink(parameters, self.OUTPUT_river, context,
+                                               join_output.fields(), river_network.wkbType(), river_network.sourceCrs())
+        
+        if sink_river is None:
+            raise QgsProcessingException(self.tr("Failed to create river sink"))
+        
+        # write features from join_output to the sink
+        for feature in join_output.getFeatures():
+            success = sink_river.addFeature(feature)
+            if not success:
+                feedback.pushInfo(f"Failed to add feature: {feature.id()}")
+        
+        
+        # return the result
+        return {
+            self.OUTPUT_catch: dest_id_catch,
+            self.OUTPUT_river: dest_id_river
+            }
+
 
     def name(self):
         """
