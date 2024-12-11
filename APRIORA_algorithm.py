@@ -53,6 +53,8 @@ from qgis.core import (QgsProcessing,
                        QgsFeature,
                        QgsFields,
                        QgsFeatureSink,
+                       QgsGeometry,
+                       QgsPointXY,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFeatureSource,
@@ -65,7 +67,8 @@ from qgis.core import (QgsProcessing,
                        QgsVectorLayer,
                        QgsRasterLayer,
                        QgsProject,
-                       QgsRasterBandStats)
+                       QgsRasterBandStats,
+                       edit)
     
 """
 class PickOptionWidget(WidgetWrapper):
@@ -104,6 +107,220 @@ class PickOptionWidget(WidgetWrapper):
 
         return chosen
 """
+
+class FixRiverNetwork(QgsProcessingAlgorithm):
+
+    # Constants used to refer to parameters and outputs. They will be
+    # used when calling the algorithm from another algorithm, or when
+    # calling from the QGIS console.
+
+    catchmentAreas = 'CatchmentAreas'
+    riverNetwork = 'RiverNetwork'
+    OUTPUT = 'OUTPUT'
+
+#Init tool
+    def initAlgorithm(self, config):
+        """
+        Here we define the inputs and output of the algorithm, along
+        with some other properties.
+        """
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.catchmentAreas,
+                self.tr('Catchment areas'),
+                [QgsProcessing.TypeVectorPolygon]
+            )
+        )
+        
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.riverNetwork,
+                self.tr('River network'),
+                [QgsProcessing.TypeVectorLine]
+            )
+        )
+
+        # We add a feature sink in which to store our processed features (this
+        # usually takes the form of a newly created vector layer when the
+        # algorithm is run in QGIS).
+        self.addParameter(
+            QgsProcessingParameterFeatureSink(
+                self.OUTPUT,
+                self.tr('Output layer'),
+                QgsProcessing.TypeVectorPolygon
+            )
+        )
+
+    def find_closest_vertex(self, parameters, context, feedback, point, vertices, threshold):
+        closest_vertex = None
+        min_distance = threshold
+        for vertex in vertices:
+            distance = QgsGeometry.fromPointXY(QgsPointXY(point)).distance(QgsGeometry.fromPointXY(QgsPointXY(vertex)))
+            if distance < min_distance:
+                closest_vertex = vertex
+                min_distance = distance 
+        return closest_vertex
+
+    def processAlgorithm(self, parameters, context, feedback):
+        """
+        Here is where the processing itself takes place.
+        """
+        # extract start [0] and end [-1] vertices from the river network
+        feedback.setProgressText("\nExtracting start and end vertices from river network...")
+        vertices_river_result = processing.run("native:extractspecificvertices", {
+            'INPUT': parameters[self.riverNetwork],
+            'VERTICES':'0, -1',
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)
+        vertices_river_layer = vertices_river_result["OUTPUT"]
+
+        feedback.setProgressText(f"Number of features in vertices_river_layer: {vertices_river_layer.featureCount()}")
+
+        # extract all the vertices from the subcatchments
+        feedback.setProgressText("\nExtracting vertices from the subcatchments...")
+        vertices_catch_result = processing.run("native:extractvertices", {
+            'INPUT':parameters[self.catchmentAreas],
+            'OUTPUT':'TEMPORARY_OUTPUT'})
+        vertices_catch_layer = vertices_catch_result["OUTPUT"]
+
+        feedback.setProgressText(f"Number of features in vertices_catch_layer: {vertices_catch_layer.featureCount()}")
+
+        # split river network at each river vertex (SAGA required)
+        # maybe add a trouble shooting line to check if SAGA is installed and raise a proper error
+        feedback.setProgressText("\nSplitting river network at each river vertex...")
+        split_result = processing.run("sagang:splitlinesatpoints", {
+            'LINES': parameters[self.riverNetwork],
+            'SPLIT': vertices_river_layer,
+            'INTERSECT':'TEMPORARY_OUTPUT',
+            'OUTPUT': 1, # not sure about which method use
+            'EPSILON':0
+            })
+        split_river_layer = QgsVectorLayer(split_result["INTERSECT"], "split_river", "ogr")
+
+        feedback.setProgressText(f"Number of features in split_river_layer: {split_river_layer.featureCount()}")
+
+        # the file has geometries that need to be fixed
+        feedback.setProgressText("\nFixing the geometries of the file...")
+        fixed_result = processing.run("native:fixgeometries", {
+            'INPUT':split_river_layer,
+            'METHOD':1, # not sure about which method use
+            'OUTPUT':'TEMPORARY_OUTPUT'})
+        fixed_layer = fixed_result["OUTPUT"]
+        del split_river_layer
+
+        feedback.setProgressText(f"Number of features in fixed_layer: {fixed_layer.featureCount()}")
+
+        # remove null geometries from the layer
+        feedback.setProgressText("\nRemoving the null geometries...")
+        non_null_geom_result = processing.run("native:removenullgeometries", {
+            'INPUT':fixed_layer,
+            'REMOVE_EMPTY':True,
+            'OUTPUT':'TEMPORARY_OUTPUT'})
+        non_null_geom_layer = non_null_geom_result["OUTPUT"]
+        del fixed_layer
+
+        feedback.setProgressText(f"Number of features in non_null_geom_layer: {non_null_geom_layer.featureCount()}")
+
+        # get all points from the subcatchment vertices layer
+        vertices_catch_points = [QgsPointXY(feature.geometry().asPoint()) for feature in vertices_catch_layer.getFeatures()]
+
+        # collect changes before applying them
+        features_to_update = []
+
+        feedback.setProgressText("\nAlligning river vertices...")
+
+        # threshold distand (adjust as needed)
+        threshold = 0.01 # 1cm
+
+        # align start points of river network vertices
+        for feature in non_null_geom_layer.getFeatures():
+            geom = feature.geometry()
+            feature_id = feature.id()
+            
+            if geom:
+                # extract geometry points as QgsPointXY objects
+                points = [QgsPointXY(point) for point in geom.vertices()]
+                modified = False
+                
+                # check start vertex
+                closest_start = self.find_closest_vertex(parameters, context, feedback, points[0], vertices_catch_points, threshold)
+                if closest_start:
+                    points[0] = closest_start
+                    modified = True
+
+                # check end vertex
+                closest_end = self.find_closest_vertex(parameters, context, feedback, points[-1], vertices_catch_points, threshold)
+                if closest_end:
+                    points[-1] = closest_end
+                    modified = True
+                    
+                # collect changes if modified:
+                if modified:
+                    new_geom = QgsGeometry.fromPolylineXY(points)
+                    feature.setGeometry(new_geom)
+                    features_to_update.append(feature)
+
+        # apply updates in batch mode
+        with edit(non_null_geom_layer):
+            for feature in features_to_update:
+                non_null_geom_layer.updateFeature(feature)
+
+        feedback.setProgressText(f"Number of features in non_null_geom_layer after editing: {non_null_geom_layer.featureCount()}")
+
+        # save the output layer
+        (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT, context,
+        non_null_geom_layer.fields(), non_null_geom_layer.wkbType(), non_null_geom_layer.sourceCrs())
+
+        if non_null_geom_layer is None:
+            raise QgsProcessingException(self.tr("Failed to create river layer"))
+        
+        # write features from non_null_geom_layer to the sink
+        for feature in non_null_geom_layer.getFeatures():
+            success = sink.addFeature(feature)
+            if not success:
+                feedback.pushInfo(f"Failed to add feature: {feature.id()}")
+
+        return {self.OUTPUT: dest_id}
+
+    def name(self):
+        """
+        Returns the algorithm name, used for identifying the algorithm. This
+        string should be fixed for the algorithm, and must not be localised.
+        The name should be unique within each provider. Names should contain
+        lowercase alphanumeric characters only and no spaces or other
+        formatting characters.
+        """
+        return 'Fix river network'
+
+    def displayName(self):
+        """
+        Returns the translated algorithm name, which should be used for any
+        user-visible display of the algorithm name.
+        """
+        return self.tr(self.name())
+
+    def group(self):
+        """
+        Returns the name of the group this algorithm belongs to. This string
+        should be localised.
+        """
+        return self.tr(self.groupId())
+
+    def groupId(self):
+        """
+        Returns the unique ID of the group this algorithm belongs to. This
+        string should be fixed for the algorithm, and must not be localised.
+        The group id should be unique within each provider. Group id should
+        contain lowercase alphanumeric characters only and no spaces or other
+        formatting characters.
+        """
+        return ''
+
+    def tr(self, string):
+        return QCoreApplication.translate('Processing', string)
+
+    def createInstance(self):
+        return FixRiverNetwork()
 
 class CalculateGeofactors(QgsProcessingAlgorithm):
 

@@ -34,6 +34,7 @@ from qgis.core import QgsProcessingProvider
 from .APRIORA_algorithm import CalculateContributingCatchments
 from .APRIORA_algorithm import CalculateGeofactors
 from .APRIORA_algorithm import CalculateFlow
+from .APRIORA_algorithm import FixRiverNetwork
 
 
 
@@ -59,6 +60,7 @@ class APRIORAProvider(QgsProcessingProvider):
         self.addAlgorithm(CalculateContributingCatchments())
         self.addAlgorithm(CalculateGeofactors())
         self.addAlgorithm(CalculateFlow())
+        self.addAlgorithm(FixRiverNetwork())
         # add additional algorithms here
         # self.addAlgorithm(MyOtherAlgorithm())
 
