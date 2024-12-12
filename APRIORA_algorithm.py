@@ -32,7 +32,7 @@ __revision__ = '$Format:%H$'
 
 import os
 import math
-
+import processing
 import geopandas as gpd
 import pandas as pd
 import numpy as np
@@ -40,34 +40,47 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
-
+from collections import Counter
 from osgeo import gdal
 from processing.gui.wrappers import WidgetWrapper
 from qgis.PyQt.QtWidgets import QListWidget, QListWidgetItem
 from PyQt5.QtCore import QVariant
 from qgis import processing
-from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir
-from qgis.core import (QgsProcessing,
+from qgis.gui import QgsMapToolEmitPoint
+from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
+from qgis.core import (QgsProcessingAlgorithm,
+                       QgsProcessing,
+                       QgsProcessingException,
                        QgsProcessingParameterVectorDestination,
                        QgsVectorFileWriter,
                        QgsFeature,
+                       QgsField,
                        QgsFields,
                        QgsFeatureSink,
                        QgsGeometry,
+                       QgsMultiLineString,
                        QgsPointXY,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
                        QgsProcessingParameterBoolean,
+                       QgsProcessingParameterDefinition,
+                       QgsProcessingParameterEnum,
+                       QgsProcessingParameterField,
                        QgsProcessingParameterMatrix,
+                       QgsProcessingParameterNumber,
+                       QgsProcessingParameterPoint,
                        QgsProcessingParameterRasterLayer,
                        QgsProcessingParameterFolderDestination,
+                       QgsProcessingParameterVectorLayer,
                        QgsField,
                        QgsVectorLayer,
                        QgsRasterLayer,
                        QgsProject,
                        QgsRasterBandStats,
+                       QgsSpatialIndex,
+                       Qgis,
                        edit)
     
 """
@@ -116,9 +129,22 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
     catchmentAreas = 'CatchmentAreas'
     riverNetwork = 'RiverNetwork'
+    FLIP_OPTION = 'FLIP_OPTION'
+    OUTLET_POINT = 'OUTLET_POINT'
+    SEARCH_RADIUS = 'SEARCH_BUFFER'
     OUTPUT = 'OUTPUT'
+    
+    class PointSelectionTool(QgsMapToolEmitPoint):
+        def __init__(self, canvas, callback):
+            super().__init__(canvas)
+            self.canvas = canvas
+            self.callback = callback
 
-#Init tool
+        def canvasReleaseEvent(self, event):
+            point = self.toMapCoordinates(event.pos())
+            self.callback(QgsPointXY(point))
+
+    #Init tool
     def initAlgorithm(self, config):
         """
         Here we define the inputs and output of the algorithm, along
@@ -140,6 +166,40 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.FLIP_OPTION,
+                self.tr("Flip lines according to flow direction?"),
+                ['yes (from source to mouth)','no', 'against (from mouth to source)'],
+                defaultValue=[0]
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterPoint(
+                self.OUTLET_POINT,
+                self.tr("Click on the map to specify the outlet point."),
+                defaultValue=None
+            )
+        )
+
+        try:
+            rad_type = Qgis.ProcessingNumberParameterType.Double
+        except:
+            # for qgis prior to version 3.36
+            rad_type = QgsProcessingParameterNumber.Double
+            param_Radius = QgsProcessingParameterNumber(
+                self.SEARCH_RADIUS,
+                self.tr("Search Radius for Connections"),
+                type=rad_type,
+                defaultValue=0,
+                minValue=0,
+                maxValue=10,
+                optional=True
+            )
+        param_Radius.setFlags(param_Radius.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(param_Radius)
+
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
         # algorithm is run in QGIS).
@@ -151,6 +211,24 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             )
         )
 
+    def executePointSelection(self): #should I add "parameters, context, feedback"?
+        """
+        This function allows the user to click on the map and select the outlet point.
+        """
+        canvas = iface.mapCanvas()
+        
+        def pointSelected(point):
+            self.outlet_point = QgsPointXY(point)
+            iface.messageBar().pushMessage(
+                f"Point selected: {point.x()}, {point.y()}",
+                level = Qgis.Info
+            )
+            canvas.unsetMapTool(self._map_tool)
+        
+        # activate the map tool to select a point
+        self._map_tool = FixRiverNetwork.PointSelectionTool(canvas, pointSelected)
+        canvas.setMapTool(self._map_tool)
+    
     def find_closest_vertex(self, parameters, context, feedback, point, vertices, threshold):
         closest_vertex = None
         min_distance = threshold
@@ -165,15 +243,23 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         """
         Here is where the processing itself takes place.
         """
+        # before starting, let's check if the outlet point is correctly selected
+        outlet_point = self.parameterAsPoint(parameters, self.OUTLET_POINT, context)
+        if outlet_point is None:
+            raise QgsProcessingException("No outlet point specified.")
+
         # add a new column to the catchment layer in order to identify each subcatchment
         subcatchments_layer = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
+        river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        search_radius = self.parameterAsDouble(parameters, self.SEARCH_RADIUS, context)
+
         with edit(subcatchments_layer):
             field_name = "id_apr"
             subcatchments_layer.dataProvider().addAttributes([QgsField(field_name, QVariant.Int)])
             subcatchments_layer.updateFields()
 
             # populate the new column with unique IDs
-            unique_id_start = 1 #or any starting value
+            unique_id_start = 100 #or any starting value
             for idx, feature in enumerate(subcatchments_layer.getFeatures(), start = unique_id_start):
                 feature[field_name] = idx
                 subcatchments_layer.updateFeature(feature)
@@ -345,26 +431,273 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'SEPARATE_DISJOINT':False,
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
-
-        # save the output layer
-        (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT, context,
-        dissolve_layer.fields(), dissolve_layer.wkbType(), dissolve_layer.sourceCrs())
-
-        if dissolve_layer is None:
-            raise QgsProcessingException(self.tr("Failed to create river layer"))
         
         # consider here removing the "id_apr" field
         # still not clear if it can be useful or not
 
         # create as a second output also the catchment with the new id_apr? Might be useful to have it for the next parts of the plugin
 
-        # write features from dissolve_layer to the sink
-        for feature in dissolve_layer.getFeatures():  # name to change
-            success = sink.addFeature(feature)
-            if not success:
-                feedback.pushInfo(f"Failed to add feature: {feature.id()}")
+        '''start of the plugin "WaterNetwConstructor" from Jannik Schilling'''
+        flip_opt = self.parameterAsInt(parameters, self.FLIP_OPTION, context)
+
+        sp_index = QgsSpatialIndex(dissolve_layer.getFeatures())
+        dissolve_fields = dissolve_layer.fields()
+
+        # retrieving the ID column
+        idxid = dissolve_layer.fields().indexFromName("id_apr")  
+
+        feedback.pushInfo(f"\nUsing outlet point: {outlet_point.x()}, {outlet_point.y()}")
+
+        def find_closest_river_section(outlet_point, river_network):
+            """
+            Function to define the closest river section to the outlet_point
+            """
+            closest_section = None
+            min_distance = float('inf')
+
+            # convert the outlet_point to QgsGeometry
+            outlet_geometry = QgsGeometry.fromPointXY(outlet_point)
+
+            # iterate through river network sections and find the closest
+            for feature in river_network.getFeatures():
+                section_geom = feature.geometry()
+                distance = section_geom.distance(outlet_geometry)
+                feedback.pushInfo(f"\nAnalising section [id_apr]: {feature['id_apr']} \nDistance to the outlet point: {distance}")
+
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_section = feature
+
+            return closest_section
+
+        closest_section = find_closest_river_section(outlet_point, dissolve_layer)
+        if closest_section is None:
+            raise QgsProcessingException("No closest river section identified")
+        feedback.pushInfo(f"\nClosest section [id_apr]: {closest_section['id_apr']}")
+
+        # define new fields for the output
+        out_fields = QgsFields()
+        # append fields
+        for field in dissolve_fields:
+            out_fields.append(QgsField(field.name(), field.type()))
+        out_fields.append(QgsField('NET_ID', QVariant.String))
+        out_fields.append(QgsField('NET_TO', QVariant.String))
+        out_fields.append(QgsField('NET_FROM', QVariant.String))
+        # lists for results
+        finished_segm = {}  # {qgis id: [net_id, net_to, net_from]}
+        netw_dict = {}  # a dict for individual network numbers
+        circ_list = []  # list for found circles
+
+        def get_features_data(ft):
+            '''
+            Extracts the required data from a line feature
+            :param QgsFeature ft
+            :return: list with first_vertex, last_vertex, feature_id, (feature_name)
+            '''
+            ge = ft.geometry()
+            vertex_list = [v for v in ge.vertices()]
+            vert1 = QgsGeometry().fromPoint(vertex_list[0])
+            vert2 = QgsGeometry().fromPoint(vertex_list[-1])
+            column_id = str(ft.attribute(idxid))
+            return [vert1, vert2, ft.id(), column_id]
+
+        def get_connected_ids(
+            connecting_point,
+            current_ft_id,
+            search_radius
+        ):
+            '''
+            Searches for connected features at the connecting point, except for the current feature; also returns the search area
+            :param QgsGeometry (Point) connecting_point
+            :param int current_ft_id
+            :param QgsRectangle search_area
+            '''
+            if search_radius != 0:
+                search_area = connecting_point.buffer(search_radius, 10).boundingBox()
+            else:
+                search_area = connecting_point.boundingBox()
+            inters_list = sp_index.intersects(search_area)
+            if current_ft_id in inters_list:  # remove self
+                inters_list.remove(current_ft_id)
+            return inters_list, search_area
+
+        def prepare_visit(
+            next_ft_id,
+            downstream_id,
+            search_area,       
+            flip_list,
+            finished_segm,
+            finished_ids
+        ):
+            '''
+            prepares the required data for the next line segment or a segment which will be stored in the to do list
+            :param int next_ft_id
+            :param int downstream_id
+            :param QgsRectangle search_area
+            :param list flip_list
+            :param dict finished_segm
+            :param list finished_ids
+            :return list (next_data, next_connecting_point)
+            '''
+            next_ft = dissolve_layer.getFeature(next_ft_id)
+            next_data = get_features_data(next_ft)
+            finished_segm[next_data[2]] = [
+                        str(next_data[-1]),
+                        downstream_id,
+                        str(next_data[-1])
+                    ]
+            finished_ids.append(next_data[2])
+            if next_data[0].intersects(search_area):
+                next_connecting_point = next_data[1]
+                flip_list.append(next_ft_id)
+            else:
+                next_connecting_point = next_data[0]
+            return [next_data, next_connecting_point]
+
+        '''data of first segment'''
+        finished_ids = []  # list to recognise already visited features
+        to_do_list = []  # empty list for tributaries to visit later
+        current_data = get_features_data(closest_section)  # first_vertex, last_vertex, feature_id, (feature_name)
+        out_marker = "Out"  # mark segment as outlet
+        start_f_id = current_data[2]
+        finished_segm[current_data[2]] = [
+                    str(current_data[-1]),
+                    out_marker,
+                    str(current_data[-1])
+                ]
+        finished_ids.append(current_data[2])
+        
+        '''find connecting vertex of (first) current_data, add to flip_list if conn_vert is not vert1'''
+        conn_ids_0, search_area_0 = get_connected_ids(current_data[0], current_data[2], search_radius)
+        conn_ids_1, search_area_1 = get_connected_ids(current_data[1], current_data[2], search_radius)
+        
+        if len(conn_ids_1) > 0:  # last vertex connecting
+            if len(conn_ids_0) > 0:  # both vertices connecting
+                feedback.reportError(
+                    self.tr(
+                        'The selected segment with id == {0} is connecting two segments.'
+                        +' Please chose another segment in layer "{1}" or add a segment as a single outlet'
+                    ).format(current_data[2], dissolve_layer))
+            else:
+                flip_list = [current_data[2]]  # add id to flip list
+                conn_ids = conn_ids_1
+                search_area = search_area_1
+
+        else:  # first vertex connecting
+            flip_list = []
+            conn_ids = conn_ids_0  
+            search_area = search_area_0
+        
+        '''loop: while still connected features, add to finished_segm'''
+        while True:
+            if feedback.isCanceled():
+                print('finished so far: '+ str(finished_ids))
+                print('current id'+ str(current_data[2]))
+                break
+
+            next_data_lists = [
+                prepare_visit(
+                    next_ft_id,
+                    current_data[2],
+                    search_area,
+                    flip_list,
+                    finished_segm,
+                    finished_ids
+                ) for next_ft_id in conn_ids
+            ]
+
+            if len(conn_ids) == 0:
+                if len(to_do_list)==0:
+                    netw_dict[0] = finished_ids
+                    break
+                else:
+                    current_data, connecting_point = to_do_list[0]
+                    to_do_list = to_do_list[1:]
+            if len(conn_ids) == 1:
+                current_data, connecting_point = next_data_lists[0]
+            if len(conn_ids) > 1:
+                current_data, connecting_point = next_data_lists[0]
+                to_do_list = to_do_list + next_data_lists[1:]
+
+            conn_ids, search_area = get_connected_ids(connecting_point, current_data[2], search_radius)
+
+            '''check for circles'''
+            circle_closing_fts = [f_id for f_id in conn_ids if f_id in finished_ids]
+            if len(circle_closing_fts) > 0:
+                circ_list = circ_list + [[current_data[2], f_id] for f_id in circle_closing_fts]
+                conn_ids = [f_id for f_id in conn_ids if not f_id in finished_ids]
+
+        
+        '''feedback for circles'''
+        if len (circ_list)>0:
+            circ_dict = Counter(tuple(sorted(lst)) for lst in circ_list)
+            feedback.pushWarning("Warning: Circle closed at NET_ID = ")
+            for f_ids, counted in circ_dict.items():
+                if counted > 1:
+                    feedback.pushWarning(self.tr('{0}, ').format(str(f_ids)))
+
+
+        '''sink definition'''
+        (sink, dest_id) = self.parameterAsSink(
+            parameters,
+            self.OUTPUT,
+            context,
+            out_fields,
+            dissolve_layer.wkbType(),
+            dissolve_layer.sourceCrs())
+
+        '''adjust_flip_list, if option is 2 (against)'''
+        if flip_opt == 2:
+            all_visited_ids = [f_id for id_list in netw_dict.values() for f_id in id_list]
+            flip_list = [f_id for f_id in all_visited_ids if f_id not in flip_list]
+
+
+        '''add features to sink'''
+        features = dissolve_layer.getFeatures()
+        for i, feature in enumerate(features):
+            if feedback.isCanceled():
+                break # Stop the algorithm if cancel button has been clicked
+            old_f_id = feature.id()
+            outFt = QgsFeature() # Add a feature
+            if flip_opt == 0 or flip_opt == 2:
+                if str(i) in flip_list:
+                    flip_geom = feature.geometry()
+                    if flip_geom.isMultipart():
+                        multi_geom = QgsMultiLineString()
+                        for line in flip_geom.asGeometryCollection():
+                            multi_geom.addGeometry(line.constGet().reversed())
+                        rev_geom = QgsGeometry(multi_geom)
+                    else:
+                        rev_geom = QgsGeometry(flip_geom.constGet().reversed())
+                    outFt.setGeometry(rev_geom)
+                else:
+                    outFt.setGeometry(feature.geometry())  # not in flip list
+            else:
+                outFt.setGeometry(feature.geometry())  # no flip option
+            if old_f_id in finished_segm.keys():
+                outFt.setAttributes(feature.attributes()+finished_segm[old_f_id])
+            else:
+                ft_data = get_features_data(feature)
+                outFt.setAttributes(feature.attributes()+[str(ft_data[-1]), 'unconnected', 'unconnected'])
+            sink.addFeature(outFt, QgsFeatureSink.FastInsert)
+
 
         return {self.OUTPUT: dest_id}
+
+        # # save the output layer
+        # (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT, context,
+        # dissolve_layer.fields(), dissolve_layer.wkbType(), dissolve_layer.sourceCrs())
+
+        # if dissolve_layer is None:
+        #     raise QgsProcessingException(self.tr("Failed to create river layer"))
+
+        # # write features from dissolve_layer to the sink
+        # for feature in dissolve_layer.getFeatures():  # name to change
+        #     success = sink.addFeature(feature)
+        #     if not success:
+        #         feedback.pushInfo(f"Failed to add feature: {feature.id()}")
+
+        # return {self.OUTPUT: dest_id}
 
     def name(self):
         """
