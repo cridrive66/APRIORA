@@ -165,6 +165,21 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         """
         Here is where the processing itself takes place.
         """
+        # add a new column to the catchment layer in order to identify each subcatchment
+        subcatchments_layer = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
+        with edit(subcatchments_layer):
+            field_name = "id_apr"
+            subcatchments_layer.dataProvider().addAttributes([QgsField(field_name, QVariant.Int)])
+            subcatchments_layer.updateFields()
+
+            # populate the new column with unique IDs
+            unique_id_start = 1 #or any starting value
+            for idx, feature in enumerate(subcatchments_layer.getFeatures(), start = unique_id_start):
+                feature[field_name] = idx
+                subcatchments_layer.updateFeature(feature)
+
+        feedback.setProgressText(f"Number of features in subcatchments_layer: {subcatchments_layer.featureCount()}")
+
         # extract start [0] and end [-1] vertices from the river network
         feedback.setProgressText("\nExtracting start and end vertices from river network...")
         vertices_river_result = processing.run("native:extractspecificvertices", {
@@ -180,7 +195,8 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         feedback.setProgressText("\nExtracting vertices from the subcatchments...")
         vertices_catch_result = processing.run("native:extractvertices", {
             'INPUT':parameters[self.catchmentAreas],
-            'OUTPUT':'TEMPORARY_OUTPUT'})
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)
         vertices_catch_layer = vertices_catch_result["OUTPUT"]
 
         feedback.setProgressText(f"Number of features in vertices_catch_layer: {vertices_catch_layer.featureCount()}")
@@ -193,8 +209,8 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'SPLIT': vertices_river_layer,
             'INTERSECT':'TEMPORARY_OUTPUT',
             'OUTPUT': 1, # not sure about which method use
-            'EPSILON':0
-            })
+            'EPSILON':0},
+            context=context, feedback=feedback)
         split_river_layer = QgsVectorLayer(split_result["INTERSECT"], "split_river", "ogr")
 
         feedback.setProgressText(f"Number of features in split_river_layer: {split_river_layer.featureCount()}")
@@ -204,7 +220,8 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         fixed_result = processing.run("native:fixgeometries", {
             'INPUT':split_river_layer,
             'METHOD':1, # not sure about which method use
-            'OUTPUT':'TEMPORARY_OUTPUT'})
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)
         fixed_layer = fixed_result["OUTPUT"]
         del split_river_layer
 
@@ -215,7 +232,8 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         non_null_geom_result = processing.run("native:removenullgeometries", {
             'INPUT':fixed_layer,
             'REMOVE_EMPTY':True,
-            'OUTPUT':'TEMPORARY_OUTPUT'})
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)
         non_null_geom_layer = non_null_geom_result["OUTPUT"]
         del fixed_layer
 
@@ -265,17 +283,83 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             for feature in features_to_update:
                 non_null_geom_layer.updateFeature(feature)
 
-        feedback.setProgressText(f"Number of features in non_null_geom_layer after editing: {non_null_geom_layer.featureCount()}")
+        feedback.setProgressText(f"\nNumber of features in non_null_geom_layer after editing: {non_null_geom_layer.featureCount()}")
+
+        # intersection with subcatchments
+        feedback.setProgressText("\nCalculating intersection with the subcatchments...")
+        intersection_layer = processing.run("native:intersection", {
+            'INPUT': non_null_geom_layer,
+            'OVERLAY': parameters[self.catchmentAreas],
+            'INPUT_FIELDS':[],
+            'OVERLAY_FIELDS':['id_apr'],
+            'OVERLAY_FIELDS_PREFIX':'',
+            'OUTPUT':'TEMPORARY_OUTPUT',
+            'GRID_SIZE':None},
+            context=context, feedback=feedback)["OUTPUT"]
+
+        # delete mistakes of river sections that are wrongly crossing the subcatchment
+        # define the threshold lenght
+        threshold_length = 0.01 # 1 cm
+
+        # prepare to edit the layer
+        with edit(intersection_layer):
+            # add a new field for length
+            field_names = [field.name() for field in intersection_layer.fields()]
+            if "Length" not in field_names:
+                length_field = QgsField("Length", QVariant.Double)
+                intersection_layer.dataProvider().addAttributes([length_field])
+                intersection_layer.updateFields()
+
+            # iterate over feature
+            features_to_delete = []
+            for feature in intersection_layer.getFeatures():
+                geom = feature.geometry()
+                if geom:
+                    # calculate the length of the feature
+                    length = geom.length()
+
+                    # update the "Length" field
+                    feature["Length"] = length
+                    intersection_layer.updateFeature(feature)
+
+                    # check if the length is below the threshold
+                    if length < threshold_length:
+                        features_to_delete.append(feature.id())
+
+                # delete features below the threshold length
+                if features_to_delete:
+                    intersection_layer.dataProvider().deleteFeatures(features_to_delete)
+            
+            # delete the "Length" field        
+            field_index = intersection_layer.fields().indexOf("Length")
+            intersection_layer.dataProvider().deleteAttributes([field_index])
+            intersection_layer.updateFields()
+        
+        feedback.setProgressText(f"\nRemoved {len(features_to_delete)} features shorter than {threshold_length}")
+
+        # dissolve line within the subcatchment
+        feedback.setProgressText("\nDissolving river lines within the subcatchment...")
+        dissolve_layer = processing.run("native:dissolve", {
+            'INPUT': intersection_layer,
+            'FIELD':['id_apr'],
+            'SEPARATE_DISJOINT':False,
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
 
         # save the output layer
         (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT, context,
-        non_null_geom_layer.fields(), non_null_geom_layer.wkbType(), non_null_geom_layer.sourceCrs())
+        dissolve_layer.fields(), dissolve_layer.wkbType(), dissolve_layer.sourceCrs())
 
-        if non_null_geom_layer is None:
+        if dissolve_layer is None:
             raise QgsProcessingException(self.tr("Failed to create river layer"))
         
-        # write features from non_null_geom_layer to the sink
-        for feature in non_null_geom_layer.getFeatures():
+        # consider here removing the "id_apr" field
+        # still not clear if it can be useful or not
+
+        # create as a second output also the catchment with the new id_apr? Might be useful to have it for the next parts of the plugin
+
+        # write features from dissolve_layer to the sink
+        for feature in dissolve_layer.getFeatures():  # name to change
             success = sink.addFeature(feature)
             if not success:
                 feedback.pushInfo(f"Failed to add feature: {feature.id()}")
