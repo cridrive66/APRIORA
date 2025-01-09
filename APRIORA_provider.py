@@ -31,10 +31,11 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 __revision__ = '$Format:%H$'
 
 from qgis.core import QgsProcessingProvider
-from .APRIORA_algorithm import CalculateContributingCatchments
-from .APRIORA_algorithm import CalculateGeofactors
-from .APRIORA_algorithm import CalculateFlow
-from .APRIORA_algorithm import FixRiverNetwork
+#from .APRIORA_algorithm import CalculateContributingCatchments
+from .Calculate_geofactors import CalculateGeofactors
+from .Calculate_flow import CalculateFlow
+from .Fix_River_Network import FixRiverNetwork
+from .Contributing_area_gaug_station import UpstreamDownstream
 
 
 
@@ -57,10 +58,11 @@ class APRIORAProvider(QgsProcessingProvider):
         """
         Loads all algorithms belonging to this provider.
         """
-        self.addAlgorithm(CalculateContributingCatchments())
+        #self.addAlgorithm(CalculateContributingCatchments())
         self.addAlgorithm(CalculateGeofactors())
         self.addAlgorithm(CalculateFlow())
         self.addAlgorithm(FixRiverNetwork())
+        self.addAlgorithm(UpstreamDownstream())
         # add additional algorithms here
         # self.addAlgorithm(MyOtherAlgorithm())
 

@@ -707,7 +707,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Fix river network'
+        return '1 - Fix river network'
 
     def displayName(self):
         """
@@ -1152,7 +1152,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Calculate geofactors'
+        return '2 - Calculate geofactors'
 
     def displayName(self):
         """
@@ -1425,6 +1425,18 @@ class CalculateFlow(QgsProcessingAlgorithm):
     gaugedSubcatchments = 'GaugedSubcatchments'
     ungaugedSubcatchments = 'UngaugedSubcatchments'
     riverNetwork = "RiverNetwork"
+    INPUT_FIELD_CALC = 'INPUT_FIELD_CALC'
+    INPUT_FIELD_ID = 'INPUT_FIELD_ID'
+    INPUT_FIELD_NEXT = 'INPUT_FIELD_NEXT'
+    INPUT_FIELD_PREV = 'INPUT_FIELD_PREV'
+
+    def shortHelpString(self):
+        return self.tr(""" Workflow: 
+        1. select the river layer in the drop-down list \"The water network\".
+        2. select the column/field to be accumulated along the flow path \"Field to calculate\"
+        3. In the drop-down lists chose the columns in the attribute table created by the tool \"Fix River Network\"
+        4. Click on \"Run\"
+        """)
 
     def initAlgorithm(self, config):
         """
@@ -1458,6 +1470,36 @@ class CalculateFlow(QgsProcessingAlgorithm):
             )
         )
         
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.INPUT_FIELD_ID,
+                self.tr("ID Field/NET_ID"),
+                parentLayerParameterName = self.riverNetwork,
+                type = QgsProcessingParameterField.Any,
+                defaultValue = 'NET_ID'
+            )
+        )
+        
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.INPUT_FIELD_PREV,
+                self.tr("Prev Node Field/NET_FROM"),
+                parentLayerParameterName = self.riverNetwork,
+                type = QgsProcessingParameterField.Any,
+                defaultValue = 'NET_FROM'
+            )
+        )
+        
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.INPUT_FIELD_NEXT,
+                self.tr("Next Node Field/NET_TO"),
+                parentLayerParameterName = self.riverNetwork,
+                type = QgsProcessingParameterField.Any,
+                defaultValue = 'NET_TO'
+            )
+        )
+        
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
         # algorithm is run in QGIS).
@@ -1477,7 +1519,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
     
     #def subcatchmentFlowEstimation(self, parameters, context, feedback, final_output, warnow_subcatch_gf, outputput_catch_key )
-    
+
     def processAlgorithm(self, parameters, context, feedback):
         """
         Here is where the processing itself takes place.
@@ -1698,25 +1740,138 @@ class CalculateFlow(QgsProcessingAlgorithm):
         else:
             feedback.pushInfo("Join completed successfully.")
 
+
+        '''loading the network'''
+        #waternet = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        waternet = join_output
+        wnet_fields = waternet.fields()
+
+        '''names of fields for id,next segment, previous segment'''
+        id_field = self.parameterAsString(parameters, self.INPUT_FIELD_ID, context)
+        next_field = self.parameterAsString(parameters, self.INPUT_FIELD_NEXT, context)
+        prev_field = self.parameterAsString(parameters, self.INPUT_FIELD_PREV, context)
+        calc_field = "MQ"
+        
+        '''field index for id,next segment, previous segment'''
+        idxId = waternet.fields().indexFromName(id_field) 
+        idxPrev = waternet.fields().indexFromName(prev_field)
+        idxNext = waternet.fields().indexFromName(next_field)
+        idxCalc = waternet.fields().indexFromName(calc_field)
+
+        '''load data from layer "waternet" '''
+        feedback.setProgressText(self.tr("Loading network layer\n "))
+        Data = [[
+            str(f.attribute(idxId)),
+            str(f.attribute(idxPrev)),
+            str(f.attribute(idxNext)),
+            f.attribute(idxCalc),
+            f.id()
+        ] for f in waternet.getFeatures()]
+        DataArr = np.array(Data, dtype='object')
+        DataArr[np.where(DataArr[:,3] == None),3]=0
+        feedback.setProgressText(self.tr("Data loaded \n Calculating flow paths \n"))
+
+        '''segments with numbers'''
+        calc_column = np.copy(DataArr[:,3])  # deep copy of column to do calculations on
+        calc_segm = np.where(calc_column > 0)[0].tolist()  # indices!
+        calc_segm = [i for i in calc_segm if (DataArr[i,1] != 'unconnected' and DataArr[i,2] != 'unconnected')]
+        DataArr[:,3] = 0 # set all to 0
+
+        '''function to find next features in the net'''
+        def nextFtsCalc (MARKER2):
+            vtx_to = DataArr[np.where(DataArr[:,0] == MARKER2)[0].tolist(),2][0] # "to"-vertex of actual segment
+            rows_to = np.where(DataArr[:,1] == vtx_to)[0].tolist() # find rows in DataArr with matching "from"-vertices to vtx_to
+            unconnected_errors = [DataArr[x, 4] for x in rows_to if DataArr[x, 2]=='unconnected']  # this can only happen after manual editing
+            if len(unconnected_errors) > 0:
+                waternet.removeSelection()
+                waternet.selectByIds(unconnected_errors, waternet.SelectBehavior(1))
+                raise QgsProcessingException(
+                    'The selected features in the flow are marked as \'unconnected\' '
+                    + '(most likely because of manual editing). Please delete the columns with the network information ('
+                    + next_field
+                    + ', '
+                    + prev_field
+                    + ') and run tool 1 \"Water Network Constructor\" again.'
+                )
+            return(rows_to)
+
+        '''function to find flow path'''
+        def FlowPath (Start_Row, fp_amount):
+            MARKER=DataArr[Start_Row,0] #set MARKER to ID of the first segment
+            Weg = [Start_Row]    
+            i=0
+            while i!=len(DataArr):
+                next_rows = nextFtsCalc(MARKER)
+                if len(next_rows) > 1: # deviding flow path
+                    calc_column[StartRow] = 0
+                    calc_column[next_rows] = calc_column[next_rows]+fp_amount/len(next_rows) # this can be changed to weightet separation later
+                    out = [Weg, next_rows]
+                    break
+                if len(next_rows) == 1: # continuing flow path
+                    Weg = Weg + next_rows
+                    MARKER=DataArr[next_rows[0],0] # change MARKER to Id of next segment 
+                if len(next_rows) == 0: # end point
+                    out = [Weg]
+                    break
+                i=i+1
+            return (out)
+
+        total2 = len(calc_segm)
+        while len(calc_segm) > 0:
+            if feedback.isCanceled():
+                break
+            StartRow = calc_segm[0]
+            amount = calc_column[StartRow] # amount to add to flow path
+            calc_column[StartRow] = 0 #"delete" calculated amount from list (set 0)
+            Fl_pth = FlowPath(StartRow, amount) # get flow path of StartRow 
+            if len(Fl_pth)== 2:
+                calc_segm = calc_segm + Fl_pth[1] # if flow path devides add new segments to calc_segm
+            DataArr[Fl_pth[0],3] = DataArr[Fl_pth[0],3]+amount # Add the amount to the calculated flow path
+            calc_segm = calc_segm[1:] # delete used segment
+            calc_segm = list(set(calc_segm)) #delete duplicate values
+            feedback.setProgress((1-(len(calc_segm)/total2))*100)
+
+        '''add new field'''
+        new_field_name = 'calc_'+calc_field
+        #define new fields
+        out_fields = QgsFields()
+        #append fields
+        for field in wnet_fields:
+            out_fields.append(QgsField(field.name(), field.type()))
+        out_fields.append(QgsField(new_field_name, QVariant.Double))
+        
         # save the layer
         (sink_river, dest_id_river) = self.parameterAsSink(parameters, self.OUTPUT_river, context,
-                                               join_output.fields(), river_network.wkbType(), river_network.sourceCrs())
+                                               out_fields, river_network.wkbType(), river_network.sourceCrs())
         
         if sink_river is None:
             raise QgsProcessingException(self.tr("Failed to create river sink"))
         
-        # write features from join_output to the sink
-        for feature in join_output.getFeatures():
-            success = sink_river.addFeature(feature)
-            if not success:
-                feedback.pushInfo(f"Failed to add feature: {feature.id()}")
-        
+        # write features from out_fields to the sink
+        features = waternet.getFeatures()
+        for (i,feature) in enumerate(features):
+            # Stop the algorithm if cancel button has been clicked
+            if feedback.isCanceled():
+                break
+            # Add a feature in the sink
+            outFt = QgsFeature()
+            outFt.setGeometry(feature.geometry())
+            outFt.setAttributes(feature.attributes())
+            outFt.setAttributes(feature.attributes()+[DataArr[i,3]])
+            sink_river.addFeature(outFt, QgsFeatureSink.FastInsert)
         
         # return the result
         return {
             self.OUTPUT_catch: dest_id_catch,
             self.OUTPUT_river: dest_id_river
             }
+
+        del nextFtsCalc
+        del FlowPath
+        del DataArr
+
+
+        return {}
 
 
     def name(self):
@@ -1727,7 +1882,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Calculate Flow (Model)'
+        return '3 - Flow estimation'
 
     def displayName(self):
         """
