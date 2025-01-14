@@ -31,7 +31,7 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 __revision__ = '$Format:%H$'
 
 from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import *
+from qgis.core import * #change
 import processing
 import numpy as np
 
@@ -41,6 +41,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
     gaugingStations = "GaugingStations"
     OUTPUT_OPTION = 'OUTPUT_OPTION'
     OUTPUT = "OUTPUT"
+    OUTPUT_coded = "OUTPUT_coded"
 
     def initAlgorithm(self, config):
         self.addParameter(
@@ -79,11 +80,21 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
-                self.tr('Output layer'),
+                self.tr('Gauged subcatchments'),
                 QgsProcessing.TypeVectorPolygon
             )
         )
     
+        # add a second output that is the subcatchments with the "NET_ID" code
+        self.addParameter(
+            QgsProcessingParameterFeatureSink(
+                self.OUTPUT_coded,
+                self.tr('Coded subcatchments'),
+                QgsProcessing.TypeVectorPolygon
+            )
+        )
+
+
     def processAlgorithm(self, parameters, context, feedback):
         source = self.parameterAsSource(
             parameters,
@@ -108,10 +119,15 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         '''loading the gauging stations'''
         gaug_stat = self.parameterAsVectorLayer(parameters, self.gaugingStations, context)
 
+        '''names of fields for id,next segment, previous segment'''
+        id_field = "NET_ID"
+        next_field = "NET_FROM"
+        prev_field = "NET_TO"
+        
         '''field index for id,next segment, previous segment'''
-        idxId = waternet.fields().indexFromName("NET_ID")
-        idxPrev = waternet.fields().indexFromName("NET_FROM")
-        idxNext = waternet.fields().indexFromName("NET_TO")
+        idxId = waternet.fields().indexFromName(id_field)
+        idxPrev = waternet.fields().indexFromName(next_field)
+        idxNext = waternet.fields().indexFromName(prev_field)
 
         if idxId == -1 or idxPrev == -1 or idxNext == -1:
             raise QgsProcessingException("Required fields (NET_ID, NET_FROM, NET_TO) not found in river network.")
@@ -119,22 +135,36 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
     
         # let's join the subcatchment and the river network so we transfer the IDs from the river network
         # to the subcatchments. This is useful for later when we are extracting the subcatchments containing specific IDs
-        join_result = processing.run("native:joinattributesbylocation", {
+        subcat_result = processing.run("native:joinattributesbylocation", {
             'INPUT': subcatch,
             'PREDICATE':[1],
             'JOIN': waternet,
-            'JOIN_FIELDS':['NET_ID'],
+            'JOIN_FIELDS':['NET_ID'],   # instead of "NET_ID", consider using "id_apr"
             'METHOD':0,
             'DISCARD_NONMATCHING':True,
             'PREFIX':'',
             'OUTPUT':'TEMPORARY_OUTPUT'})
-        join_layer = join_result["OUTPUT"]
+        subcat_layer = subcat_result["OUTPUT"]
+
+        # initialize the feature sink for coded subcatchments
+        (sink_coded, dest_id_coded) = self.parameterAsSink(
+            parameters,
+            self.OUTPUT_coded,
+            context,
+            subcat_layer.fields(),
+            subcat_layer.wkbType(),
+            subcat_layer.sourceCrs()
+        )
+
+        for feature in subcat_layer.getFeatures():
+            sink_coded.addFeature(feature)
+            
 
         # we do the same with the gauging stations. So we have the same IDs to identify river network, gauging stations and subcatchments
         gaug_result = processing.run("native:joinattributesbylocation", {
             'INPUT': gaug_stat,
             'PREDICATE':[0],
-            'JOIN': join_layer,
+            'JOIN': subcat_layer,
             'JOIN_FIELDS':['NET_ID'],
             'METHOD':0,
             'DISCARD_NONMATCHING':True,
@@ -144,6 +174,19 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         gaugFt = gaug_id.getFeatures()
 
         feedback.pushInfo(f"\nNumber of features in the gaug_id: {gaug_id.featureCount()}")
+
+        ### add another join by attribute where we pass the "Mean Flow" column from the gauging station to the subcatchment
+        join_result = processing.run("native:joinattributesbylocation", {
+            'INPUT': subcat_layer,
+            'PREDICATE':[1],    
+            'JOIN': gaug_stat,
+            'JOIN_FIELDS':['Mean Flow'],
+            'METHOD':0,
+            'DISCARD_NONMATCHING':False,
+            'PREFIX':'',
+            'OUTPUT':'TEMPORARY_OUTPUT'})
+        join_layer = join_result["OUTPUT"]
+
         
         # initialize the feature sink for aggregated output
         (sink, dest_id) = self.parameterAsSink(
@@ -391,7 +434,10 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
 
 
          
-        return {self.OUTPUT: dest_id}
+        return {
+            self.OUTPUT: dest_id,
+            self.OUTPUT_coded: dest_id_coded
+            }
      
 
 
@@ -403,7 +449,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Contributing area of gaug stat'
+        return '2 - Contributing area of gauging station'
 
     def displayName(self):
         """

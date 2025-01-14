@@ -76,10 +76,9 @@ class CalculateFlow(QgsProcessingAlgorithm):
     gaugedSubcatchments = 'GaugedSubcatchments'
     ungaugedSubcatchments = 'UngaugedSubcatchments'
     riverNetwork = "RiverNetwork"
-    INPUT_FIELD_CALC = 'INPUT_FIELD_CALC'
-    INPUT_FIELD_ID = 'INPUT_FIELD_ID'
-    INPUT_FIELD_NEXT = 'INPUT_FIELD_NEXT'
-    INPUT_FIELD_PREV = 'INPUT_FIELD_PREV'
+    # INPUT_FIELD_ID = 'INPUT_FIELD_ID'
+    # INPUT_FIELD_NEXT = 'INPUT_FIELD_NEXT'
+    # INPUT_FIELD_PREV = 'INPUT_FIELD_PREV'
 
     def shortHelpString(self):
         return self.tr(""" Workflow: 
@@ -121,35 +120,35 @@ class CalculateFlow(QgsProcessingAlgorithm):
             )
         )
         
-        self.addParameter(
-            QgsProcessingParameterField(
-                self.INPUT_FIELD_ID,
-                self.tr("ID Field/NET_ID"),
-                parentLayerParameterName = self.riverNetwork,
-                type = QgsProcessingParameterField.Any,
-                defaultValue = 'NET_ID'
-            )
-        )
+        # self.addParameter(
+        #     QgsProcessingParameterField(
+        #         self.INPUT_FIELD_ID,
+        #         self.tr("ID Field/NET_ID"),
+        #         parentLayerParameterName = self.riverNetwork,
+        #         type = QgsProcessingParameterField.Any,
+        #         defaultValue = 'NET_ID'
+        #     )
+        # )
         
-        self.addParameter(
-            QgsProcessingParameterField(
-                self.INPUT_FIELD_PREV,
-                self.tr("Prev Node Field/NET_FROM"),
-                parentLayerParameterName = self.riverNetwork,
-                type = QgsProcessingParameterField.Any,
-                defaultValue = 'NET_FROM'
-            )
-        )
+        # self.addParameter(
+        #     QgsProcessingParameterField(
+        #         self.INPUT_FIELD_PREV,
+        #         self.tr("Prev Node Field/NET_FROM"),
+        #         parentLayerParameterName = self.riverNetwork,
+        #         type = QgsProcessingParameterField.Any,
+        #         defaultValue = 'NET_FROM'
+        #     )
+        # )
         
-        self.addParameter(
-            QgsProcessingParameterField(
-                self.INPUT_FIELD_NEXT,
-                self.tr("Next Node Field/NET_TO"),
-                parentLayerParameterName = self.riverNetwork,
-                type = QgsProcessingParameterField.Any,
-                defaultValue = 'NET_TO'
-            )
-        )
+        # self.addParameter(
+        #     QgsProcessingParameterField(
+        #         self.INPUT_FIELD_NEXT,
+        #         self.tr("Next Node Field/NET_TO"),
+        #         parentLayerParameterName = self.riverNetwork,
+        #         type = QgsProcessingParameterField.Any,
+        #         defaultValue = 'NET_TO'
+        #     )
+        # )
         
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
@@ -222,7 +221,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # select number of features (predictors) and dependent variable
         x = gaug_stat_df.filter(items=filterCol)
         
-        y = gaug_stat_df["MQ"]
+        y = gaug_stat_df["Mean Flow"]
 
         ### Random Forest Regressor
         ##### Split the data for calibration (train) and validation (test)
@@ -301,7 +300,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # the flow estimation + the geometry of the ungauged subcatchment.
 
         # create new dataframe
-        output_df = pd.DataFrame({"gml_id": warnow_subcatch_gf_df["gml_id"],"MQ": y_catch})
+        output_df = pd.DataFrame({"NET_ID": warnow_subcatch_gf_df["NET_ID"],"Mean Flow": y_catch})
 
         # create new shapefile     
         crs = warnow_subcatch_gf.sourceCrs()
@@ -337,7 +336,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         final_output.commitChanges()
 
 
-        # create a new layer with MQ and gbk_lawa + geometry from warnow_subcatch        
+        # create a new layer with Mean Flow and gbk_lawa + geometry from warnow_subcatch        
         (sink_catch, dest_id_catch) = self.parameterAsSink(parameters, self.OUTPUT_catch,
         context, final_output.fields(), warnow_subcatch_gf.wkbType(), warnow_subcatch_gf.sourceCrs())
 
@@ -361,7 +360,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             sink_catch.addFeature(new_feature)
 
         # the output of this code is a polygon file containing the code of every ungauged subcatchment (gbk_lawa or another code),
-        # the estimated flow for each ungauged subcatchment (MQ) and the geometry of the relative ungauged subcatchment.
+        # the estimated flow for each ungauged subcatchment (Mean Flow) and the geometry of the relative ungauged subcatchment.
         
         # process to transfer the flow from a subcatchment level to a river level
         output_catch_layer = context.takeResultLayer(dest_id_catch)
@@ -373,10 +372,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
         
         join_result = processing.run("native:joinattributestable", 
         {'INPUT':parameters[self.riverNetwork],
-        'FIELD':'gml_id',
+        'FIELD':'NET_ID',
         'INPUT_2':output_catch_layer,
-        'FIELD_2':'gml_id',
-        'FIELDS_TO_COPY':['MQ'],
+        'FIELD_2':'NET_ID',
+        'FIELDS_TO_COPY':['Mean Flow'],
         'METHOD':1,
         'DISCARD_NONMATCHING':False,
         'PREFIX':'',
@@ -398,10 +397,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
         wnet_fields = waternet.fields()
 
         '''names of fields for id,next segment, previous segment'''
-        id_field = self.parameterAsString(parameters, self.INPUT_FIELD_ID, context)
-        next_field = self.parameterAsString(parameters, self.INPUT_FIELD_NEXT, context)
-        prev_field = self.parameterAsString(parameters, self.INPUT_FIELD_PREV, context)
-        calc_field = "MQ"
+        id_field = "NET_ID"
+        next_field = "NET_TO"
+        prev_field = "NET_FROM"
+        calc_field = "Mean Flow"
         
         '''field index for id,next segment, previous segment'''
         idxId = waternet.fields().indexFromName(id_field) 
@@ -533,7 +532,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return '3 - Flow estimation'
+        return '4 - Flow estimation'
 
     def displayName(self):
         """

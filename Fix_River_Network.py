@@ -145,7 +145,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
-                self.tr('Output layer'),
+                self.tr('Fixed river network'),
                 QgsProcessing.TypeVectorPolygon
             )
         )
@@ -194,8 +194,14 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         with edit(subcatchments_layer):
             field_name = "id_apr"
-            subcatchments_layer.dataProvider().addAttributes([QgsField(field_name, QVariant.Int)])
-            subcatchments_layer.updateFields()
+            fields = subcatchments_layer.fields()
+
+            # check if the field already exists
+            if field_name not in [field.name() for field in fields]:
+                subcatchments_layer.dataProvider().addAttributes([QgsField(field_name, QVariant.Int)])
+                subcatchments_layer.updateFields()
+            else:
+                feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.")
 
             # populate the new column with unique IDs
             unique_id_start = 100 #or any starting value
@@ -208,7 +214,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         # extract start [0] and end [-1] vertices from the river network
         feedback.setProgressText("\nExtracting start and end vertices from river network...")
         vertices_river_result = processing.run("native:extractspecificvertices", {
-            'INPUT': parameters[self.riverNetwork],
+            'INPUT': river_layer,
             'VERTICES':'0, -1',
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)
@@ -537,7 +543,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             next_data_lists = [
                 prepare_visit(
                     next_ft_id,
-                    current_data[2],
+                    current_data[-1],
                     search_area,
                     flip_list,
                     finished_segm,

@@ -39,8 +39,10 @@ from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
 from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessing,
+                       QgsProject,
                        QgsField,
                        QgsProcessingAlgorithm,
+                       QgsProcessingParameterEnum,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
@@ -59,7 +61,6 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
     OUTPUT = 'OUTPUT'
     catchmentAreas = 'CatchmentAreas'
     DGM = 'DGM'
-    slopeRaster = 'SlopeRaster'
     chosenGeofactors = 'ChosenGeofactors'
     waterArea  = 'WaterArea'
     riverNetwork = 'RiverNetwork'
@@ -87,14 +88,6 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 self.DGM,
                 self.tr('Digital surface model'),
                 [QgsProcessing.TypeRaster]
-            )
-        )
-        
-        self.addParameter(
-            QgsProcessingParameterRasterLayer(
-                self.slopeRaster,
-                self.tr('Slope raster'),
-                [QgsProcessing.TypeRaster] 
             )
         )
         
@@ -149,6 +142,8 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
         # algorithm is run in QGIS).
+
+
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
@@ -156,7 +151,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 QgsProcessing.TypeVectorPolygon
             )
         )
-    
+
     def createRaster(self, parameters, context, feedback, outfn, xmax, xmin, xres, ymax, ymin, yres, spatref, raster):
         #create Raster
         driver = gdal.GetDriverByName('GTiff')
@@ -260,14 +255,14 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         provider = catchments.dataProvider()
         id_field = QgsField("ID_SC", QVariant.Int, 'int')
         area_field = QgsField("AREA_SC", QVariant.Double, 'double', 20, 3)
-        perimeter_field = QgsField("PERI_SC", QVariant.Double, 'double', 20, 3)
+        perimeter_field = QgsField("PERIM_SC", QVariant.Double, 'double', 20, 3)
         shapeFactor_field = QgsField("SHAPE_SC", QVariant.Double, 'double', 20, 3)
         provider.addAttributes([id_field, area_field, perimeter_field, shapeFactor_field])
         catchments.updateFields() 
         #Calculate area and perimeter
         idxID = provider.fieldNameIndex('ID_SC')
         idxArea = provider.fieldNameIndex('AREA_SC')
-        idxPerimeter = provider.fieldNameIndex('PERI_SC')
+        idxPerimeter = provider.fieldNameIndex('PERIM_SC')
         idxShapeFactor = provider.fieldNameIndex('SHAPE_SC')
         for feature in catchments.getFeatures():
             attrsID = {idxID : feature.id()}
@@ -282,7 +277,12 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             attrsShapeFactor = {idxShapeFactor : geomShapeFactor}
             catchments.dataProvider().changeAttributeValues({feature.id() : attrsShapeFactor})
 
-        slope = parameters[self.slopeRaster]
+        # slope = parameters[self.slopeRaster]
+        slope_result = processing.run("native:slope", {
+            'INPUT':parameters[self.DGM],
+            'Z_FACTOR':1,
+            'OUTPUT':'TEMPORARY_OUTPUT'})
+        slope = slope_result["OUTPUT"]
 
         #Calculates zonal statistics based on the slope raster 
         feedback.setProgressText("\nCalculate slope statistics...")
@@ -290,62 +290,62 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             {'INPUT_RASTER': slope,
              'RASTER_BAND':1,
              'INPUT_VECTOR': catchments,
-             'COLUMN_PREFIX': "S_",
+             'COLUMN_PREFIX': "Slp_",
              'STATISTICS': [3, 4]},
             context=context, feedback=feedback)
         results.extend([slope, catchments])
 
         #Calculates statistics based on river network
-        JoinCatchmentsRiverSummarize = self.processPropotions(parameters, context, feedback, catchments, outputDir, "RiverNetwork", "RN", parameters[self.riverNetwork],1)
+        JoinCatchmentsRiverSummarize = self.processPropotions(parameters, context, feedback, catchments, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork],1)
 
         #Calculates statistics based on water area
-        JoinCatchmentsWaterAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WA", parameters[self.waterArea],0)
+        JoinCatchmentsWaterAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WatAr", parameters[self.waterArea],0)
         
         #Calculates statistics based on forest area
-        JoinCatchmentsForestAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsWaterAreaSummarize, outputDir, "ForestArea", "FA", parameters[self.forestArea],0)
+        JoinCatchmentsForestAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsWaterAreaSummarize, outputDir, "ForestArea", "ForAr", parameters[self.forestArea],0)
         
         #Calculates statistics based on settlement area
-        JoinCatchmentsSetttlementAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SetttlementArea", "SA", parameters[self.settlementArea],0)
+        JoinCatchmentsSetttlementAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SetttlementArea", "SettAr", parameters[self.settlementArea],0)
         
-         #Calculates river network density (rnd), proportion of water area (pwa), forest share and settlemet share
-        feedback.setProgressText("\nCalculate river network density (rnd) and Proportion of water area (pwa)...")
+        #Calculates river network density (rnd), proportion of water area (pwa), forest share and settlemet share
+        feedback.setProgressText("\nCalculate river network density (rnd) and proportion of water area (pwa)...")
         provider = JoinCatchmentsSetttlementAreaSummarize.dataProvider()
-        rnd_field = QgsField("RND", QVariant.Double, 'double', 20, 3)
-        pwa_field = QgsField("PWA", QVariant.Double, 'double', 20, 3)
-        fs_field = QgsField("FS", QVariant.Double, 'double', 20, 3)
-        ss_field = QgsField("SS", QVariant.Double, 'double', 20, 3)
+        rnd_field = QgsField("RivNetDens", QVariant.Double, 'double', 20, 3)
+        pwa_field = QgsField("PropWatAr", QVariant.Double, 'double', 20, 3)
+        fs_field = QgsField("Forest %", QVariant.Double, 'double', 20, 3)
+        ss_field = QgsField("Settl %", QVariant.Double, 'double', 20, 3)
         provider.addAttributes([rnd_field, pwa_field, fs_field, ss_field])
         JoinCatchmentsSetttlementAreaSummarize.updateFields() 
-        idxRND = provider.fieldNameIndex('RND')
-        idxPWA = provider.fieldNameIndex('PWA')
-        idxFS = provider.fieldNameIndex('FS')
-        idxSS = provider.fieldNameIndex('SS')
-        idxRN_Sum = provider.fieldNameIndex('RN_sum')
-        idxWA_Sum = provider.fieldNameIndex('WA_sum')
-        idxFA_Sum = provider.fieldNameIndex('FA_sum')
-        idxSA_Sum = provider.fieldNameIndex('SA_sum')
+        idxRND = provider.fieldNameIndex('RivNetDens')
+        idxPWA = provider.fieldNameIndex('PropWatAr')
+        idxFS = provider.fieldNameIndex('Forest %')
+        idxSS = provider.fieldNameIndex('Settl %')
+        idxRN_Sum = provider.fieldNameIndex('RivNe_sum')
+        idxWA_Sum = provider.fieldNameIndex('WatAr_sum')
+        idxFA_Sum = provider.fieldNameIndex('ForAr_sum')
+        idxSA_Sum = provider.fieldNameIndex('SettAr_sum')
         for feature in JoinCatchmentsSetttlementAreaSummarize.getFeatures():
-            if feature["RN_sum"] != None:
-                calcRND = (feature["RN_sum"] / feature["AREA_SC"]) *100
-                RNsum = feature["RN_sum"]
+            if feature["RivNe_sum"] != None:
+                calcRND = (feature["RivNe_sum"] / feature["AREA_SC"]) *100
+                RNsum = feature["RivNe_sum"]
             else:
                 calcRND = 0
                 RNsum = 0
-            if feature["WA_sum"] != None:
-                calcPWA = (feature["WA_sum"] / feature["AREA_SC"]) *100
-                WAsum = feature["WA_sum"]
+            if feature["WatAr_sum"] != None:
+                calcPWA = (feature["WatAr_sum"] / feature["AREA_SC"]) *100
+                WAsum = feature["WatAr_sum"]
             else:
                 calcPWA = 0
                 WAsum = 0
-            if feature["FA_sum"] != None:
-                calcFS = (feature["FA_sum"] / feature["AREA_SC"]) *100
-                FAsum = feature["FA_sum"]
+            if feature["ForAr_sum"] != None:
+                calcFS = (feature["ForAr_sum"] / feature["AREA_SC"]) *100
+                FAsum = feature["ForAr_sum"]
             else:
                 calcFS = 0
                 FAsum = 0
-            if feature["SA_sum"] != None:
-                calcSS = (feature["SA_sum"] / feature["AREA_SC"]) *100
-                SAsum = feature["SA_sum"] 
+            if feature["SettAr_sum"] != None:
+                calcSS = (feature["SettAr_sum"] / feature["AREA_SC"]) *100
+                SAsum = feature["SettAr_sum"] 
             else:
                 calcSS = 0
                 SAsum = 0
@@ -433,14 +433,13 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
 
+        # define the output
         (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT, context,
                                         finalLayer.fields(), finalLayer.wkbType(), finalLayer.sourceCrs())
         
         for feat in finalLayer.getFeatures():
             sink.addFeature(feat)
         
-        
-
         """
         #Set progressbar
         features = catchmentAreaSource.getFeatures()
@@ -463,7 +462,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return '2 - Calculate geofactors'
+        return '3 - Calculate geofactors'
 
     def displayName(self):
         """
