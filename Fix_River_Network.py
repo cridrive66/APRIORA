@@ -201,7 +201,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 subcatchments_layer.dataProvider().addAttributes([QgsField(field_name, QVariant.Int)])
                 subcatchments_layer.updateFields()
             else:
-                feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.")
+                feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.")   #maybe the cause of the crashing is here
 
             # populate the new column with unique IDs
             unique_id_start = 100 #or any starting value
@@ -330,7 +330,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         # delete mistakes of river sections that are wrongly crossing the subcatchment
         # define the threshold lenght
-        threshold_length = 0.01 # 1 cm
+        threshold_length = 0.0 # 1 cm
 
         # prepare to edit the layer
         with edit(intersection_layer):
@@ -369,13 +369,15 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         feedback.setProgressText(f"\nRemoved {len(features_to_delete)} features shorter than {threshold_length}")
 
         # dissolve line within the subcatchment
-        feedback.setProgressText("\nDissolving river lines within the subcatchment...")
-        dissolve_layer = processing.run("native:dissolve", {
-            'INPUT': intersection_layer,
-            'FIELD':['id_apr'],
-            'SEPARATE_DISJOINT':False,
-            'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)["OUTPUT"]
+        # feedback.setProgressText("\nDissolving river lines within the subcatchment...")
+        # dissolve_layer = processing.run("native:dissolve", {
+        #     'INPUT': intersection_layer,
+        #     'FIELD':['id_apr'],
+        #     'SEPARATE_DISJOINT':False,
+        #     'OUTPUT':'TEMPORARY_OUTPUT'},
+        #     context=context, feedback=feedback)["OUTPUT"]
+
+        dissolve_layer = intersection_layer
         
         # consider here removing the "id_apr" field
         # still not clear if it can be useful or not
@@ -432,6 +434,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         finished_segm = {}  # {qgis id: [net_id, net_to, net_from]}
         netw_dict = {}  # a dict for individual network numbers
         circ_list = []  # list for found circles
+        flip_list = []  # list to flip geometries according or against flow direction
 
         def get_features_data(ft):
             '''
@@ -524,12 +527,11 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                         +' Please chose another segment in layer "{1}" or add a segment as a single outlet' # this part needs to be changed. If I select the mouth but there are other river section downstream, it raises this error.
                     ).format(current_data[2], dissolve_layer))                                              # it needs to be fixed. Change the type of error and ensure that the user click on the mouth of the river.
             else:
-                flip_list = [current_data[2]]  # add id to flip list
+                flip_list.append(current_data[2])  # add id to flip list
                 conn_ids = conn_ids_1
                 search_area = search_area_1
 
         else:  # first vertex connecting
-            flip_list = []
             conn_ids = conn_ids_0  
             search_area = search_area_0
         
@@ -605,7 +607,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             old_f_id = feature.id()
             outFt = QgsFeature() # Add a feature
             if flip_opt == 0 or flip_opt == 2:
-                if str(i) in flip_list:
+                if old_f_id in flip_list:
                     flip_geom = feature.geometry()
                     if flip_geom.isMultipart():
                         multi_geom = QgsMultiLineString()
