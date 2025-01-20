@@ -43,6 +43,16 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
     OUTPUT = "OUTPUT"
     OUTPUT_coded = "OUTPUT_coded"
 
+    def shortHelpString(self):
+        return self.tr(""" This tool calculates the contributing subcatchments of each gauging station. This output can be visualized as a single shapefile by choosing the option "aggregated output" or as a single shapefile for each gauging station with the option "add also contributing subcatchments". 
+        The second output "coded subcatchments" overlap with the input catchment file but has a coded system necessary for the next steps of the plugin.
+        Workflow:
+        1. Choose the catchment file, the output from "1 - Fix river network" as river network and the gauging stations.
+        2. Select which kind of output would you like to display.
+        3. Click on "Run".
+
+        """)
+
     def initAlgorithm(self, config):
         self.addParameter(
             QgsProcessingParameterFeatureSource(
@@ -71,8 +81,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterEnum(
                 self.OUTPUT_OPTION,
-                self.tr("How do you want to display the output?"),
-                ['aggregated output','add also single contributing subcatchments'],
+                self.tr("How do you want to display the gauged subcatchments?"),
+                ['aggregated output','add also single gauged subcatchments'],
                 defaultValue=[0]
             )
         )

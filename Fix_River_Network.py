@@ -72,6 +72,16 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
     OUTLET_POINT = 'OUTLET_POINT'
     SEARCH_RADIUS = 'SEARCH_BUFFER'
     OUTPUT = 'OUTPUT'
+
+    def shortHelpString(self):
+        return self.tr(""" This tool aligns the river network with the subcatchments' borders and calculates the contributing relationship between the different river sections.
+        Workflow:
+        1. Choose the catchment file and the river network.
+        2. Click on the map where the outlet point is.
+        3. Click on "Run".
+
+        Please note: be sure that the river network does not present gaps and all the river sections are connected to each others.
+        """)
     
     class PointSelectionTool(QgsMapToolEmitPoint):
         def __init__(self, canvas, callback):

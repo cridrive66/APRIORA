@@ -81,11 +81,11 @@ class CalculateFlow(QgsProcessingAlgorithm):
     # INPUT_FIELD_PREV = 'INPUT_FIELD_PREV'
 
     def shortHelpString(self):
-        return self.tr(""" Workflow: 
-        1. select the river layer in the drop-down list \"The water network\".
-        2. select the column/field to be accumulated along the flow path \"Field to calculate\"
-        3. In the drop-down lists chose the columns in the attribute table created by the tool \"Fix River Network\"
-        4. Click on \"Run\"
+        return self.tr(""" This tool estimates the flow for each subcatchment (Subcatchment level) or for each river section (River level).
+        Workflow:
+        1. Insert the gauged and ungauged subcatchments with geofactors calculated in 3-
+        2. Insert the river network calculated in 1-
+        3 Click on "Run"
         """)
 
     def initAlgorithm(self, config):
