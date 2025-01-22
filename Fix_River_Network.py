@@ -388,11 +388,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         #     context=context, feedback=feedback)["OUTPUT"]
 
         dissolve_layer = intersection_layer
-        
-        # consider here removing the "id_apr" field
-        # still not clear if it can be useful or not
-
-        # create as a second output also the catchment with the new id_apr? Might be useful to have it for the next parts of the plugin
 
         '''start of the plugin "WaterNetwConstructor" from Jannik Schilling'''
         flip_opt = self.parameterAsInt(parameters, self.FLIP_OPTION, context)
@@ -609,6 +604,15 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             flip_list = [f_id for f_id in all_visited_ids if f_id not in flip_list]
 
 
+        # # identify the index of "id_apr", I dont want it in the final output
+        # id_apr_index = dissolve_fields.indexOf("id_apr")
+        # if id_apr_index != -1:
+        #     with edit(dissolve_layer):
+        #         dissolve_layer.dataProvider().deleteAttributes([id_apr_index])
+        #         dissolve_layer.updateFields()
+        # else:
+        #     feedback.pushInfo("'id_apr' field not found in dissolve layer.")
+            
         '''add features to sink'''
         features = dissolve_layer.getFeatures()
         for i, feature in enumerate(features):

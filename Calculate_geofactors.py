@@ -49,7 +49,8 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessingParameterMatrix,
                        QgsProcessingParameterRasterLayer,
                        QgsField,
-                       QgsRasterLayer)
+                       QgsRasterLayer,
+                       edit)
 
 
 class CalculateGeofactors(QgsProcessingAlgorithm):
@@ -258,7 +259,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT': parameters[self.catchmentAreas],
              'COLUMN_PREFIX': "H_",
-             'STATISTICS': [3, 4, 5],
+             'STATISTICS': [2, 4, 5],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)
         catchments = algresultZonalStats['OUTPUT']
@@ -303,7 +304,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT_VECTOR': catchments,
              'COLUMN_PREFIX': "Slp_",
-             'STATISTICS': [3, 4]},
+             'STATISTICS': [2, 4]},
             context=context, feedback=feedback)
         results.extend([slope, catchments])
 
@@ -364,6 +365,16 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             attrs = {idxRND : calcRND, idxPWA : calcPWA, idxFS : calcFS, idxSS : calcSS, idxRN_Sum : RNsum, idxWA_Sum : WAsum, idxFA_Sum : FAsum, idxSA_Sum : SAsum}
             JoinCatchmentsSetttlementAreaSummarize.dataProvider().changeAttributeValues({feature.id() : attrs})
             
+        # # remove non necessaries fields
+        # fields_to_remove = ["RivNe_sum","WatAr_sum","ForAr_sum","SettAr_sum"]
+        # field_indices = [JoinCatchmentsSetttlementAreaSummarize.fields().indexOf(field) for field in fields_to_remove]
+        # if field_indices:
+        #     with edit(JoinCatchmentsSetttlementAreaSummarize):
+        #         JoinCatchmentsSetttlementAreaSummarize.dataProvider().deleteAttributes(field_indices)
+        #         JoinCatchmentsSetttlementAreaSummarize.updateFields()
+        # else:
+        #     feedback.pushInfo("No matchinf field found to delete")
+
         #Calculation of precipitation
         feedback.setProgressText("\nCalculate precipitation")
         netcdf_dir = self.parameterAsString(parameters, self.precipitationData, context)
@@ -444,6 +455,17 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'STATISTICS': [2],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
+
+        # remove unwanted fields
+        fields_to_remove = ["RivNe_sum","WatAr_sum","ForAr_sum","SettAr_sum", "ID_SC"]
+        field_indices = [finalLayer.fields().indexOf(field) for field in fields_to_remove]
+        if field_indices:
+            with edit(finalLayer):
+                finalLayer.dataProvider().deleteAttributes(field_indices)
+                finalLayer.updateFields()
+        else:
+            feedback.pushInfo("No matching field found to delete")
+
 
         # define the output
         (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT, context,
