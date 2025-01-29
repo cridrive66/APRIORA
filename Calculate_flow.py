@@ -250,8 +250,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # performance of the trained model
         y_train_pred = model.predict(x_train)
-        print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
-        print("Calibration R-squared:", r2_score(y_train, y_train_pred))
+        #print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
+        #print("Calibration R-squared:", r2_score(y_train, y_train_pred))
 
         ##### Validation
         # Now, we work with the test dataset (x_test) to validate the model and make estimation on new different data. 
@@ -259,8 +259,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # prediction and evaluation
         y_pred = model.predict(x_test)
-        print("Validation RMSE:", mean_squared_error(y_test, y_pred, squared=False))
-        print("Validation R-squared:", r2_score(y_test, y_pred))
+        #print("Validation RMSE:", mean_squared_error(y_test, y_pred, squared=False))
+        #print("Validation R-squared:", r2_score(y_test, y_pred))
 
 
         ##### SECOND PART OF THE MODEL

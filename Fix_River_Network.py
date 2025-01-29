@@ -137,7 +137,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         except:
             # for qgis prior to version 3.36
             rad_type = QgsProcessingParameterNumber.Double
-            param_Radius = QgsProcessingParameterNumber(
+        param_Radius = QgsProcessingParameterNumber(
                 self.SEARCH_RADIUS,
                 self.tr("Search Radius for Connections"),
                 type=rad_type,
