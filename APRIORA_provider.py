@@ -22,7 +22,7 @@
  ***************************************************************************/
 """
 
-__author__ = 'Universität Rostock'
+__author__ = 'Cristiano Guidi'
 __date__ = '2024-06-13'
 __copyright__ = '(C) 2024 by Universität Rostock'
 

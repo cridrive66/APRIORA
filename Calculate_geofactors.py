@@ -377,6 +377,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
 
         #Calculation of precipitation
         feedback.setProgressText("\nCalculate precipitation")
+        feedback.setProgress(80)    # set the progress to 80% because otherwise it is stuck at 100
         netcdf_dir = self.parameterAsString(parameters, self.precipitationData, context)
         # list of all .nc file in the directory
         netcdf_files = QDir(netcdf_dir).entryList(["*.nc"], QDir.Files)
