@@ -432,9 +432,9 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         # append fields
         for field in dissolve_fields:
             out_fields.append(QgsField(field.name(), field.type()))
-        out_fields.append(QgsField('NET_ID', QVariant.String))
-        out_fields.append(QgsField('NET_TO', QVariant.String))
-        out_fields.append(QgsField('NET_FROM', QVariant.String))
+        out_fields.append(QgsField('NET_ID', QVariant.String, "String", 255))
+        out_fields.append(QgsField('NET_TO', QVariant.String, "String", 255))
+        out_fields.append(QgsField('NET_FROM', QVariant.String, "String", 255))
         # lists for results
         finished_segm = {}  # {qgis id: [net_id, net_to, net_from]}
         netw_dict = {}  # a dict for individual network numbers
