@@ -493,6 +493,13 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
     
         
 
+
+        # Remove "MEAN" from the column name if it exists
+        # if 'PreYearly_MEAN' in [field.name() for field in JoinCatchmentsSetttlementAreaSummarize.fields()]:
+        #     idx = JoinCatchmentsSetttlementAreaSummarize.fields().indexOf('PreYearly_MEAN')
+        #     JoinCatchmentsSetttlementAreaSummarize.renameAttribute(idx, 'PreYearly_')  # Rename column to "PreYearly_"
+     
+     
         # Remove "MEAN" from the column name if it exists
         # if 'PreYearly_MEAN' in [field.name() for field in JoinCatchmentsSetttlementAreaSummarize.fields()]:
         #     idx = JoinCatchmentsSetttlementAreaSummarize.fields().indexOf('PreYearly_MEAN')
@@ -503,7 +510,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             {'INPUT_RASTER': precipitationYearlyLayer,
              'RASTER_BAND':1,
              'INPUT': JoinCatchmentsSetttlementAreaSummarize,
-             'COLUMN_PREFIX': "PreYearly_",         # this part need to be fix because the output column is "PreYearly_MEAN", remove the "MEAN"
+             'COLUMN_PREFIX': "PrecYearly_",        
              'STATISTICS': [2],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
              context=context, feedback=feedback)['OUTPUT']
@@ -513,7 +520,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             {'INPUT_RASTER': precipitationAugustLayer,
              'RASTER_BAND':1,
              'INPUT': precipitation_yearly_ungauged,
-             'COLUMN_PREFIX': "PreAugust_",         # this part need to be fix because the output column is "PreYearly_MEAN", remove the "MEAN"
+             'COLUMN_PREFIX': "PrecAugust_",
              'STATISTICS': [2],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
@@ -521,10 +528,22 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         
         del JoinCatchmentsSetttlementAreaSummarize, precipitation_yearly_ungauged
 
+        # Remove "MEAN" from the column name if it exists
+        if 'PrecYearly_mean' in [field.name() for field in finalLayer_ungauged.fields()]:
+            with edit(finalLayer_ungauged):
+                idx = finalLayer_ungauged.fields().indexOf('PrecYearly_mean')
+                finalLayer_ungauged.renameAttribute(idx, 'PrecYearly')
+        
+        if 'PrecAugust_mean' in [field.name() for field in finalLayer_ungauged.fields()]:
+            with edit(finalLayer_ungauged):
+                idx = finalLayer_ungauged.fields().indexOf('PrecAugust_mean')
+                finalLayer_ungauged.renameAttribute(idx, 'PrecAugust')
+
         feedback.setProgressText("\nRemoving field")
         # remove unwanted fields
         fields_to_remove = ["RivNe_sum","WatAr_sum","ForAr_sum","SettAr_sum", "ID_SC"]
         field_indices = [finalLayer_ungauged.fields().indexOf(field) for field in fields_to_remove]
+
         if field_indices:
             with edit(finalLayer_ungauged):
                 finalLayer_ungauged.dataProvider().deleteAttributes(field_indices)
@@ -700,7 +719,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             {'INPUT_RASTER': precipitationYearlyLayer,
              'RASTER_BAND':1,
              'INPUT': JoinCatchmentsSetttlementAreaSummarize,
-             'COLUMN_PREFIX': "PreYearly_",         # this part need to be fix because the output column is "PreYearly_MEAN", remove the "MEAN"
+             'COLUMN_PREFIX': "PrecYearly_",         
              'STATISTICS': [2],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
@@ -710,13 +729,24 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             {'INPUT_RASTER': precipitationAugustLayer,
              'RASTER_BAND':1,
              'INPUT': precipitation_yearly_gauged,
-             'COLUMN_PREFIX': "PreAugust_",         # this part need to be fix because the output column is "PreYearly_MEAN", remove the "MEAN"
+             'COLUMN_PREFIX': "PrecAugust_",    
              'STATISTICS': [2],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(finalLayer_gauged) 
         
         del JoinCatchmentsSetttlementAreaSummarize, precipitation_yearly_gauged
+
+        # Remove "mean" from the column name if it exists
+        if 'PrecYearly_mean' in [field.name() for field in finalLayer_gauged.fields()]:
+            with edit(finalLayer_gauged):
+                idx = finalLayer_gauged.fields().indexOf('PrecYearly_mean')
+                finalLayer_gauged.renameAttribute(idx, 'PrecYearly')
+        
+        if 'PrecAugust_mean' in [field.name() for field in finalLayer_gauged.fields()]:
+            with edit(finalLayer_gauged):
+                idx = finalLayer_gauged.fields().indexOf('PrecAugust_mean')
+                finalLayer_gauged.renameAttribute(idx, 'PrecAugust')
 
         # remove unwanted fields
         fields_to_remove = ["RivNe_sum","WatAr_sum","ForAr_sum","SettAr_sum", "ID_SC"]
