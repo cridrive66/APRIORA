@@ -157,17 +157,9 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             )
         )
         
-        
-        """
-        file_param = QgsProcessingParameterMatrix(self.chosenGeofactors, 'Select geofactor')
-        file_param.setMetadata({'widget_wrapper': {'class': PickOptionWidget}})
-        self.addParameter(file_param)
-        """
-        
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
         # algorithm is run in QGIS).
-
 
         self.addParameter(
             QgsProcessingParameterFeatureSink(
@@ -253,7 +245,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(JoinCatchmentsSummarize)
-        del intersections
+        del intersections, Summarize
         return JoinCatchmentsSummarize
 
     def processAlgorithm(self, parameters, context, feedback):
@@ -266,22 +258,13 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         """
         
         #Get data
-        #parameterList = self.parameterAsMatrix(parameters, self.chosenGeofactors, context)
+        feedback.setProgressText("\nStart with ungauged subcatchments...")
         # ungauged subcatchments
         ungaugedSource = self.parameterAsVectorLayer(parameters, 'codedSubcatch', context)
         ungaugedSourceName = ungaugedSource.name()
-
-        #catchmentSource = self.parameterAsVectorLayer(parameters, 'CatchmentAreas', context)
-        #catchmentSourceName = catchmentSource.name()
         
         #Get virtual output directory and output sink
         outputDir = "/vsimem/"
-        #outputDir = "Y:/Dokumente/plugin/vsimen/"
-        
-        
-        #List of Outputs
-        #results = []
-        #Start chosen calculations (parallelize if necessary)
         
         #Calculates zonal statistics based on DEM
         feedback.setProgressText("\nCalculate Zonal statistics...")
@@ -293,7 +276,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'STATISTICS': [2, 4, 5],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
-        #context.temporaryLayerStore().addMapLayer(catchments_ungauged)
+        context.temporaryLayerStore().addMapLayer(catchments_ungauged)
 
         #Set area and perimeter field to layer
         provider = catchments_ungauged.dataProvider()
@@ -321,12 +304,11 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             attrsShapeFactor = {idxShapeFactor : geomShapeFactor}
             catchments_ungauged.dataProvider().changeAttributeValues({feature.id() : attrsShapeFactor})
 
-        # slope = parameters[self.slopeRaster]
+        # calculate slope
         slope = processing.run("native:slope", {
             'INPUT':parameters[self.DGM],
             'Z_FACTOR':1,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        # context.temporaryLayerStore().addMapLayer(slope)
 
         #Calculates zonal statistics based on the slope raster 
         feedback.setProgressText("\nCalculate slope statistics...")
@@ -338,10 +320,9 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'STATISTICS': [2, 4]},
             context=context, feedback=feedback)
         
-        #results.extend([slope, catchments_ungauged])
-
         #Calculates statistics based on river network
         JoinCatchmentsRiverSummarize = self.processPropotions(parameters, context, feedback, catchments_ungauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork],1)
+        del catchments_ungauged
 
         #Calculates statistics based on water area
         JoinCatchmentsWaterAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WatAr", parameters[self.waterArea],0)
@@ -399,6 +380,9 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 SAsum = 0
             attrs = {idxRND : calcRND, idxPWA : calcPWA, idxFS : calcFS, idxSS : calcSS, idxRN_Sum : RNsum, idxWA_Sum : WAsum, idxFA_Sum : FAsum, idxSA_Sum : SAsum}
             JoinCatchmentsSetttlementAreaSummarize.dataProvider().changeAttributeValues({feature.id() : attrs})
+
+            if not JoinCatchmentsSetttlementAreaSummarize.isValid():
+                feedback.reportError("Error: JoinCatchmentsSetttlementAreaSummarize is not valid!", fatalError = True)
             
         #Calculation of precipitation
         feedback.setProgressText("\nCalculate precipitation")
@@ -459,48 +443,30 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         finalYearlyMeanRaster = np.mean(yearlyMeanRaster, axis=0)
         finalAugustMeanRaster = np.mean(augustMeanRaster, axis=0)
 
-
         outfnYearly = outputDir+ungaugedSourceName+'_yearlyPrecipitation.tif'
         outfnAugust = outputDir+ungaugedSourceName+'_augustPrecipitation.tif'
 
-        # little debug
+        # run the function to create the raster
+        # yearly precipitation
+        self.createRaster(parameters, context, feedback, outfnYearly, xmax, xmin, xres, ymax, ymin, yres, spatref, finalYearlyMeanRaster)
         if finalYearlyMeanRaster is None:
             feedback.reportError("Error: finalYearlyMeanRster is None!", fatalError = True)
+        feedback.setProgressText(f"Debug: Output file path: {outfnYearly}")
+        
+        # august precipitation
+        self.createRaster(parameters, context, feedback, outfnAugust, xmax, xmin, xres, ymax, ymin, yres, spatref, finalAugustMeanRaster)
         if finalAugustMeanRaster is None:
             feedback.reportError("Error: finalAugustMeanRaster is None!", fatalError = True)
-        feedback.setProgressText(f"Debug: Output file path: {outfnYearly}")
-        feedback.setProgressText(f"Debug: Is finalYearlyMeanRaster valid? {finalYearlyMeanRaster is not None}")
-
-
-        self.createRaster(parameters, context, feedback, outfnYearly, xmax, xmin, xres, ymax, ymin, yres, spatref, finalYearlyMeanRaster)
-        self.createRaster(parameters, context, feedback, outfnAugust, xmax, xmin, xres, ymax, ymin, yres, spatref, finalAugustMeanRaster)
+        feedback.setProgressText(f"Debug: Output file path: {outfnAugust}")
+       
+       # save as raster layer
         precipitationYearlyLayer = QgsRasterLayer(outfnYearly, "precipitationYearly")
-        precipitationAugustLayer = QgsRasterLayer(outfnAugust, "precipitationAugust")
-
-        # little debugging
-        # add the layers to the project to see where is the problem
-        feedback.setProgressText("\nAdd layers to the map")
-        if not os.path.exists(outfnYearly):
-            feedback.reportError(f"Error: raster file {outfnYearly} was not created!", fatalError = True)
-             
-        if not os.path.exists(outfnYearly):
-            feedback.reportError(f"Error: raster file {outfnAugust} was not created!", fatalError = True)
-        
         if not precipitationYearlyLayer.isValid():
             feedback.reportError("Error: precipitationYearlyLayer is not valid!", fatalError = True)
-        # else:
-        #     QgsProject.instance().addMapLayer(precipitationYearlyLayer)
-      
+        
+        precipitationAugustLayer = QgsRasterLayer(outfnAugust, "precipitationAugust")
         if not precipitationAugustLayer.isValid():
             feedback.reportError("Error: precipitationAugustLayer is not valid!", fatalError = True)
-        # else:
-        #     QgsProject.instance().addMapLayer(precipitationAugustLayer)
-
-        if not JoinCatchmentsSetttlementAreaSummarize.isValid():
-            feedback.reportError("Error: JoinCatchmentsSetttlementAreaSummarize is not valid!", fatalError = True)
-        # else:
-        #     QgsProject.instance().addMapLayer(JoinCatchmentsSetttlementAreaSummarize)
-
 
         # get CRS of the vector layer
         # vector_crs = JoinCatchmentsSetttlementAreaSummarize.crs()
@@ -551,10 +517,9 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'STATISTICS': [2],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
-        #finalLayer_ungauged = QgsRasterLayer(finalLayer_ungauged_process, "finalLayer_ungauged", "gdal")
-        #context.temporaryLayerStore().addMapLayer(finalLayer_ungauged) 
+        context.temporaryLayerStore().addMapLayer(finalLayer_ungauged) 
         
-        del JoinCatchmentsSetttlementAreaSummarize
+        del JoinCatchmentsSetttlementAreaSummarize, precipitation_yearly_ungauged
 
         feedback.setProgressText("\nRemoving field")
         # remove unwanted fields
@@ -588,17 +553,6 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         gaugedSource = self.parameterAsVectorLayer(parameters, 'gaugedSubcatch', context)
         gaugedSourceName = gaugedSource.name()
         
-
-        #catchmentSource = self.parameterAsVectorLayer(parameters, 'CatchmentAreas', context)
-        #catchmentSourceName = catchmentSource.name()
-        
-        #Get virtual output directory and output sink
-        #outputDir = "/vsimem/"
-        
-        #List of Outputs
-        #results = []
-        #Start chosen calculations (parallelize if necessary)
-        
         #Calculates zonal statistics based on DEM
         feedback.setProgressText("\nCalculate Zonal statistics...")
         catchments_gauged = processing.run("native:zonalstatisticsfb",
@@ -609,7 +563,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'STATISTICS': [2, 4, 5],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
-        #context.temporaryLayerStore().addMapLayer(catchments_gauged) 
+        context.temporaryLayerStore().addMapLayer(catchments_gauged) 
 
         #Set area and perimeter field to layer
         provider = catchments_gauged.dataProvider()
@@ -646,11 +600,10 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'COLUMN_PREFIX': "Slp_",
              'STATISTICS': [2, 4]},
             context=context, feedback=feedback)
-        #results.extend([slope, catchments_gauged])
 
         #Calculates statistics based on river network
         JoinCatchmentsRiverSummarize = self.processPropotions(parameters, context, feedback, catchments_gauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork],1)
-        del catchments_gauged
+        del catchments_gauged, slope
 
         #Calculates statistics based on water area
         JoinCatchmentsWaterAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WatAr", parameters[self.waterArea],0)
@@ -709,72 +662,40 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             attrs = {idxRND : calcRND, idxPWA : calcPWA, idxFS : calcFS, idxSS : calcSS, idxRN_Sum : RNsum, idxWA_Sum : WAsum, idxFA_Sum : FAsum, idxSA_Sum : SAsum}
             JoinCatchmentsSetttlementAreaSummarize.dataProvider().changeAttributeValues({feature.id() : attrs})
             
+            if not JoinCatchmentsSetttlementAreaSummarize.isValid():
+                feedback.reportError("Error: JoinCatchmentsSetttlementAreaSummarize is not valid!", fatalError = True)
+            
         #Calculation of precipitation
         feedback.setProgressText("\nCalculate precipitation")
         feedback.setProgress(80)    # set the progress to 80% because otherwise it is stuck at 100
-        # netcdf_dir = self.parameterAsString(parameters, self.precipitationData, context)
-        # # list of all .nc file in the directory
-        # netcdf_files = QDir(netcdf_dir).entryList(["*.nc"], QDir.Files)
-
-        # # Variables
-        # yearlyMeanRaster = None
-        # augustMeanRaster =  None
-        # firstRound=True
-        # firstFile=True
-
-        # spatref = None
-        # xres = None
-        # yres = None
-        # xmin = None
-        # xmax = None
-        # ymin = None
-        # ymax = None
-
-        # for filename in netcdf_files:
-        #     i=1
-        #     netcdf_file = os.path.join(netcdf_dir, filename)
-        #     subdataset_path = 'NETCDF:"{}":pr'.format(netcdf_file)
-        #     raster_layer_unc = QgsRasterLayer(subdataset_path, "Annual precipitation")
-        #     rasterDataSource = gdal.Open(str(raster_layer_unc.source()))
-        #     yearlyTemp = None
-        #     if firstFile:
-        #         spatref = raster_layer_unc.crs()
-        #         xres = raster_layer_unc.rasterUnitsPerPixelX()
-        #         yres = raster_layer_unc.rasterUnitsPerPixelY()
-        #         ext = raster_layer_unc.extent()
-        #         xmin = ext.xMinimum()
-        #         xmax = ext.xMaximum()
-        #         ymin = ext.yMinimum()
-        #         ymax = ext.yMaximum()
-        #     while i <= rasterDataSource.RasterCount:
-        #         if i == 1:
-        #             yearlyTemp = np.array([rasterDataSource.GetRasterBand(i).ReadAsArray()])
-        #         else:
-        #             yearlyTemp= np.append(yearlyTemp, [rasterDataSource.GetRasterBand(i).ReadAsArray()], axis=0)
-        #         i+=1
-                
-        #     yearlyMean = np.sum(yearlyTemp, axis=0)
-        #     augustMean = rasterDataSource.GetRasterBand(8).ReadAsArray()
-            
-        #     if firstRound:
-        #         yearlyMeanRaster = np.array([yearlyMean])
-        #         augustMeanRaster = np.array([augustMean])
-        #         firstRound = False
-        #     else:
-        #         yearlyMeanRaster= np.append(yearlyMeanRaster, [yearlyMean], axis=0)
-        #         augustMeanRaster= np.append(augustMeanRaster, [augustMean], axis=0)
-            
-
-        # finalYearlyMeanRaster = np.mean(yearlyMeanRaster, axis=0)
-        # finalAugustMeanRaster = np.mean(augustMeanRaster, axis=0)
 
         outfnYearly = outputDir+gaugedSourceName+'_yearlyPrecipitation.tif'
         outfnAugust = outputDir+gaugedSourceName+'_augustPrecipitation.tif'
+
+        # run the function to create the raster
+        # yearly precipitation
         self.createRaster(parameters, context, feedback, outfnYearly, xmax, xmin, xres, ymax, ymin, yres, spatref, finalYearlyMeanRaster)
-        self.createRaster(parameters, context, feedback, outfnAugust, xmax, xmin, xres, ymax, ymin, yres, spatref, finalAugustMeanRaster)
-        precipitationYearlyLayer = QgsRasterLayer(outfnYearly, "precipitationYearly")
-        precipitationAugustLayer = QgsRasterLayer(outfnAugust, "precipitationAugust")
+        if finalYearlyMeanRaster is None:
+            feedback.reportError("Error: finalYearlyMeanRster is None!", fatalError = True)
+        feedback.setProgressText(f"Debug: Output file path: {outfnYearly}")
         
+        # august precipitation
+        self.createRaster(parameters, context, feedback, outfnAugust, xmax, xmin, xres, ymax, ymin, yres, spatref, finalAugustMeanRaster)
+        if finalAugustMeanRaster is None:
+            feedback.reportError("Error: finalAugustMeanRaster is None!", fatalError = True)
+        feedback.setProgressText(f"Debug: Output file path: {outfnAugust}")
+
+        # save as raster file
+        precipitationYearlyLayer = QgsRasterLayer(outfnYearly, "precipitationYearly")
+        if not precipitationYearlyLayer.isValid():
+            feedback.reportError("Error: precipitationYearlyLayer is not valid!", fatalError = True)
+        
+        precipitationAugustLayer = QgsRasterLayer(outfnAugust, "precipitationAugust")
+        if not precipitationAugustLayer.isValid():
+            feedback.reportError("Error: precipitationAugustLayer is not valid!", fatalError = True)
+        
+        # zonal statistics
+        feedback.setProgressText("\nStart the zonal statistic of yearly precipitation")
         precipitation_yearly_gauged = processing.run("native:zonalstatisticsfb",
             {'INPUT_RASTER': precipitationYearlyLayer,
              'RASTER_BAND':1,
@@ -784,6 +705,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
 
+        feedback.setProgressText("\nStart the zonal statistic of august precipitation")
         finalLayer_gauged = processing.run("native:zonalstatisticsfb",
             {'INPUT_RASTER': precipitationAugustLayer,
              'RASTER_BAND':1,
@@ -792,8 +714,9 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'STATISTICS': [2],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
-        #context.temporaryLayerStore().addMapLayer("finalLayer_gauged", finalLayer_gauged) 
-        del JoinCatchmentsSetttlementAreaSummarize
+        context.temporaryLayerStore().addMapLayer(finalLayer_gauged) 
+        
+        del JoinCatchmentsSetttlementAreaSummarize, precipitation_yearly_gauged
 
         # remove unwanted fields
         fields_to_remove = ["RivNe_sum","WatAr_sum","ForAr_sum","SettAr_sum", "ID_SC"]
