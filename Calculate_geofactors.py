@@ -74,9 +74,9 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return self.tr(""" This tool calculates the geofactors for each subcatchment. The geofactors are necessaries to estimate the flow in the tool "4 - Flow estimation".
-        This tool needs to be run twice, once with gauged subcatchments (output of 2 -) and one with ungauged subcatchments (output of 2 -).
+        This tool produces two outputs, ungauged subcatchments geofactors and gauged subcatchments geofactors.
         Workflow:
-        1. Upload the catchment area (first for gauged subcatchments and then for ungauged subcatchments).
+        1. Upload the catchment area ("coded subcatchments" and "gauged subcatchments" both from the 2nd tool).
         2. Choose the "Fixed River Network" file as river network input.
         3. Keep filling the inputs with the file required.
         4. Select a folder with precipitation data. This data must be .nc file, one for each year.

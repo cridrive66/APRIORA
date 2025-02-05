@@ -83,8 +83,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
     def shortHelpString(self):
         return self.tr(""" This tool estimates the flow for each subcatchment (Subcatchment level) or for each river section (River level).
         Workflow:
-        1. Insert the gauged and ungauged subcatchments with geofactors calculated in 3-
-        2. Insert the river network calculated in 1-
+        1. Insert the gauged and ungauged subcatchments with geofactors calculated with the 3rd tool.
+        2. Insert the river network calculated with the 1st tool.
         3 Click on "Run"
         """)
 
@@ -363,17 +363,11 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # the estimated flow for each ungauged subcatchment (Mean Flow) and the geometry of the relative ungauged subcatchment.
         
         # process to transfer the flow from a subcatchment level to a river level
-        output_catch_layer = context.takeResultLayer(dest_id_catch)
-        if output_catch_layer is None:
-            raise QgsProcessingException(self.tr("Failed to register the subcatchment layer"))
-
-        context.temporaryLayerStore().addMapLayer(output_catch_layer)
-        feedback.pushInfo(f"Layer name: {output_catch_layer.name()} registered")
         
         join_result = processing.run("native:joinattributestable", 
         {'INPUT':parameters[self.riverNetwork],
         'FIELD':'NET_ID',
-        'INPUT_2':output_catch_layer,
+        'INPUT_2':final_output,
         'FIELD_2':'NET_ID',
         'FIELDS_TO_COPY':['Mean Flow'],
         'METHOD':1,
@@ -510,18 +504,15 @@ class CalculateFlow(QgsProcessingAlgorithm):
             outFt.setAttributes(feature.attributes()+[DataArr[i,3]])
             sink_river.addFeature(outFt, QgsFeatureSink.FastInsert)
         
+        del nextFtsCalc, FlowPath, DataArr
+        
         # return the result
         return {
             self.OUTPUT_catch: dest_id_catch,
             self.OUTPUT_river: dest_id_river
             }
 
-        del nextFtsCalc
-        del FlowPath
-        del DataArr
-
-
-        return {}
+        #return {}
 
 
     def name(self):

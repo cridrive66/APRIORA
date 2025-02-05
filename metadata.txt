@@ -5,12 +5,12 @@
 [general]
 name=APRIORA
 qgisMinimumVersion=3.0
-description=Collection of APRIORA Plugins
-version=0.1
-author=Universität Rostock
+description=Flow estimation in ungauged subcatchments
+version=0.2
+author=Cristiano Guidi
 email=cristiano.guidi2@uni-rostock.de
 
-about=Provide a brief description of the plugin and its purpose.
+about=This plugin contains a series of tools that are useful to estimate annual mean flow in ungauged subcatchments.
 
 tracker=http://bugs
 repository=http://repo
@@ -23,7 +23,7 @@ hasProcessingProvider=yes
 # changelog=
 
 # Tags are comma separated with spaces allowed
-tags=python
+tags=water, catchment, subcatchments, flow estimation, river
 
 homepage=http://homepage
 category=Analysis
