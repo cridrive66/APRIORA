@@ -145,16 +145,24 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
     
         # let's join the subcatchment and the river network so we transfer the IDs from the river network
         # to the subcatchments. This is useful for later when we are extracting the subcatchments containing specific IDs
-        subcat_result = processing.run("native:joinattributesbylocation", {
+        subcat_layer_with_duplicate = processing.run("native:joinattributesbylocation", {
             'INPUT': subcatch,
-            'PREDICATE':[1],
+            'PREDICATE':[0,1],
             'JOIN': waternet,
             'JOIN_FIELDS':['NET_ID'],   # instead of "NET_ID", consider using "id_apr"
             'METHOD':0,
             'DISCARD_NONMATCHING':True,
             'PREFIX':'',
-            'OUTPUT':'TEMPORARY_OUTPUT'})
-        subcat_layer = subcat_result["OUTPUT"]
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        feedback.pushInfo(f"\nNumber of features in the subcat_layer_with_duplicate: {subcat_layer_with_duplicate.featureCount()}")
+        # QgsProject.instance().addMapLayer(subcat_layer_with_duplicate)
+
+        # delete duplicate geometries
+        subcat_layer = processing.run("native:deleteduplicategeometries", {
+            'INPUT':subcat_layer_with_duplicate,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        feedback.pushInfo(f"\nNumber of features in the subcat_layer: {subcat_layer.featureCount()}")
+        # QgsProject.instance().addMapLayer(subcat_layer)
 
         # initialize the feature sink for coded subcatchments
         (sink_coded, dest_id_coded) = self.parameterAsSink(

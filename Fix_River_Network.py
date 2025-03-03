@@ -42,6 +42,7 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsFeature,
                        QgsField,
                        QgsFields,
+                       QgsFeature,
                        QgsFeatureSink,
                        QgsGeometry,
                        QgsMultiLineString,
@@ -53,6 +54,7 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessingParameterEnum,
                        QgsProcessingParameterNumber,
                        QgsProcessingParameterPoint,
+                       QgsProject,
                        QgsField,
                        QgsVectorLayer,
                        QgsSpatialIndex,
@@ -178,14 +180,19 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         self._map_tool = FixRiverNetwork.PointSelectionTool(canvas, pointSelected)
         canvas.setMapTool(self._map_tool)
     
-    def find_closest_vertex(self, parameters, context, feedback, point, vertices, threshold):
+    def find_closest_vertex(self, parameters, context, feedback, point, spatial_index, vertex_map, threshold):
+        nearest_ids = spatial_index.nearestNeighbor(QgsGeometry.fromPointXY(point), 5) # get 5 nearest vertices
         closest_vertex = None
         min_distance = threshold
-        for vertex in vertices:
+
+        for vertex_id in nearest_ids:
+            vertex = vertex_map[vertex_id]
             distance = QgsGeometry.fromPointXY(QgsPointXY(point)).distance(QgsGeometry.fromPointXY(QgsPointXY(vertex)))
+            
             if distance < min_distance:
                 closest_vertex = vertex
-                min_distance = distance 
+                min_distance = distance
+
         return closest_vertex
 
     def processAlgorithm(self, parameters, context, feedback):
@@ -203,7 +210,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         search_radius = self.parameterAsDouble(parameters, self.SEARCH_RADIUS, context)
 
         with edit(subcatchments_layer):
-            field_name = "id_apr"
+            field_name = "id_catch"
             fields = subcatchments_layer.fields()
 
             # check if the field already exists
@@ -277,7 +284,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             context=context, feedback=feedback)
         non_null_geom_layer = non_null_geom_result["OUTPUT"]
         del fixed_layer
-
+        #QgsProject.instance().addMapLayer(non_null_geom_layer)
         feedback.setProgressText(f"Number of features in non_null_geom_layer: {non_null_geom_layer.featureCount()}")
 
         # get all points from the subcatchment vertices layer
@@ -287,96 +294,188 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         features_to_update = []
 
         feedback.setProgressText("\nAlligning river vertices...")
-
+        
         # threshold distand (adjust as needed)
         threshold = 0.01 # 1cm
+        
+        # build a spatial index
+        spatial_index = QgsSpatialIndex()
+        vertex_map = {}
 
-        # align start points of river network vertices
+        for vertex in vertices_catch_points:
+            point_id = len(vertex_map) # unique ID for the spatial index
+            vertex_map[point_id] = vertex
+
+            # create feature and set ID and geometry
+            feature = QgsFeature()
+            feature.setId(point_id)
+            feature.setGeometry(QgsGeometry.fromPointXY(vertex))
+            spatial_index.insertFeature(feature)
+        
+        # iterate over river network vertices with optimized search
+        features_to_update = []
         for feature in non_null_geom_layer.getFeatures():
+            if feedback.isCanceled():
+                feedback.pushInfo("Process canceled by user")
+                return {}
+
             geom = feature.geometry()
             feature_id = feature.id()
-            
+
             if geom:
-                # extract geometry points as QgsPointXY objects
                 points = [QgsPointXY(point) for point in geom.vertices()]
                 modified = False
-                
-                # check start vertex
-                closest_start = self.find_closest_vertex(parameters, context, feedback, points[0], vertices_catch_points, threshold)
+
+                # find closest start & end points using spatial index
+                closest_start = self.find_closest_vertex(parameters, context, feedback, points[0], spatial_index, vertex_map, threshold)
                 if closest_start:
                     points[0] = closest_start
                     modified = True
 
-                # check end vertex
-                closest_end = self.find_closest_vertex(parameters, context, feedback, points[-1], vertices_catch_points, threshold)
+                closest_end = self.find_closest_vertex(parameters, context, feedback, points[-1], spatial_index, vertex_map, threshold)
                 if closest_end:
                     points[-1] = closest_end
                     modified = True
-                    
-                # collect changes if modified:
+
+                # if modified, store for batch update
                 if modified:
                     new_geom = QgsGeometry.fromPolylineXY(points)
                     feature.setGeometry(new_geom)
                     features_to_update.append(feature)
-
+            
         # apply updates in batch mode
         with edit(non_null_geom_layer):
             for feature in features_to_update:
                 non_null_geom_layer.updateFeature(feature)
 
         feedback.setProgressText(f"\nNumber of features in non_null_geom_layer after editing: {non_null_geom_layer.featureCount()}")
+        #QgsProject.instance().addMapLayer(non_null_geom_layer)
+
+        # # align start points of river network vertices
+        # for feature in non_null_geom_layer.getFeatures(): # this part of the code is computationally very intense, so try to change it (add bounding box instead of for loop?)
+        #     geom = feature.geometry()
+        #     feature_id = feature.id()
+            
+        #     if geom:
+        #         # extract geometry points as QgsPointXY objects
+        #         points = [QgsPointXY(point) for point in geom.vertices()]
+        #         modified = False
+                
+        #         # check start vertex
+        #         closest_start = self.find_closest_vertex(parameters, context, feedback, points[0], vertices_catch_points, threshold)
+        #         if closest_start:
+        #             points[0] = closest_start
+        #             modified = True
+
+        #         # check end vertex
+        #         closest_end = self.find_closest_vertex(parameters, context, feedback, points[-1], vertices_catch_points, threshold)
+        #         if closest_end:
+        #             points[-1] = closest_end
+        #             modified = True
+                    
+        #         # collect changes if modified:
+        #         if modified:
+        #             new_geom = QgsGeometry.fromPolylineXY(points)
+        #             feature.setGeometry(new_geom)
+        #             features_to_update.append(feature)
+
+        # # apply updates in batch mode
+        # with edit(non_null_geom_layer):
+        #     for feature in features_to_update:
+        #         non_null_geom_layer.updateFeature(feature)
+
+        # feedback.setProgressText(f"\nNumber of features in non_null_geom_layer after editing: {non_null_geom_layer.featureCount()}")
+
+        
+        # identify invalid geometries before starting the intersection process
+        feedback.setProgressText("\nChecking for invalid geometries...")
+        invalid_features = []
+        for feature in non_null_geom_layer.getFeatures():
+            if not feature.isValid():
+                invalid_features.append(feature)
+
+        if invalid_features:
+            feedback.reportError(f"Found {len(invalid_features)} invalid geometries!", fatalError = False)
+
+            # create a new memory layer for invalid features
+            invalid_layer = QgsVectorLayer("LineString?crs=" + non_null_geom_layer.crs().authid(), "Invalid Geometries", "memory")
+            provider = invalid_layer.dataProvider()
+
+            # copy fields and add invalid features
+            provider.addAttributes(non_null_geom_layer.fields())
+            invalid_layer.updateFields()
+
+            for feature in invalid_features:
+                provider.addFeature(feature)
+
+            # add the layer to the QGIS map
+            QgsProject.instance().addMapLayer(invalid_layer)
+
+            feedback.reportError("Invalid geometries have been added to the map. Please fix them and rerun the process.", fatalError = True)
+            raise QgsProcessingException("Invalid geometries detected. Check the 'Invalid Geometries' layer.")
+        
+        # in "non null geom" there are several features with length of 0 or very close to 0. Let's remove them before the intersection
+        min_length_threshold = 0.01
+
+        # filter out short geometries
+        with edit(non_null_geom_layer):
+            features_to_delete = []
+            for feature in non_null_geom_layer.getFeatures():
+                geom = feature.geometry()
+                if geom and geom.isGeosValid():
+                    length = geom.length()
+
+                    if length < min_length_threshold:
+                        features_to_delete.append(feature.id())
+
+            # delete all short features
+            if features_to_delete:
+                non_null_geom_layer.dataProvider().deleteFeatures(features_to_delete)
+                feedback.reportError(f"\nDeleted {len(features_to_delete)} short features below {min_length_threshold}.")
+
+        
+        # fix geometries from the layer
+        feedback.setProgressText("\nFixing geometries...")
+        again_fixed_layer = processing.run("native:fixgeometries", {
+            'INPUT':non_null_geom_layer,
+            'METHOD':1,
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
+        
 
         # intersection with subcatchments
         feedback.setProgressText("\nCalculating intersection with the subcatchments...")
         intersection_layer = processing.run("native:intersection", {
-            'INPUT': non_null_geom_layer,
+            'INPUT': again_fixed_layer,
             'OVERLAY': parameters[self.catchmentAreas],
             'INPUT_FIELDS':[],
-            'OVERLAY_FIELDS':['id_apr'],
+            'OVERLAY_FIELDS':[],
             'OVERLAY_FIELDS_PREFIX':'',
             'OUTPUT':'TEMPORARY_OUTPUT',
             'GRID_SIZE':None},
             context=context, feedback=feedback)["OUTPUT"]
+        #QgsProject.instance().addMapLayer(intersection_layer)
 
         # delete mistakes of river sections that are wrongly crossing the subcatchment
-        # define the threshold lenght
-        threshold_length = 0.0 # 1 cm
+        # define the threshold length
+        threshold_length = 0.0 
 
         # prepare to edit the layer
         with edit(intersection_layer):
-            # add a new field for length
-            field_names = [field.name() for field in intersection_layer.fields()]
-            if "Length" not in field_names:
-                length_field = QgsField("Length", QVariant.Double)
-                intersection_layer.dataProvider().addAttributes([length_field])
-                intersection_layer.updateFields()
-
-            # iterate over feature
             features_to_delete = []
             for feature in intersection_layer.getFeatures():
                 geom = feature.geometry()
-                if geom:
-                    # calculate the length of the feature
+                if geom and geom.isGeosValid():
                     length = geom.length()
 
-                    # update the "Length" field
-                    feature["Length"] = length
-                    intersection_layer.updateFeature(feature)
-
-                    # check if the length is below the threshold
                     if length < threshold_length:
                         features_to_delete.append(feature.id())
 
-                # delete features below the threshold length
-                if features_to_delete:
-                    intersection_layer.dataProvider().deleteFeatures(features_to_delete)
-            
-            # delete the "Length" field        
-            field_index = intersection_layer.fields().indexOf("Length")
-            intersection_layer.dataProvider().deleteAttributes([field_index])
-            intersection_layer.updateFields()
+            # delete all short features
+            if features_to_delete:
+                intersection_layer.dataProvider().deleteFeatures(features_to_delete)
+                feedback.reportError(f"\nDeleted {len(features_to_delete)} short features below {threshold_length}.")
         
-        feedback.setProgressText(f"\nRemoved {len(features_to_delete)} features shorter than {threshold_length}")
 
         # dissolve line within the subcatchment
         # feedback.setProgressText("\nDissolving river lines within the subcatchment...")
@@ -386,8 +485,28 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         #     'SEPARATE_DISJOINT':False,
         #     'OUTPUT':'TEMPORARY_OUTPUT'},
         #     context=context, feedback=feedback)["OUTPUT"]
-
+        
         dissolve_layer = intersection_layer
+        #QgsProject.instance().addMapLayer(dissolve_layer)
+        
+        with edit(dissolve_layer):
+            field_name = "id_riv"
+            fields = dissolve_layer.fields()
+
+            # check if the field already exists
+            if field_name not in [field.name() for field in fields]:
+                dissolve_layer.dataProvider().addAttributes([QgsField(field_name, QVariant.Int)])
+                dissolve_layer.updateFields()
+            else:
+                feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.")   #maybe the cause of the crashing is here
+
+            # populate the new column with unique IDs
+            unique_id_start = 1000 #or any starting value
+            for idx, feature in enumerate(dissolve_layer.getFeatures(), start = unique_id_start):
+                feature[field_name] = idx
+                dissolve_layer.updateFeature(feature)
+
+        
 
         '''start of the plugin "WaterNetwConstructor" from Jannik Schilling'''
         flip_opt = self.parameterAsInt(parameters, self.FLIP_OPTION, context)
@@ -396,11 +515,11 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         dissolve_fields = dissolve_layer.fields()
 
         # retrieving the ID column
-        idxid = dissolve_layer.fields().indexFromName("id_apr")  
+        idxid = dissolve_layer.fields().indexFromName("id_riv")  
 
         feedback.pushInfo(f"\nUsing outlet point: {outlet_point.x()}, {outlet_point.y()}")
 
-        def find_closest_river_section(outlet_point, river_network):
+        def find_closest_river_section(outlet_point, river_network): # change this one and add a spatial index as well
             """
             Function to define the closest river section to the outlet_point
             """
@@ -414,7 +533,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             for feature in river_network.getFeatures():
                 section_geom = feature.geometry()
                 distance = section_geom.distance(outlet_geometry)
-                feedback.pushInfo(f"\nAnalising section [id_apr]: {feature['id_apr']} \nDistance to the outlet point: {distance}")
+                #feedback.pushInfo(f"\nAnalising section [id_riv]: {feature['id_riv']} \nDistance to the outlet point: {distance}")
 
                 if distance < min_distance:
                     min_distance = distance
@@ -425,7 +544,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         closest_section = find_closest_river_section(outlet_point, dissolve_layer)
         if closest_section is None:
             raise QgsProcessingException("No closest river section identified")
-        feedback.pushInfo(f"\nClosest section [id_apr]: {closest_section['id_apr']}")
+        feedback.pushInfo(f"\nClosest section [id_riv]: {closest_section['id_riv']}")
 
         # define new fields for the output
         out_fields = QgsFields()
@@ -454,138 +573,185 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             column_id = str(ft.attribute(idxid))
             return [vert1, vert2, ft.id(), column_id]
 
-        def get_connected_ids(
+        def get_id_and_vertice_if_connected(
+            cd_id,
+            search_geom,
+            finished_segm,
+            current_id,
+            flip_list,
+            finished_ids
+        ):
+            """
+            :param int cd_id 
+            :param QgsGeometry (polygon or point) search_geom
+            :param dict finished_segm
+            :param int current_id
+            :param list flip_list
+            :param list finished_ids
+            :return: tuple (cd_id, connecting_point)
+            """
+            ft = dissolve_layer.getFeature(cd_id)
+            ft_data = get_features_data(ft)
+            # first vertex connecting
+            if search_geom.intersects(ft_data[0]):
+                if search_geom.intersects(ft_data[1]):
+                    raise QgsProcessingException(
+                        'Feature '+str(ft_data[-1])+' is a circle itself'
+                    )
+                else:
+                    flip_list.append(cd_id)
+                    # return the other vertex (connecting to the next feature)
+                    result_tuple = (cd_id, ft_data[1])
+            # last vertex connecting
+            elif search_geom.intersects(ft_data[1]):
+                # return the other vertex (connecting to the next feature)
+                result_tuple = (cd_id, ft_data[0])
+            else:
+                result_tuple = None
+            # check for circles
+            if result_tuple:
+                if cd_id in finished_ids:  # already visited -> cirlce
+                    circ_list.append([current_id, cd_id])
+                    # delete from connected_list if part of a circle
+                    result_tuple = None
+                else:
+                    finished_segm[cd_id] = [
+                        str(ft_data[-1]),
+                        str(finished_segm[current_id][0]),
+                        str(ft_data[-1])
+                    ]
+                    finished_ids.append(cd_id)
+            return result_tuple
+
+        def get_connected_list(
             connecting_point,
-            current_ft_id,
-            search_radius
+            current_id,
+            search_radius,
+            finished_segm,
+            flip_list,
+            finished_ids
         ):
             '''
             Searches for connected features at the connecting point, except for the current feature; also returns the search area
             :param QgsGeometry (Point) connecting_point
-            :param int current_ft_id
-            :param QgsRectangle search_area
+            :param int current_id
+            :param float search_radius
+            :param dict finished_segm
+            :param list flip_list
+            :param list finished_ids
+            :return: list
             '''
             if search_radius != 0:
-                search_area = connecting_point.buffer(search_radius, 10).boundingBox()
+                search_geom = connecting_point.buffer(search_radius, 10)
+                search_area = search_geom.boundingBox()
             else:
+                search_geom = connecting_point
                 search_area = connecting_point.boundingBox()
-            inters_list = sp_index.intersects(search_area)
-            if current_ft_id in inters_list:  # remove self
-                inters_list.remove(current_ft_id)
-            return inters_list, search_area
-
-        def prepare_visit(
-            next_ft_id,
-            downstream_id,
-            search_area,       
-            flip_list,
-            finished_segm,
-            finished_ids
-        ):
-            '''
-            prepares the required data for the next line segment or a segment which will be stored in the to do list
-            :param int next_ft_id
-            :param int downstream_id
-            :param QgsRectangle search_area
-            :param list flip_list
-            :param dict finished_segm
-            :param list finished_ids
-            :return list (next_data, next_connecting_point)
-            '''
-            next_ft = dissolve_layer.getFeature(next_ft_id)
-            next_data = get_features_data(next_ft)
-            finished_segm[next_data[2]] = [
-                        str(next_data[-1]),
-                        downstream_id,
-                        str(next_data[-1])
-                    ]
-            finished_ids.append(next_data[2])
-            if next_data[0].intersects(search_area):
-                next_connecting_point = next_data[1]
-                flip_list.append(next_ft_id)
-            else:
-                next_connecting_point = next_data[0]
-            return [next_data, next_connecting_point]
+            candidates_list = sp_index.intersects(search_area)
+            if current_id in candidates_list:  # remove self
+                candidates_list.remove(current_id)
+            connected_list = [
+                get_id_and_vertice_if_connected(
+                    cd_id,
+                    search_geom,
+                    finished_segm,
+                    current_id,
+                    flip_list,
+                    finished_ids
+                ) for cd_id in candidates_list
+            ]
+            return connected_list
 
         '''data of first segment'''
         finished_ids = []  # list to recognise already visited features
         to_do_list = []  # empty list for tributaries to visit later
-        current_data = get_features_data(closest_section)  # first_vertex, last_vertex, feature_id, (feature_name)
+        first_ft_data = get_features_data(closest_section)  # first_vertex, last_vertex, feature_id, (feature_name)
         out_marker = "Out"  # mark segment as outlet
-        start_f_id = current_data[2]
-        finished_segm[current_data[2]] = [
-                    str(current_data[-1]),
-                    out_marker,
-                    str(current_data[-1])
-                ]
-        finished_ids.append(current_data[2])
+        start_f_id = first_ft_data[2]
+        finished_segm[first_ft_data[2]] = [
+            str(first_ft_data[-1]),
+            out_marker,
+            str(first_ft_data[-1])
+        ]
+        finished_ids.append(first_ft_data[2])
         
-        '''find connecting vertex of (first) current_data, add to flip_list if conn_vert is not vert1'''
-        conn_ids_0, search_area_0 = get_connected_ids(current_data[0], current_data[2], search_radius)
-        conn_ids_1, search_area_1 = get_connected_ids(current_data[1], current_data[2], search_radius)
+        '''find connecting vertex of (first) first_ft_data, add to flip_list if conn_vert is not vert1'''
+        connected_list_0 = get_connected_list(
+            first_ft_data[0],  # vertex0
+            first_ft_data[2],  # current_id
+            search_radius,
+            finished_segm,
+            flip_list,
+            finished_ids
+        )
+        connected_list_1 = get_connected_list(
+            first_ft_data[1],
+            first_ft_data[2],
+            search_radius,
+            finished_segm,
+            flip_list,
+            finished_ids
+        )
+        # remove none
+        connected_list_0 = [f for f in connected_list_0 if f]
+        connected_list_1 = [f for f in connected_list_1 if f]
         
-        if len(conn_ids_1) > 0:  # last vertex connecting
-            if len(conn_ids_0) > 0:  # both vertices connecting
+        if len(connected_list_1) > 0:  # last vertex connecting
+            if len(connected_list_0) > 0:  # both vertices connecting
                 feedback.reportError(
                     self.tr(
                         'The selected segment with id == {0} is connecting two segments.'
-                        +' Please chose another segment in layer "{1}" or add a segment as a single outlet' # this part needs to be changed. If I select the mouth but there are other river section downstream, it raises this error.
-                    ).format(current_data[2], dissolve_layer))                                              # it needs to be fixed. Change the type of error and ensure that the user click on the mouth of the river.
+                        +' Please chose another segment in layer "{1}" or add a segment as a single outlet'
+                    ).format(first_ft_data[2], parameters[self.INPUT_LAYER]))
+                raise QgsProcessingException()
             else:
-                flip_list.append(current_data[2])  # add id to flip list
-                conn_ids = conn_ids_1
-                search_area = search_area_1
+                connected_list = connected_list_1
 
         else:  # first vertex connecting
-            conn_ids = conn_ids_0  
-            search_area = search_area_0
+            connected_list = connected_list_0  
+        current_id = start_f_id
         
         '''loop: while still connected features, add to finished_segm'''
         while True:
             if feedback.isCanceled():
                 print('finished so far: '+ str(finished_ids))
-                print('current id'+ str(current_data[2]))
+                print('current id'+ str(current_id))
                 break
 
-            next_data_lists = [
-                prepare_visit(
-                    next_ft_id,
-                    current_data[-1],
-                    search_area,
-                    flip_list,
-                    finished_segm,
-                    finished_ids
-                ) for next_ft_id in conn_ids
-            ]
-
-            if len(conn_ids) == 0:
+            if len(connected_list) == 0:
                 if len(to_do_list)==0:
-                    netw_dict[0] = finished_ids
+                    netw_dict["network"] = finished_ids
                     break
                 else:
-                    current_data, connecting_point = to_do_list[0]
+                    current_id, connecting_point = to_do_list[0]
                     to_do_list = to_do_list[1:]
-            if len(conn_ids) == 1:
-                current_data, connecting_point = next_data_lists[0]
-            if len(conn_ids) > 1:
-                current_data, connecting_point = next_data_lists[0]
-                to_do_list = to_do_list + next_data_lists[1:]
+            if len(connected_list) == 1:
+                current_id, connecting_point = connected_list[0]
+            if len(connected_list) > 1:
+                current_id, connecting_point = connected_list[0]
+                to_do_list = to_do_list + connected_list[1:]
 
-            conn_ids, search_area = get_connected_ids(connecting_point, current_data[2], search_radius)
-
-            '''check for circles'''
-            circle_closing_fts = [f_id for f_id in conn_ids if f_id in finished_ids]
-            if len(circle_closing_fts) > 0:
-                circ_list = circ_list + [[current_data[2], f_id] for f_id in circle_closing_fts]
-                conn_ids = [f_id for f_id in conn_ids if not f_id in finished_ids]
+           
+            # get list of next connected features
+            connected_list = get_connected_list(
+                connecting_point,
+                current_id,
+                search_radius,
+                finished_segm,
+                flip_list,
+                finished_ids
+            )
+            # remove none
+            connected_list = [f for f in connected_list if f]
 
         
         '''feedback for circles'''
-        if len (circ_list)>0:
+        if len(circ_list)>0:
             circ_dict = Counter(tuple(sorted(lst)) for lst in circ_list)
-            feedback.pushWarning("Warning: Circle closed at NET_ID = ")
-            for f_ids, counted in circ_dict.items():
-                if counted > 1:
+            circ_list_out = [f_ids for f_ids, counted in circ_dict.items() if counted > 1]
+            if len(circ_list_out)>0:
+                feedback.pushWarning("Warning: Circle closed at NET_ID = ")
+                for f_ids in circ_list_out:
                     feedback.pushWarning(self.tr('{0}, ').format(str(f_ids)))
 
 
