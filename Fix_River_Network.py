@@ -70,7 +70,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
     catchmentAreas = 'CatchmentAreas'
     riverNetwork = 'RiverNetwork'
-    FLIP_OPTION = 'FLIP_OPTION'
+    #FLIP_OPTION = 'FLIP_OPTION'
     OUTLET_POINT = 'OUTLET_POINT'
     SEARCH_RADIUS = 'SEARCH_BUFFER'
     OUTPUT = 'OUTPUT'
@@ -117,14 +117,14 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             )
         )
 
-        self.addParameter(
-            QgsProcessingParameterEnum(
-                self.FLIP_OPTION,
-                self.tr("Flip lines according to flow direction?"),
-                ['yes (from source to mouth)','no', 'against (from mouth to source)'],
-                defaultValue=[0]
-            )
-        )
+        # self.addParameter(
+        #     QgsProcessingParameterEnum(
+        #         self.FLIP_OPTION,
+        #         self.tr("Flip lines according to flow direction?"),
+        #         ['yes (from source to mouth)','no', 'against (from mouth to source)'],
+        #         defaultValue=[0]
+        #     )
+        # )
 
         self.addParameter(
             QgsProcessingParameterPoint(
@@ -509,7 +509,8 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         
 
         '''start of the plugin "WaterNetwConstructor" from Jannik Schilling'''
-        flip_opt = self.parameterAsInt(parameters, self.FLIP_OPTION, context)
+        #flip_opt = self.parameterAsInt(parameters, self.FLIP_OPTION, context)
+        flip_opt = 0
 
         sp_index = QgsSpatialIndex(dissolve_layer.getFeatures())
         dissolve_fields = dissolve_layer.fields()
@@ -752,7 +753,8 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             if len(circ_list_out)>0:
                 feedback.pushWarning("Warning: Circle closed at NET_ID = ")
                 for f_ids in circ_list_out:
-                    feedback.pushWarning(self.tr('{0}, ').format(str(f_ids)))
+                    net_ids = [finished_segm[f_id][0] for f_id in f_ids if f_id in finished_segm]
+                    feedback.pushWarning(self.tr('{0}, ').format(", ".join(net_ids)))
 
 
         '''sink definition'''
