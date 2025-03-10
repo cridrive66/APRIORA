@@ -249,17 +249,31 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         feedback.setProgressText(f"Number of features in vertices_catch_layer: {vertices_catch_layer.featureCount()}")
 
-        # split river network at each river vertex (SAGA required)
-        # maybe add a trouble shooting line to check if SAGA is installed and raise a proper error
-        feedback.setProgressText("\nSplitting river network at each river vertex...")
-        split_result = processing.run("sagang:splitlinesatpoints", {
-            'LINES': parameters[self.riverNetwork],
-            'SPLIT': vertices_river_layer,
-            'INTERSECT':'TEMPORARY_OUTPUT',
-            'OUTPUT': 1, # not sure about which method use
-            'EPSILON':0},
-            context=context, feedback=feedback)
-        split_river_layer = QgsVectorLayer(split_result["INTERSECT"], "split_river", "ogr")
+        line_layer = processing.run("native:geometrybyexpression", {
+            'INPUT':vertices_river_layer,
+            'OUTPUT_GEOMETRY':1,
+            'WITH_Z':False,
+            'WITH_M':False,
+            'EXPRESSION':'extend(\r\n   make_line(\r\n      $geometry,\r\n       project (\r\n          $geometry, \r\n          -0.1, \r\n          radians("angle"-5))\r\n        ),\r\n   0.0,\r\n   0\r\n)',
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
+        split_river_layer = processing.run("native:splitwithlines", {
+            'INPUT':river_layer,
+            'LINES':line_layer,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
+
+        # # split river network at each river vertex (SAGA required)
+        # # maybe add a trouble shooting line to check if SAGA is installed and raise a proper error
+        # feedback.setProgressText("\nSplitting river network at each river vertex...")
+        # split_result = processing.run("sagang:splitlinesatpoints", {
+        #     'LINES': parameters[self.riverNetwork],
+        #     'SPLIT': vertices_river_layer,
+        #     'INTERSECT':'TEMPORARY_OUTPUT',
+        #     'OUTPUT': 1, # not sure about which method use
+        #     'EPSILON':0},
+        #     context=context, feedback=feedback)
+        # split_river_layer = QgsVectorLayer(split_result["INTERSECT"], "split_river", "ogr")
 
         feedback.setProgressText(f"Number of features in split_river_layer: {split_river_layer.featureCount()}")
 

@@ -46,12 +46,22 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsField,
                        QgsFields,
                        QgsFeatureSink,
+                       QgsProject,
                        QgsProcessingAlgorithm,
+                       QgsProcessingParameterDefinition,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
                        QgsProcessingParameterField,
+                       QgsProcessingParameterNumber,
                        QgsField,
-                       QgsVectorLayer)
+                       QgsVectorLayer,
+                       edit)
+
+# libraries for hierarchical clustering
+from scipy.stats import spearmanr
+from scipy.cluster import hierarchy
+from scipy.spatial.distance import squareform
+from collections import defaultdict
 
 class CalculateFlow(QgsProcessingAlgorithm):
     """
@@ -76,6 +86,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
     gaugedSubcatchments = 'GaugedSubcatchments'
     ungaugedSubcatchments = 'UngaugedSubcatchments'
     riverNetwork = "RiverNetwork"
+    threshold_user = "threshold"
     # INPUT_FIELD_ID = 'INPUT_FIELD_ID'
     # INPUT_FIELD_NEXT = 'INPUT_FIELD_NEXT'
     # INPUT_FIELD_PREV = 'INPUT_FIELD_PREV'
@@ -120,6 +131,20 @@ class CalculateFlow(QgsProcessingAlgorithm):
             )
         )
         
+        param_threshold = QgsProcessingParameterNumber(
+            self.threshold_user,
+            self.tr('Collinearity Threshold'),
+            type = QgsProcessingParameterNumber.Double,
+            defaultValue = 0.5,
+            minValue = 0.0,
+            maxValue = 1.0,
+            optional = False
+        )
+
+        #set it as advanced parameter
+        param_threshold.setFlags(param_threshold.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(param_threshold)
+
         # self.addParameter(
         #     QgsProcessingParameterField(
         #         self.INPUT_FIELD_ID,
@@ -194,7 +219,9 @@ class CalculateFlow(QgsProcessingAlgorithm):
         gaug_stat = self.parameterAsSource(parameters, self.gaugedSubcatchments, context)
         warnow_subcatch_gf = self.parameterAsSource(parameters, self.ungaugedSubcatchments, context)
         river_network = self.parameterAsSource(parameters, self.riverNetwork, context)
-
+        threshold_user = self.parameterAsDouble(parameters, self.threshold_user, context)
+        river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        
         ##### FIRST PART OF THE MODEL
         # Selecting input (predictors) and output
         # In this part of the code, we select the number of predictors that will be used in the model and drop
@@ -217,20 +244,69 @@ class CalculateFlow(QgsProcessingAlgorithm):
         gaug_stat_df = pd.DataFrame(data, columns = field_names)
 
     
-        filterCol = ['H_median', 'H_stdev', 'H_min', 'AREA_SC', 'PERI_SC', 'PERI_SC', 'SHAPE_SC', 'S_median', 'S_stdev', 'RN_sum', 'WA_sum', 'FA_sum', 'SA_sum', 'RND', 'PWA', 'FS', 'SS', 'PreYearly_mean', 'PreAugust_mean']
+        filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PreYearly_', 'PreAugust_'] #change to PrecYearly_
         # select number of features (predictors) and dependent variable
         x = gaug_stat_df.filter(items=filterCol)
+        feedback.setProgressText(f"\nDatabase columns: {x.columns} ")
         
         y = gaug_stat_df["Mean Flow"]
 
+        """
+        Remove multicollinearity between variables by performing hierarchical clustering on the Spearman rank-order correlations, picking a threshold,
+        and keeping a single feature from each cluster.
+        """
+        def select_non_collinear_features(df, threshold):
+            # compute Spearman correlation matrix
+            corr = spearmanr(df).correlation
+            #corr = (corr + corr.T)/2    # ensure simmetry
+            corr = np.maximum(corr, corr.T) # ensure simmetry
+            np.fill_diagonal(corr,1)    # fill diagonal with ones
+
+            # convert correlation matrix to a distance matrix
+            distance_matrix = 1 - np.abs(corr)
+
+            # force perfect symmetry again
+            distance_matrix = np.maximum(distance_matrix, distance_matrix.T)
+
+            # replace NaNs with a large value (e.g. 1.0, meaning maximum distance)
+            distance_matrix = np.nan_to_num(distance_matrix, nan = 1.0)
+
+            feedback.setProgressText(f"\nDistance Matrix: {distance_matrix}")
+           
+            # perform hierarchical clustering
+            dist_linkage = hierarchy.ward(squareform(distance_matrix)) # ward clustering is grouping a lot of features together in the case of a small catchment
+            #dist_linkage = hierarchy.linkage(squareform(distance_matrix), method = "single")
+            feedback.setProgressText(f"\nLinkage Matrix: {dist_linkage}")
+
+            # cluster features based on threshold
+            cluster_ids = hierarchy.fcluster(dist_linkage, threshold, criterion = "distance")
+            cluster_id_to_feature_ids = defaultdict(list)
+            feedback.setProgressText(f"\nCluster IDs: {cluster_ids}")
+
+            for idx, cluster_id in enumerate(cluster_ids):
+                cluster_id_to_feature_ids[cluster_id].append(idx)
+
+            # select one representative feature from each cluster
+            # the number inside v[x] means which feature is going to be selected
+            selected_features = [v[0] for v in cluster_id_to_feature_ids.values()]
+            selected_features_names = df.columns[selected_features]
+
+            # return new dataframe with selected features
+            return df[selected_features_names]
+        
+        # remove multicollinearity features
+        x_nc = select_non_collinear_features(x, threshold = threshold_user)
+
+        feedback.setProgressText(f"\nMulticollinearity features removed, this is the new database: {x_nc.columns} ")
+        
+        
         ### Random Forest Regressor
         ##### Split the data for calibration (train) and validation (test)
 
         # prepare the data: divide into train and test set
         # scale the data
         scaler = StandardScaler()
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
-        print(x_train)
+        x_train, x_test, y_train, y_test = train_test_split(x_nc, y, test_size=0.2, random_state=42)
         x_train = scaler.fit_transform(x_train) 
         x_test = scaler.transform(x_test)
 
@@ -250,8 +326,12 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # performance of the trained model
         y_train_pred = model.predict(x_train)
-        #print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
-        #print("Calibration R-squared:", r2_score(y_train, y_train_pred))
+        mse = mean_squared_error(y_train, y_train_pred, squared=False)
+        r2 = r2_score(y_train, y_train_pred)
+        feedback.setProgressText(f"\nCalibration RMSE: {mse}")
+        feedback.setProgressText(f"Calibration R-squared: {r2}")
+        # print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
+        # print("Calibration R-squared:", r2_score(y_train, y_train_pred))
 
         ##### Validation
         # Now, we work with the test dataset (x_test) to validate the model and make estimation on new different data. 
@@ -259,8 +339,12 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # prediction and evaluation
         y_pred = model.predict(x_test)
-        #print("Validation RMSE:", mean_squared_error(y_test, y_pred, squared=False))
-        #print("Validation R-squared:", r2_score(y_test, y_pred))
+        mse = mean_squared_error(y_test, y_pred, squared=False)
+        r2 = r2_score(y_test, y_pred)
+        feedback.setProgressText(f"\nValidation RMSE: {mse}")
+        feedback.setProgressText(f"Validation R-squared: {r2}\n")
+        # print("Validation RMSE:", mean_squared_error(y_test, y_pred, squared=False))
+        # print("Validation R-squared:", r2_score(y_test, y_pred))
 
 
         ##### SECOND PART OF THE MODEL
@@ -284,7 +368,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         warnow_subcatch_gf_df = pd.DataFrame(data, columns = field_names)
 
         # select number of features (predictors) and dependent variable
-        x_catch = warnow_subcatch_gf_df.filter(items=filterCol) #filter geofactors
+        x_catch = warnow_subcatch_gf_df[x_nc.columns] #filter geofactors
 
         # scale the data
         x_catch = scaler.transform(x_catch)
@@ -300,7 +384,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # the flow estimation + the geometry of the ungauged subcatchment.
 
         # create new dataframe
-        output_df = pd.DataFrame({"NET_ID": warnow_subcatch_gf_df["NET_ID"],"Mean Flow": y_catch})
+        output_df = pd.DataFrame({"id_catch": warnow_subcatch_gf_df["id_catch"].astype(int),"Mean Flow": y_catch})
 
         # create new shapefile     
         crs = warnow_subcatch_gf.sourceCrs()
@@ -313,7 +397,11 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # creation of my fields
         for head in output_df.columns:
             # determine the column data type
-            if pd.api.types.is_numeric_dtype(output_df[head]):
+            if head == "id_catch":
+                field_type = QVariant.Int
+            elif pd.api.types.is_integer_dtype(output_df[head]):
+                field_type = QVariant.Int
+            elif pd.api.types.is_numeric_dtype(output_df[head]):
                 field_type = QVariant.Double
             elif pd.api.types.is_string_dtype(output_df[head]):
                 field_type = QVariant.String
@@ -329,54 +417,105 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # addition of features
         for row in output_df.itertuples():
             f = QgsFeature()
-            f.setAttributes([row[1], row[2]])  # why only [1] and [2] and not row[1:]?
+            f.setAttributes([int(row[1]), row[2]])  # why only [1] and [2] and not row[1:]?
             final_output.addFeature(f)
             
         # saving changes
         final_output.commitChanges()
 
 
-        # create a new layer with Mean Flow and gbk_lawa + geometry from warnow_subcatch        
-        (sink_catch, dest_id_catch) = self.parameterAsSink(parameters, self.OUTPUT_catch,
-        context, final_output.fields(), warnow_subcatch_gf.wkbType(), warnow_subcatch_gf.sourceCrs())
+        # # create a new layer with Mean Flow and gbk_lawa + geometry from warnow_subcatch        
+        # (sink_catch, dest_id_catch) = self.parameterAsSink(parameters, self.OUTPUT_catch,
+        # context, final_output.fields(), warnow_subcatch_gf.wkbType(), warnow_subcatch_gf.sourceCrs())
 
-        if sink_catch is None:
-            raise QgsProcessingException(self.tr("Failed to create subcatchment sink"))
+        # if sink_catch is None:
+        #     raise QgsProcessingException(self.tr("Failed to create subcatchment sink"))
 
-        # iterate over each subcatchment
-        for feature, subcatch_feature in zip(final_output.getFeatures(), warnow_subcatch_gf.getFeatures()):
+        # # iterate over each subcatchment
+        # for feature, subcatch_feature in zip(final_output.getFeatures(), warnow_subcatch_gf.getFeatures()):
         
-            # extract geometry from the corresponding subcatchment feature
-            subcatch_geom = subcatch_feature.geometry()
+        #     # extract geometry from the corresponding subcatchment feature
+        #     subcatch_geom = subcatch_feature.geometry()
             
-            # create a new feature with combined attributes and geometry
-            new_feature = QgsFeature(final_output.fields())
-            new_feature.setGeometry(subcatch_geom)
+        #     # create a new feature with combined attributes and geometry
+        #     new_feature = QgsFeature(final_output.fields())
+        #     new_feature.setGeometry(subcatch_geom)
 
-            # copy attributes from the final output
-            new_feature.setAttributes(feature.attributes())
+        #     # copy attributes from the final output
+        #     new_feature.setAttributes(feature.attributes())
             
-            # add the new feature to the contributing layer
-            sink_catch.addFeature(new_feature)
+        #     # add the new feature to the contributing layer
+        #     sink_catch.addFeature(new_feature)
+
+
+        """
+        The river network file can present multiple river sections within a subcatchment. 
+        Every river section needs to be associated with one subcatchment only and a subcatchment needs to be associated with one river section only.
+        """
+        # create a new layer, copy of the river network
+        river_copy = river_layer.clone()
+        
+        # adding new fields in the river file
+        # add a troubleshooting line to check if these fields already exist or not
+        new_fields = [
+            QgsField("CATCH_ID", QVariant.String),
+            QgsField("CATCH_TO", QVariant.String),
+            QgsField("CATCH_FROM", QVariant.String)
+        ]
+
+        with edit(river_copy):
+            for field in new_fields:
+                if river_copy.fields().indexFromName(field.name()) == -1:
+                    river_copy.addAttribute(field)
+            river_copy.updateFields()
+
+        # create a mapping of id_riv to id_catch
+        river_to_catch = {feature["id_riv"]: feature["id_catch"] for feature in river_copy.getFeatures()}
+
+        # update the river layer
+        with edit(river_copy):
+            for river_feature in river_copy.getFeatures():
+                fid = river_feature.id()
+                net_id = river_feature["NET_ID"]
+                net_to = river_feature["NET_TO"]
+                id_catch = river_feature["id_catch"]
+
+                # handle case where NET_TO is "Out"
+                if net_to == "Out":
+                    catch_to = "Out"
+                else:
+                    catch_to = river_to_catch.get(int(net_to), "Unknown") if net_to else "Unknown" #lookup id_catch of NET_TO
+
+                # assign values
+                catch_id = id_catch
+                catch_from = id_catch
+                
+                # update attributes
+                river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_ID"), catch_id)
+                river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_TO"), catch_to)
+                river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_FROM"), catch_from)
+        
+        dissolve_output = processing.run("native:dissolve", {
+            'INPUT': river_copy,
+            'FIELD':['CATCH_ID'],
+            'SEPARATE_DISJOINT':False,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
 
         # the output of this code is a polygon file containing the code of every ungauged subcatchment (gbk_lawa or another code),
         # the estimated flow for each ungauged subcatchment (Mean Flow) and the geometry of the relative ungauged subcatchment.
         
         # process to transfer the flow from a subcatchment level to a river level
-        
-        join_result = processing.run("native:joinattributestable", 
-        {'INPUT':parameters[self.riverNetwork],
-        'FIELD':'NET_ID',
+        join_output = processing.run("native:joinattributestable", 
+        {'INPUT':dissolve_output,
+        'FIELD':'id_catch',
         'INPUT_2':final_output,
-        'FIELD_2':'NET_ID',
+        'FIELD_2':'id_catch',
         'FIELDS_TO_COPY':['Mean Flow'],
         'METHOD':1,
         'DISCARD_NONMATCHING':False,
         'PREFIX':'',
         'OUTPUT':'TEMPORARY_OUTPUT'},
-        context=context, feedback=feedback)
-
-        join_output = join_result["OUTPUT"]
+        context=context, feedback=feedback)["OUTPUT"]
 
         # check if join output contains features
         if join_output.featureCount() == 0:
@@ -384,16 +523,14 @@ class CalculateFlow(QgsProcessingAlgorithm):
         else:
             feedback.pushInfo("Join completed successfully.")
 
-
         '''loading the network'''
         #waternet = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         waternet = join_output
-        wnet_fields = waternet.fields()
 
         '''names of fields for id,next segment, previous segment'''
-        id_field = "NET_ID"
-        next_field = "NET_TO"
-        prev_field = "NET_FROM"
+        id_field = "CATCH_ID"
+        next_field = "CATCH_TO"
+        prev_field = "CATCH_FROM"
         calc_field = "Mean Flow"
         
         '''field index for id,next segment, previous segment'''
@@ -477,12 +614,39 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         '''add new field'''
         new_field_name = 'calc_'+calc_field
+        waternet.dataProvider().addAttributes([QgsField(new_field_name, QVariant.Double)])
+        waternet.updateFields()
+        features = waternet.getFeatures()
+
+        # little debugging
+        field_names = [field.name() for field in waternet.fields()]
+        feedback.setProgressText(f"Field names in waternet: {field_names}")
+        waternet.startEditing()
+        # get the index of the new field in waternet
+        field_idx = waternet.fields().indexOf(new_field_name)
+        if field_idx == -1:
+            feedback.pushError(f"Error: field {new_field_name} not found in waternet")
+
+        for i, feature in enumerate(features):
+            # Stop the algorithm if cancel button has been clicked
+            if feedback.isCanceled():
+                break
+            # set the value for the new field
+            value_to_set = float(DataArr[i, 3])
+            #feedback.setProgressText(f"Setting feature {feature.id()} field {new_field_name} to {value_to_set}")
+
+            # set the new field
+            feature.setAttribute(field_idx, value_to_set)
+            waternet.updateFeature(feature)
+        waternet.commitChanges()
+
+
         #define new fields
         out_fields = QgsFields()
+        wnet_fields = waternet.fields()
         #append fields
         for field in wnet_fields:
             out_fields.append(QgsField(field.name(), field.type()))
-        out_fields.append(QgsField(new_field_name, QVariant.Double))
         
         # save the layer
         (sink_river, dest_id_river) = self.parameterAsSink(parameters, self.OUTPUT_river, context,
@@ -492,19 +656,57 @@ class CalculateFlow(QgsProcessingAlgorithm):
             raise QgsProcessingException(self.tr("Failed to create river sink"))
         
         # write features from out_fields to the sink
-        features = waternet.getFeatures()
-        for (i,feature) in enumerate(features):
+        
+        for feature in waternet.getFeatures():
             # Stop the algorithm if cancel button has been clicked
             if feedback.isCanceled():
                 break
             # Add a feature in the sink
-            outFt = QgsFeature()
-            outFt.setGeometry(feature.geometry())
-            outFt.setAttributes(feature.attributes())
-            outFt.setAttributes(feature.attributes()+[DataArr[i,3]])
-            sink_river.addFeature(outFt, QgsFeatureSink.FastInsert)
+            # outFt = QgsFeature()
+            # outFt.setGeometry(feature.geometry())
+            # outFt.setAttributes(feature.attributes())
+            # outFt.setAttributes(feature.attributes()+[DataArr[i,3]])
+            sink_river.addFeature(feature, QgsFeatureSink.FastInsert)
         
         del nextFtsCalc, FlowPath, DataArr
+        
+        # add "calc_Mean Flow" to the subcatchment file
+        final_output_acc = processing.run("native:joinattributestable", {
+            'INPUT': final_output,
+            'FIELD':'id_catch',
+            'INPUT_2':waternet,
+            'FIELD_2':'id_catch',
+            'FIELDS_TO_COPY':[new_field_name],
+            'METHOD':1,
+            'DISCARD_NONMATCHING':False,
+            'PREFIX':'',
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
+        # create a new layer with Mean Flow and gbk_lawa + geometry from warnow_subcatch        
+        (sink_catch, dest_id_catch) = self.parameterAsSink(parameters, self.OUTPUT_catch,
+        context, final_output_acc.fields(), warnow_subcatch_gf.wkbType(), warnow_subcatch_gf.sourceCrs())
+
+        if sink_catch is None:
+            raise QgsProcessingException(self.tr("Failed to create subcatchment sink"))
+
+        # iterate over each subcatchment
+        for feature, subcatch_feature in zip(final_output_acc.getFeatures(), warnow_subcatch_gf.getFeatures()):
+        
+            # extract geometry from the corresponding subcatchment feature
+            subcatch_geom = subcatch_feature.geometry()
+            
+            # create a new feature with combined attributes and geometry
+            new_feature = QgsFeature(final_output_acc.fields())
+            new_feature.setGeometry(subcatch_geom)
+
+            # copy attributes from the final output
+            new_feature.setAttributes(feature.attributes())
+            
+            # add the new feature to the contributing layer
+            sink_catch.addFeature(new_feature)
+
+       
+        
         
         # return the result
         return {
