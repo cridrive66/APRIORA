@@ -296,7 +296,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         feedback.setProgressText("\nAlligning river vertices...")
         
         # threshold distand (adjust as needed)
-        threshold = 0.01 # 1cm
+        threshold = 1 # 1cm = 0.01
         
         # build a spatial index
         spatial_index = QgsSpatialIndex()
@@ -431,7 +431,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             # delete all short features
             if features_to_delete:
                 non_null_geom_layer.dataProvider().deleteFeatures(features_to_delete)
-                feedback.reportError(f"\nDeleted {len(features_to_delete)} short features below {min_length_threshold}.")
+                feedback.setProgressText(f"\nDeleted {len(features_to_delete)} short features below {min_length_threshold}.")
 
         
         # fix geometries from the layer

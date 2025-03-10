@@ -120,6 +120,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         '''loading the subcatchments'''
         feedback.setProgressText(self.tr("Loading subcatchments..\n "))
         subcatch = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
+        subcatch_source = self.parameterAsSource(parameters, self.catchmentAreas, context)
 
         '''loading the network'''
         feedback.setProgressText(self.tr("Loading network..\n "))
@@ -147,10 +148,10 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         # to the subcatchments. This is useful for later when we are extracting the subcatchments containing specific IDs
         subcat_layer_with_duplicate = processing.run("native:joinattributesbylocation", {
             'INPUT': subcatch,
-            'PREDICATE':[0,1],
+            'PREDICATE':[0],
             'JOIN': waternet,
             'JOIN_FIELDS':['NET_ID'],   # instead of "NET_ID", consider using "id_apr"
-            'METHOD':0,
+            'METHOD':2,
             'DISCARD_NONMATCHING':True,
             'PREFIX':'',
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
@@ -189,7 +190,6 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             'PREFIX':'',
             'OUTPUT':'TEMPORARY_OUTPUT'})
         gaug_id = gaug_result["OUTPUT"]
-        gaugFt = gaug_id.getFeatures()
 
         feedback.pushInfo(f"\nNumber of features in the gaug_id: {gaug_id.featureCount()}")
 
@@ -241,21 +241,21 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 return(rows_connect)
 
 
-        def find_closest_river_section(outlet_point, river_network):
+        def find_closest_river_section(outlet_point, spatial_index, river_map, feedback):
             '''
             Finds the closest river section to the gauging station
             '''
+            # convert the outlet_point to QgsGeometry
+            outlet_geometry = QgsGeometry.fromPointXY(outlet_point)
+            nearest_ids = spatial_index.nearestNeighbor(outlet_geometry, 5) #get the 5 nearest features
             closest_section = None
             min_distance = float("inf")
 
-            # convert the outlet_point to QgsGeometry
-            outlet_geometry = QgsGeometry.fromPointXY(outlet_point)
-
-            # iterate through river network sections and find the closest
-            for feature in river_network.getFeatures():
+            # iterate through the closest matches and find the closest section
+            for fid in nearest_ids:
+                feature = river_map[fid]
                 section_geom = feature.geometry()
                 distance = section_geom.distance(outlet_geometry)
-                feedback.pushInfo(f"\nAnalyzing section [NET_ID]: {feature['NET_ID']} \nDistance to the outlet point: {distance}")
 
                 if distance < min_distance:
                     min_distance = distance
@@ -269,15 +269,39 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             return closest_section
 
 
+        # build a spatial index
+        spatial_index = QgsSpatialIndex()
+        river_map = {}
+
+        for feature in waternet.getFeatures():
+            fid = feature.id()
+            river_map[fid] = feature
+            spatial_index.insertFeature(feature)
+
+
         '''Find upstream network for each gauging station'''
         feedback.setProgressText("Processing gauging stations...")
+        river_crs = waternet.crs()
+        outlet_crs = gaug_id.crs()
+        
+        if outlet_crs != river_crs:
+            feedback.pushInfo(f"CRS mismatch detected. Reprojecting gauging stations to the river network CRS: {river_crs}.")
+            gaug_reproject = processing.run("native:reprojectlayer", {
+                'INPUT':gaug_id,
+                'TARGET_CRS':river_crs,
+                'CONVERT_CURVED_GEOMETRIES':False,
+                'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        else:
+            gaug_reproject = gaug_id
+        
+        gaugFt = gaug_reproject.getFeatures()
         
         for station in gaugFt:      # add an error in case gaugFt is empty
             # little debugging
             feedback.pushInfo(f"\nProcessing gauging station ID: {station.id()}")
 
             outlet_point = station.geometry().asPoint()
-            closest_feature = find_closest_river_section(outlet_point, waternet)
+            closest_feature = find_closest_river_section(outlet_point, spatial_index, river_map, feedback)
 
             # raise an error in case closest feature is none?
 
@@ -376,6 +400,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 'OUTPUT':'TEMPORARY_OUTPUT'})
             upstream_catch = upstream_catch_result["OUTPUT"]
 
+            feedback.pushInfo("\nupstream_catch_result = done")
+
             # # add the extracted layer to the map
             # QgsProject.instance().addMapLayer(upstream_catch)
             # feedback.pushInfo(f"Added extracted subcatchments for station ID: {station.id()} to the map.")
@@ -388,7 +414,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 'OUTPUT':'TEMPORARY_OUTPUT'
                 })
             dissolve_layer = dissolve_result["OUTPUT"]
-
+            feedback.pushInfo("\ndissolve_layer = done")
             # I want the output to have the geometry of dissolve_layer and the feature corresponding to the subcatchment with the gauging ID
             net_id_gaug = station["NET_ID"]
 
