@@ -31,6 +31,7 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 __revision__ = '$Format:%H$'
 
 from qgis.PyQt.QtCore import QCoreApplication
+from PyQt5.QtCore import QVariant
 from qgis.core import * #change
 import processing
 import numpy as np
@@ -41,7 +42,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
     gaugingStations = "GaugingStations"
     OUTPUT_OPTION = 'OUTPUT_OPTION'
     OUTPUT = "OUTPUT"
-    OUTPUT_coded = "OUTPUT_coded"
+    #OUTPUT_coded = "OUTPUT_coded"
 
     def shortHelpString(self):
         return self.tr(""" This tool calculates the contributing subcatchments of each gauging station. This output can be visualized as a single shapefile by choosing the option "aggregated output" or as a single shapefile for each gauging station with the option "add also contributing subcatchments". 
@@ -96,13 +97,13 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         )
     
         # add a second output that is the subcatchments with the "NET_ID" code
-        self.addParameter(
-            QgsProcessingParameterFeatureSink(
-                self.OUTPUT_coded,
-                self.tr('Coded subcatchments'),
-                QgsProcessing.TypeVectorPolygon
-            )
-        )
+        # self.addParameter(
+        #     QgsProcessingParameterFeatureSink(
+        #         self.OUTPUT_coded,
+        #         self.tr('Coded subcatchments'),
+        #         QgsProcessing.TypeVectorPolygon
+        #     )
+        # )
 
 
     def processAlgorithm(self, parameters, context, feedback):
@@ -121,19 +122,88 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         feedback.setProgressText(self.tr("Loading subcatchments..\n "))
         subcatch = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
         subcatch_source = self.parameterAsSource(parameters, self.catchmentAreas, context)
+        river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
 
+        """
+        The river network file can present multiple river sections within a subcatchment. 
+        Every river section needs to be associated with one subcatchment only and a subcatchment needs to be associated with one river section only.
+        """
+        # create a new layer, copy of the river network
+        river_copy = river_layer.clone()
+        
+        # adding new fields in the river file
+        # add a troubleshooting line to check if these fields already exist or not
+        new_fields = [
+            QgsField("CATCH_ID", QVariant.String),
+            QgsField("CATCH_TO", QVariant.String),
+            QgsField("CATCH_FROM", QVariant.String)
+        ]
+
+        with edit(river_copy):
+            for field in new_fields:
+                if river_copy.fields().indexFromName(field.name()) == -1:
+                    river_copy.addAttribute(field)
+            river_copy.updateFields()
+
+        # create a mapping of id_riv to id_catch
+        river_to_catch = {feature["id_riv"]: feature["id_catch"] for feature in river_copy.getFeatures()}
+
+        # create a mapping of CATCH_ID to last CATCH_TO before transition
+        catch_to_mapping = {}
+
+        # update the river layer
+        with edit(river_copy):
+            for river_feature in river_copy.getFeatures():
+                fid = river_feature.id()
+                net_id = river_feature["NET_ID"]
+                net_to = river_feature["NET_TO"]
+                id_catch = river_feature["id_catch"]
+
+                # handle case where NET_TO is "Out"
+                if net_to == "Out":
+                    catch_to = "Out"
+                else:
+                    catch_to = river_to_catch.get(int(net_to), "Unknown") if net_to else "Unknown" #lookup id_catch of NET_TO
+
+                # store the last valid CATCH_TO before transition
+                if id_catch != catch_to and catch_to != "Out":
+                    catch_to_mapping[id_catch] = catch_to
+
+                # assign values
+                catch_id = id_catch
+                catch_from = id_catch
+                
+                # update attributes
+                river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_ID"), catch_id)
+                river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_TO"), catch_to)
+                river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_FROM"), catch_from)
+        
+        dissolve_output = processing.run("native:dissolve", {
+            'INPUT': river_copy,
+            'FIELD':['CATCH_ID'],
+            'SEPARATE_DISJOINT':False,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        # restore the correct CATCH_TO values after dissolving
+        with edit(dissolve_output):
+            for feature in dissolve_output.getFeatures():
+                catch_id = feature["CATCH_ID"]
+                feature.setAttribute("CATCH_TO", catch_to_mapping.get(int(catch_id), "Out"))
+                dissolve_output.updateFeature(feature)
+        
+        
         '''loading the network'''
         feedback.setProgressText(self.tr("Loading network..\n "))
-        waternet = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        waternet = dissolve_output
         waterFt = waternet.getFeatures()
 
         '''loading the gauging stations'''
         gaug_stat = self.parameterAsVectorLayer(parameters, self.gaugingStations, context)
 
         '''names of fields for id,next segment, previous segment'''
-        id_field = "NET_ID"
-        next_field = "NET_FROM"
-        prev_field = "NET_TO"
+        id_field = "CATCH_ID"
+        next_field = "CATCH_FROM"
+        prev_field = "CATCH_TO"
         
         '''field index for id,next segment, previous segment'''
         idxId = waternet.fields().indexFromName(id_field)
@@ -141,7 +211,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         idxNext = waternet.fields().indexFromName(prev_field)
 
         if idxId == -1 or idxPrev == -1 or idxNext == -1:
-            raise QgsProcessingException("Required fields (NET_ID, NET_FROM, NET_TO) not found in river network.")
+            raise QgsProcessingException("Required fields (CATCH_ID, CATCH_FROM, CATCH_TO) not found in river network.")
 
     
         # let's join the subcatchment and the river network so we transfer the IDs from the river network
@@ -150,7 +220,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             'INPUT': subcatch,
             'PREDICATE':[0],
             'JOIN': waternet,
-            'JOIN_FIELDS':['NET_ID'],   # instead of "NET_ID", consider using "id_apr"
+            'JOIN_FIELDS':['CATCH_ID'],   # instead of "NET_ID", consider using a different id {changed to CATCH_ID}
             'METHOD':2,
             'DISCARD_NONMATCHING':True,
             'PREFIX':'',
@@ -165,18 +235,18 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         feedback.pushInfo(f"\nNumber of features in the subcat_layer: {subcat_layer.featureCount()}")
         # QgsProject.instance().addMapLayer(subcat_layer)
 
-        # initialize the feature sink for coded subcatchments
-        (sink_coded, dest_id_coded) = self.parameterAsSink(
-            parameters,
-            self.OUTPUT_coded,
-            context,
-            subcat_layer.fields(),
-            subcat_layer.wkbType(),
-            subcat_layer.sourceCrs()
-        )
+        # # initialize the feature sink for coded subcatchments
+        # (sink_coded, dest_id_coded) = self.parameterAsSink(
+        #     parameters,
+        #     self.OUTPUT_coded,
+        #     context,
+        #     subcat_layer.fields(),
+        #     subcat_layer.wkbType(),
+        #     subcat_layer.sourceCrs()
+        # )
 
-        for feature in subcat_layer.getFeatures():
-            sink_coded.addFeature(feature)
+        # for feature in subcat_layer.getFeatures():
+        #     sink_coded.addFeature(feature)
             
 
         # we do the same with the gauging stations. So we have the same IDs to identify river network, gauging stations and subcatchments
@@ -184,7 +254,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             'INPUT': gaug_stat,
             'PREDICATE':[0],
             'JOIN': subcat_layer,
-            'JOIN_FIELDS':['NET_ID'],
+            'JOIN_FIELDS':['CATCH_ID'],
             'METHOD':0,
             'DISCARD_NONMATCHING':True,
             'PREFIX':'',
@@ -262,7 +332,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                     closest_section = feature
 
             if closest_section:
-                feedback.pushInfo(f"\nClosest section found: [NET_ID]: {closest_section["NET_ID"]} \n Distance: {min_distance}")
+                feedback.pushInfo(f"\nClosest section found: [CATCH_ID]: {closest_section["CATCH_ID"]} \n Distance: {min_distance}")
             else:
                 feedback.pushInfo("\nNo closest section found.")
 
@@ -380,18 +450,18 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             # convert net_route (feature IDs) to a set for a faster loop
             net_route_set = set(net_route)
 
-            # extract corresponding NET_ID values
+            # extract corresponding CATCH_ID values
             net_id_values = []
             for feature in waternet.getFeatures():
                 if feature.id() in net_route_set:
-                    net_id_values.append(feature["NET_ID"])
+                    net_id_values.append(feature["CATCH_ID"])
 
             # little debugging
-            feedback.pushInfo(f"Extracted NET_ID values: {net_id_values}")
+            feedback.pushInfo(f"Extracted CATCH_ID values: {net_id_values}")
             
             # construct the expression to filter the subcatchment based on the IDs stored in net_id_values
             net_id_str = ", ".join(map(str, net_id_values)) # convert IDs to a comma-separeted string
-            expression = f'"NET_ID" IN ({net_id_str})'
+            expression = f'"CATCH_ID" IN ({net_id_str})'
 
             # extract upstream subcatchments
             upstream_catch_result = processing.run("native:extractbyexpression", {
@@ -416,17 +486,17 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             dissolve_layer = dissolve_result["OUTPUT"]
             feedback.pushInfo("\ndissolve_layer = done")
             # I want the output to have the geometry of dissolve_layer and the feature corresponding to the subcatchment with the gauging ID
-            net_id_gaug = station["NET_ID"]
+            net_id_gaug = station["CATCH_ID"]
 
-            # find the subcatchment with the same NET_ID
+            # find the subcatchment with the same CATCH_ID
             matching_attributes = None
             for feature in join_layer.getFeatures():
-                if feature["NET_ID"] == net_id_gaug:
+                if feature["CATCH_ID"] == net_id_gaug:
                     matching_attributes = feature.attributes()
                     break
 
             if not matching_attributes:
-                feedback.pushInfo(f"\nWarning: no subcatchment found with NET_ID {net_id_gaug}. Skipping.")
+                feedback.pushInfo(f"\nWarning: no subcatchment found with CATCH_ID {net_id_gaug}. Skipping.")
                 continue
             
             # store the result in the output
@@ -446,8 +516,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             if out_opt == 1:
                 # dynamic output
                 new_layer = QgsVectorLayer(
-                    f"Polygon?crs={gaug_stat.crs().toWkt()}",
-                    f"Subcatchment_station_{station["NET_ID"]}",
+                    f"Polygon?crs={join_layer.crs().toWkt()}",
+                    f"Subcatchment_station_{station["CATCH_ID"]}",
                     "memory"
                 )
                 new_layer_data_provider = new_layer.dataProvider()
@@ -462,7 +532,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 new_layer.updateExtents()
 
                 # save the layer to a temporary file
-                temp_file_path = QgsProcessingUtils.generateTempFilename(f"Subcatchment_station_{station["NET_ID"]}.shp")
+                temp_file_path = QgsProcessingUtils.generateTempFilename(f"Subcatchment_station_{station["CATCH_ID"]}.shp")
                 QgsVectorFileWriter.writeAsVectorFormat(
                     new_layer, temp_file_path, "UTF-8", new_layer.crs(), "ESRI Shapefile"
                 )
@@ -471,7 +541,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 context.addLayerToLoadOnCompletion(
                     temp_file_path,
                     QgsProcessingContext.LayerDetails(
-                        name = f"Subcatchment_station_{station['NET_ID']}",
+                        name = f"Subcatchment_station_{station['CATCH_ID']}",
                         project = context.project()
                     )
                 )
@@ -480,7 +550,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
          
         return {
             self.OUTPUT: dest_id,
-            self.OUTPUT_coded: dest_id_coded
+            #self.OUTPUT_coded: dest_id_coded
             }
      
 

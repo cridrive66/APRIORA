@@ -62,7 +62,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
 
     OUTPUTungauged = 'OUTPUTungauged'
     OUTPUTgauged = 'OUTPUTgauged'
-    codedSubcatch = 'codedSubcatch'
+    ungaugedSubcatch = 'ungaugedSubcatch'
     gaugedSubcatch = 'gaugedSubcatch'
     DGM = 'DGM'
     chosenGeofactors = 'ChosenGeofactors'
@@ -93,8 +93,8 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         """
         self.addParameter(
             QgsProcessingParameterFeatureSource(
-                self.codedSubcatch,
-                self.tr('Coded subcatchments'),
+                self.ungaugedSubcatch,
+                self.tr('Ungauged subcatchments'),
                 [QgsProcessing.TypeVectorPolygon]
             )
         )
@@ -260,7 +260,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         #Get data
         feedback.setProgressText("\nStart with ungauged subcatchments...")
         # ungauged subcatchments
-        ungaugedSource = self.parameterAsVectorLayer(parameters, 'codedSubcatch', context)
+        ungaugedSource = self.parameterAsVectorLayer(parameters, 'ungaugedSubcatch', context)
         ungaugedSourceName = ungaugedSource.name()
         
         #Get virtual output directory and output sink
@@ -271,7 +271,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         catchments_ungauged = processing.run("native:zonalstatisticsfb",
             {'INPUT_RASTER': parameters[self.DGM],
              'RASTER_BAND':1,
-             'INPUT': parameters[self.codedSubcatch],
+             'INPUT': parameters[self.ungaugedSubcatch],
              'COLUMN_PREFIX': "H_",
              'STATISTICS': [2, 4, 5],
              'OUTPUT': 'TEMPORARY_OUTPUT'},

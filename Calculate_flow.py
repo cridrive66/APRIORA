@@ -472,6 +472,9 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # create a mapping of id_riv to id_catch
         river_to_catch = {feature["id_riv"]: feature["id_catch"] for feature in river_copy.getFeatures()}
 
+        # create a mapping of CATCH_ID to last CATCH_TO before transition
+        catch_to_mapping = {}
+
         # update the river layer
         with edit(river_copy):
             for river_feature in river_copy.getFeatures():
@@ -485,6 +488,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
                     catch_to = "Out"
                 else:
                     catch_to = river_to_catch.get(int(net_to), "Unknown") if net_to else "Unknown" #lookup id_catch of NET_TO
+
+                # store the last valid CATCH_TO before transition
+                if id_catch != catch_to and catch_to != "Out":
+                    catch_to_mapping[id_catch] = catch_to
 
                 # assign values
                 catch_id = id_catch
@@ -500,6 +507,13 @@ class CalculateFlow(QgsProcessingAlgorithm):
             'FIELD':['CATCH_ID'],
             'SEPARATE_DISJOINT':False,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        # restore the correct CATCH_TO values after dissolving
+        with edit(dissolve_output):
+            for feature in dissolve_output.getFeatures():
+                catch_id = feature["CATCH_ID"]
+                feature.setAttribute("CATCH_TO", catch_to_mapping.get(int(catch_id), "Out"))
+                dissolve_output.updateFeature(feature)
 
         # the output of this code is a polygon file containing the code of every ungauged subcatchment (gbk_lawa or another code),
         # the estimated flow for each ungauged subcatchment (Mean Flow) and the geometry of the relative ungauged subcatchment.

@@ -205,10 +205,13 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             raise QgsProcessingException("No outlet point specified.")
 
         # add a new column to the catchment layer in order to identify each subcatchment
-        subcatchments_layer = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
+        subcatchments_layer_original = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
         river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         search_radius = self.parameterAsDouble(parameters, self.SEARCH_RADIUS, context)
 
+        # create a new layer, copy of the subcatchment layer
+        subcatchments_layer = subcatchments_layer_original.clone()
+        
         with edit(subcatchments_layer):
             field_name = "id_catch"
             fields = subcatchments_layer.fields()
@@ -218,7 +221,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 subcatchments_layer.dataProvider().addAttributes([QgsField(field_name, QVariant.Int)])
                 subcatchments_layer.updateFields()
             else:
-                feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.")   #maybe the cause of the crashing is here
+                feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.") 
 
             # populate the new column with unique IDs
             unique_id_start = 100 #or any starting value
@@ -285,7 +288,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)
         fixed_layer = fixed_result["OUTPUT"]
-        del split_river_layer
+        #del split_river_layer
 
         feedback.setProgressText(f"Number of features in fixed_layer: {fixed_layer.featureCount()}")
 
@@ -297,8 +300,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)
         non_null_geom_layer = non_null_geom_result["OUTPUT"]
-        del fixed_layer
-        #QgsProject.instance().addMapLayer(non_null_geom_layer)
+        #del fixed_layer
         feedback.setProgressText(f"Number of features in non_null_geom_layer: {non_null_geom_layer.featureCount()}")
 
         # get all points from the subcatchment vertices layer
@@ -461,7 +463,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         feedback.setProgressText("\nCalculating intersection with the subcatchments...")
         intersection_layer = processing.run("native:intersection", {
             'INPUT': again_fixed_layer,
-            'OVERLAY': parameters[self.catchmentAreas],
+            'OVERLAY': subcatchments_layer,
             'INPUT_FIELDS':[],
             'OVERLAY_FIELDS':[],
             'OVERLAY_FIELDS_PREFIX':'',
@@ -771,6 +773,16 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                     feedback.pushWarning(self.tr('{0}, ').format(", ".join(net_ids)))
 
 
+        # # identify the index of "id_riv", I dont want it in the final output
+        # id_riv_index = dissolve_fields.indexOf("id_riv")
+        # if id_riv_index != -1:
+        #     with edit(dissolve_layer):
+        #         dissolve_layer.dataProvider().deleteAttributes([id_riv_index])
+        #         dissolve_layer.updateFields()
+        # else:
+        #     feedback.pushInfo("'id_riv' field not found in dissolve layer.")
+
+
         '''sink definition'''
         (sink, dest_id) = self.parameterAsSink(
             parameters,
@@ -785,15 +797,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             all_visited_ids = [f_id for id_list in netw_dict.values() for f_id in id_list]
             flip_list = [f_id for f_id in all_visited_ids if f_id not in flip_list]
 
-
-        # # identify the index of "id_apr", I dont want it in the final output
-        # id_apr_index = dissolve_fields.indexOf("id_apr")
-        # if id_apr_index != -1:
-        #     with edit(dissolve_layer):
-        #         dissolve_layer.dataProvider().deleteAttributes([id_apr_index])
-        #         dissolve_layer.updateFields()
-        # else:
-        #     feedback.pushInfo("'id_apr' field not found in dissolve layer.")
             
         '''add features to sink'''
         features = dissolve_layer.getFeatures()
