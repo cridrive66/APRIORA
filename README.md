@@ -4,7 +4,7 @@ In the project APRIORA, environmental protection agencies and wastewater treatme
 
 ## Set of tools
 ### Flow estimation
-The purpose of this set of tools is to estimate mean flow and mean low flow at a river level. <br>
+The purpose of this set of tools is to estimate mean flow and mean low flow at a river level. <br><br>
 *1 - Fix river network*: it aligns the river network with the subcatchments' borders and calculates the contributing relationship between the different river sections. <br><br>
 *2 - Contributing area of gauging station*: it calculates the upstream area of each gauging station within the catchment. <br><br>
 *3 - Calculate geofactors*: it calculates the explanatory variables (geofactors) for each subcatchment. The geofactors are necessary to estimate the flow in the *Flow estimation* tool. <br><br>
