@@ -154,6 +154,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         # update the river layer
         with edit(river_copy):
             for river_feature in river_copy.getFeatures():
+                if feedback.isCanceled():
+                    break # Stop the algorithm if cancel button has been clicked
                 fid = river_feature.id()
                 net_id = river_feature["NET_ID"]
                 net_to = river_feature["NET_TO"]
@@ -187,11 +189,14 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         # restore the correct CATCH_TO values after dissolving
         with edit(dissolve_output):
             for feature in dissolve_output.getFeatures():
+                if feedback.isCanceled():
+                    break # Stop the algorithm if cancel button has been clicked
                 catch_id = feature["CATCH_ID"]
                 feature.setAttribute("CATCH_TO", catch_to_mapping.get(int(catch_id), "Out"))
                 dissolve_output.updateFeature(feature)
         
-        
+        #QgsProject.instance().addMapLayer(dissolve_output)
+
         '''loading the network'''
         feedback.setProgressText(self.tr("Loading network..\n "))
         waternet = dissolve_output

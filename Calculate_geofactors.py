@@ -511,7 +511,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT': JoinCatchmentsSetttlementAreaSummarize,
              'COLUMN_PREFIX': "PrecYearly_",        
-             'STATISTICS': [2],
+             'STATISTICS': [1,2], #sum and mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
              context=context, feedback=feedback)['OUTPUT']
         
@@ -521,7 +521,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT': precipitation_yearly_ungauged,
              'COLUMN_PREFIX': "PrecAugust_",
-             'STATISTICS': [2],
+             'STATISTICS': [1,2], # sum and mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(finalLayer_ungauged) 
@@ -561,7 +561,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             sink_ungauged.addFeature(feat)
         
         del finalLayer_ungauged
-        feedback.setProgressText("\nSuccess: sink_ungauged file was created successfully!")
+        feedback.setProgressText("\nSuccess: ungauged_subcatchments_geofactors.shp file was created successfully!")
 
 
         """
@@ -720,7 +720,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT': JoinCatchmentsSetttlementAreaSummarize,
              'COLUMN_PREFIX': "PrecYearly_",         
-             'STATISTICS': [2],
+             'STATISTICS': [1,2], #sum and mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
 
@@ -730,7 +730,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT': precipitation_yearly_gauged,
              'COLUMN_PREFIX': "PrecAugust_",    
-             'STATISTICS': [2],
+             'STATISTICS': [1,2], #sum and mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(finalLayer_gauged) 
@@ -740,7 +740,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         # Remove "mean" from the column name if it exists
         if 'PrecYearly_mean' in [field.name() for field in finalLayer_gauged.fields()]:
             with edit(finalLayer_gauged):
-                idx = finalLayer_gauged.fields().indexOf('PrecYearly_mean')
+                idx = finalLayer_gauged.fields().indexOf('PrecYearly_mean')     #need to change the name of the _sum as well
                 finalLayer_gauged.renameAttribute(idx, 'PrecYearly')
         
         if 'PrecAugust_mean' in [field.name() for field in finalLayer_gauged.fields()]:
@@ -768,7 +768,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         
         del finalLayer_gauged
         
-        
+        feedback.setProgressText("\nSuccess: gauged_subcatchments_geofactors.shp file was created successfully!")
         
         
         """

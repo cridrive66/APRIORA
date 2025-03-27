@@ -33,6 +33,7 @@ __revision__ = '$Format:%H$'
 import processing
 import pandas as pd
 import numpy as np
+from math import sqrt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
@@ -49,6 +50,7 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsProject,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterDefinition,
+                       QgsProcessingParameterEnum,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
                        QgsProcessingParameterField,
@@ -86,6 +88,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
     gaugedSubcatchments = 'GaugedSubcatchments'
     ungaugedSubcatchments = 'UngaugedSubcatchments'
     riverNetwork = "RiverNetwork"
+    selectedGeofactors = "selected_geofactors"
     threshold_user = "threshold"
     # INPUT_FIELD_ID = 'INPUT_FIELD_ID'
     # INPUT_FIELD_NEXT = 'INPUT_FIELD_NEXT'
@@ -130,6 +133,35 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 [QgsProcessing.TypeVectorLine]
             )
         )
+
+        # define available geofactors
+        self.geofactor_mapping = {
+            'Medium Height': 'H_mean',
+            'Height Standard Deviation': 'H_stdev',
+            'Minimum Height': 'H_min',
+            'Subcatchment Area': 'AREA_SC',
+            'Subcatchment Perimeter': 'PERIM_SC',
+            'Shape Factor': 'SHAPE_SC',
+            'Mean Slope': 'Slp_mean',
+            'Slope Standard Deviation': 'Slp_stdev',
+            'River Network Density': 'RivNetDens',
+            'Proportion of Water Area': 'PropWatAr',
+            'Forest Share': 'Forest %',
+            'Settlements Share': 'Settl %',
+            'Yearly Precipitation Mean': 'PrecYearly',
+            'Yearly Precipitation Sum' : 'PrecYearly_sum', #change this name
+            'August Precipitation Mean': 'PrecAugust',
+            'August Precipitation Sum': 'PrecAugust_sum' #change this name
+        }
+        self.geofactor_options = list(self.geofactor_mapping.keys())
+
+        param_geofactors = QgsProcessingParameterEnum(
+            self.selectedGeofactors,
+            self.tr("Selected geofactors"),
+            options = self.geofactor_options,
+            defaultValue = list(range(len(self.geofactor_options))), # default is all the geofactors
+            allowMultiple = True
+        )
         
         param_threshold = QgsProcessingParameterNumber(
             self.threshold_user,
@@ -142,6 +174,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
         )
 
         #set it as advanced parameter
+        param_geofactors.setFlags(param_geofactors.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(param_geofactors)
         param_threshold.setFlags(param_threshold.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(param_threshold)
 
@@ -217,10 +251,36 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # This input will be used later on, after the process of calibration and validation of the model with the gauged subcatchments.
         
         gaug_stat = self.parameterAsSource(parameters, self.gaugedSubcatchments, context)
-        warnow_subcatch_gf = self.parameterAsSource(parameters, self.ungaugedSubcatchments, context)
+        #warnow_subcatch_gf = self.parameterAsSource(parameters, self.ungaugedSubcatchments, context)
+        warnow_subcatch_layer = self.parameterAsVectorLayer(parameters, self.ungaugedSubcatchments, context)
         river_network = self.parameterAsSource(parameters, self.riverNetwork, context)
+        selected_indices = self.parameterAsEnums(parameters, self.selectedGeofactors, context)
+        selected_display_names = [self.geofactor_options[i] for i in selected_indices]
+        selected_geofactors = [self.geofactor_mapping[name] for name in selected_display_names]     # convert display names to actual column names
         threshold_user = self.parameterAsDouble(parameters, self.threshold_user, context)
         river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        
+        # add "id_catch" to the subcatchment shapefile        
+        field_name = "id_catch"
+        fields = warnow_subcatch_layer.fields()
+
+        # check if the field already exists
+        if field_name not in [field.name() for field in fields]:
+            warnow_subcatch_gf = processing.run("native:joinattributesbylocation", {
+                'INPUT': warnow_subcatch_layer,
+                'PREDICATE':[0],
+                'JOIN': river_layer,
+                'JOIN_FIELDS':['id_catch'],   
+                'METHOD':2,
+                'DISCARD_NONMATCHING':True,
+                'PREFIX':'',
+                'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+            feedback.pushInfo(f"\nNumber of features in the warnow_subcatch_gf: {warnow_subcatch_gf.featureCount()}")
+        
+        else:
+            warnow_subcatch_gf = warnow_subcatch_layer
+            feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.") 
+        
         
         ##### FIRST PART OF THE MODEL
         # Selecting input (predictors) and output
@@ -244,18 +304,26 @@ class CalculateFlow(QgsProcessingAlgorithm):
         gaug_stat_df = pd.DataFrame(data, columns = field_names)
 
     
-        filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PreYearly_', 'PreAugust_'] #change to PrecYearly_
+        # filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PrecYearly', 'PrecAugust']
         # select number of features (predictors) and dependent variable
-        x = gaug_stat_df.filter(items=filterCol)
+        x = gaug_stat_df.filter(items=selected_geofactors)
         feedback.setProgressText(f"\nDatabase columns: {x.columns} ")
         
+        # # try to normalise the flow for the subcatchment area
+        # y = gaug_stat_df["Mean Flow"]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
+        # feedback.setProgressText(f"\nFlow values normalised: {y} ")
+        # y = StandardScaler().fit_transform(y.values.reshape(-1,1))
+
         y = gaug_stat_df["Mean Flow"]
+        feedback.setProgressText(f"\nFlow values: {y} ")
+
 
         """
         Remove multicollinearity between variables by performing hierarchical clustering on the Spearman rank-order correlations, picking a threshold,
         and keeping a single feature from each cluster.
         """
         def select_non_collinear_features(df, threshold):
+            feedback.setProgressText(f"Collinearity threshold: {threshold}")
             # compute Spearman correlation matrix
             corr = spearmanr(df).correlation
             #corr = (corr + corr.T)/2    # ensure simmetry
@@ -279,7 +347,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
             feedback.setProgressText(f"\nLinkage Matrix: {dist_linkage}")
 
             # cluster features based on threshold
-            cluster_ids = hierarchy.fcluster(dist_linkage, threshold, criterion = "distance")
+            max_linkage_distance = np.max(dist_linkage[:, 2]) # get the max linkage distance
+            adjusted_threshold = threshold * max_linkage_distance # scale the user threshold
+            
+            cluster_ids = hierarchy.fcluster(dist_linkage, adjusted_threshold, criterion = "distance")
             cluster_id_to_feature_ids = defaultdict(list)
             feedback.setProgressText(f"\nCluster IDs: {cluster_ids}")
 
@@ -326,9 +397,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # performance of the trained model
         y_train_pred = model.predict(x_train)
-        mse = mean_squared_error(y_train, y_train_pred, squared=False)
+        mse = mean_squared_error(y_train, y_train_pred)
+        rmse = sqrt(mse)
         r2 = r2_score(y_train, y_train_pred)
-        feedback.setProgressText(f"\nCalibration RMSE: {mse}")
+        feedback.setProgressText(f"\nCalibration RMSE: {rmse}")
         feedback.setProgressText(f"Calibration R-squared: {r2}")
         # print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
         # print("Calibration R-squared:", r2_score(y_train, y_train_pred))
@@ -339,9 +411,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # prediction and evaluation
         y_pred = model.predict(x_test)
-        mse = mean_squared_error(y_test, y_pred, squared=False)
+        mse = mean_squared_error(y_test, y_pred)
+        rmse = sqrt(mse)
         r2 = r2_score(y_test, y_pred)
-        feedback.setProgressText(f"\nValidation RMSE: {mse}")
+        feedback.setProgressText(f"\nValidation RMSE: {rmse}")
         feedback.setProgressText(f"Validation R-squared: {r2}\n")
         # print("Validation RMSE:", mean_squared_error(y_test, y_pred, squared=False))
         # print("Validation R-squared:", r2_score(y_test, y_pred))
@@ -632,9 +705,6 @@ class CalculateFlow(QgsProcessingAlgorithm):
         waternet.updateFields()
         features = waternet.getFeatures()
 
-        # little debugging
-        field_names = [field.name() for field in waternet.fields()]
-        feedback.setProgressText(f"Field names in waternet: {field_names}")
         waternet.startEditing()
         # get the index of the new field in waternet
         field_idx = waternet.fields().indexOf(new_field_name)
