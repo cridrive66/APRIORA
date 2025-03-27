@@ -18,6 +18,6 @@ The purpose of this set of tools is to estimate mean flow and mean low flow at a
 ## Risk assessment
 *7 - Risk assessment*: identifies the extent of risk assessment of each API by calculating **environmental**, **antimicrobial resistance**, **human health** and **cumulative risk assessment**.
 
-## Development / Funding
+### Development / Funding
 If you have any suggestions for improvements feel free to write an issue or create a fork.
-The plugin is being developed under the project [APRIORA](https://interreg-baltic.eu/project/apriora/), funded by Interreg, grant number (*cannot find it*).
+The plugin is being developed under the project [APRIORA](https://interreg-baltic.eu/project/apriora/), funded by Interreg + European Union, grant number (*cannot find it*).
