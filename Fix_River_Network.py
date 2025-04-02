@@ -237,8 +237,11 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'INPUT': river_layer,
             'VERTICES':'0, -1',
             'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)
-        vertices_river_layer = vertices_river_result["OUTPUT"] # remove duplicate geometries
+            context=context, feedback=feedback)["OUTPUT"]
+        # remove duplicates
+        vertices_river_layer = processing.run("native:deleteduplicategeometries", {
+            'INPUT':vertices_river_result,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
 
         feedback.setProgressText(f"Number of features in vertices_river_layer: {vertices_river_layer.featureCount()}")
 
@@ -247,32 +250,69 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         vertices_catch_result = processing.run("native:extractvertices", {
             'INPUT':parameters[self.catchmentAreas],
             'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)
-        vertices_catch_layer = vertices_catch_result["OUTPUT"] # remove duplicate geometries
+            context=context, feedback=feedback)["OUTPUT"]
+        # remove duplicates
+        vertices_catch_layer = processing.run("native:deleteduplicategeometries", {
+            'INPUT':vertices_catch_result,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
 
         feedback.setProgressText(f"Number of features in vertices_catch_layer: {vertices_catch_layer.featureCount()}")
 
-        line_layer = processing.run("native:geometrybyexpression", {
-            'INPUT':vertices_river_layer,
-            'OUTPUT_GEOMETRY':1,
-            'WITH_Z':False,
-            'WITH_M':False,
-            'EXPRESSION': """
-            make_line(
-                project($geometry, -0.01, radians("angle"-5)),
-                $geometry,
-                project($geometry, 0.01, radians("angle"-5))
-            )
-            """,
+        # splitting river network at lines by creating buffer at vertices
+        buffer = processing.run("native:buffer", {
+            'INPUT': vertices_river_layer,
+            'DISTANCE':0.02,    # buffer of 2 cm
+            'SEGMENTS':5,
+            'END_CAP_STYLE':0,
+            'JOIN_STYLE':0,
+            'MITER_LIMIT':2,
+            'DISSOLVE':False,
+            'SEPARATE_DISJOINT':False,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
         
-        feedback.setProgressText(f"Number of features in line_layer: {line_layer.featureCount()}")
-        QgsProject.instance().addMapLayer(line_layer)
-
-        split_river_layer = processing.run("native:splitwithlines", {
+        # split with the buffer
+        split_with_errors = processing.run("native:splitwithlines", {
             'INPUT':river_layer,
-            'LINES':line_layer,
+            'LINES':buffer,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
+        # remove the segments within the buffer from the river layer
+        difference = processing.run("native:difference", {
+            'INPUT':split_with_errors,
+            'OVERLAY':buffer,
+            'OUTPUT':'TEMPORARY_OUTPUT',
+            'GRID_SIZE':None})["OUTPUT"]
+
+        # snap the river line back together
+        split_river_layer = processing.run("native:snapgeometries", {
+            'INPUT': difference,
+            'REFERENCE_LAYER': difference,
+            'TOLERANCE':0.05,   # snapping within 5cm
+            'BEHAVIOR':0,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
+        # # splitting river network at lines by creating new lines
+        # line_layer = processing.run("native:geometrybyexpression", {
+        #     'INPUT':vertices_river_layer,
+        #     'OUTPUT_GEOMETRY':1,
+        #     'WITH_Z':False,
+        #     'WITH_M':False,
+        #     'EXPRESSION': """
+        #     make_line(
+        #         project($geometry, -0.01, radians("angle"-5)),
+        #         $geometry,
+        #         project($geometry, 0.01, radians("angle"-5))
+        #     )
+        #     """,
+        #     'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        # feedback.setProgressText(f"Number of features in line_layer: {line_layer.featureCount()}")
+
+        # split_river_layer = processing.run("native:splitwithlines", {
+        #     'INPUT':river_layer,
+        #     'LINES':line_layer,
+        #     'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
 
 
         # # split river network at each river vertex (SAGA required)
