@@ -143,7 +143,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 self.SEARCH_RADIUS,
                 self.tr("Search Radius for Connections"),
                 type=rad_type,
-                defaultValue=0,
+                defaultValue=0.025,
                 minValue=0,
                 maxValue=10,
                 optional=True
@@ -238,7 +238,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'VERTICES':'0, -1',
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)
-        vertices_river_layer = vertices_river_result["OUTPUT"]
+        vertices_river_layer = vertices_river_result["OUTPUT"] # remove duplicate geometries
 
         feedback.setProgressText(f"Number of features in vertices_river_layer: {vertices_river_layer.featureCount()}")
 
@@ -248,7 +248,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'INPUT':parameters[self.catchmentAreas],
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)
-        vertices_catch_layer = vertices_catch_result["OUTPUT"]
+        vertices_catch_layer = vertices_catch_result["OUTPUT"] # remove duplicate geometries
 
         feedback.setProgressText(f"Number of features in vertices_catch_layer: {vertices_catch_layer.featureCount()}")
 
@@ -257,8 +257,17 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'OUTPUT_GEOMETRY':1,
             'WITH_Z':False,
             'WITH_M':False,
-            'EXPRESSION':'extend(\r\n   make_line(\r\n      $geometry,\r\n       project (\r\n          $geometry, \r\n          -0.1, \r\n          radians("angle"-5))\r\n        ),\r\n   0.0,\r\n   0\r\n)',
+            'EXPRESSION': """
+            make_line(
+                project($geometry, -0.01, radians("angle"-5)),
+                $geometry,
+                project($geometry, 0.01, radians("angle"-5))
+            )
+            """,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        feedback.setProgressText(f"Number of features in line_layer: {line_layer.featureCount()}")
+        QgsProject.instance().addMapLayer(line_layer)
 
         split_river_layer = processing.run("native:splitwithlines", {
             'INPUT':river_layer,
@@ -550,7 +559,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             for feature in river_network.getFeatures():
                 section_geom = feature.geometry()
                 distance = section_geom.distance(outlet_geometry)
-                #feedback.pushInfo(f"\nAnalising section [id_riv]: {feature['id_riv']} \nDistance to the outlet point: {distance}")
+                #feedback.pushInfo(f"\nAnalising section (id_riv): {feature['id_riv']} \nDistance to the outlet point: {distance}")
 
                 if distance < min_distance:
                     min_distance = distance
@@ -561,7 +570,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         closest_section = find_closest_river_section(outlet_point, dissolve_layer)
         if closest_section is None:
             raise QgsProcessingException("No closest river section identified")
-        feedback.pushInfo(f"\nClosest section [id_riv]: {closest_section['id_riv']}")
+        feedback.pushInfo(f"\nClosest section (id_riv): {closest_section['id_riv']}")
 
         # define new fields for the output
         out_fields = QgsFields()
