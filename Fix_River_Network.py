@@ -337,6 +337,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)
         fixed_layer = fixed_result["OUTPUT"]
+        QgsProject.instance().addMapLayer(fixed_layer)
         #del split_river_layer
 
         feedback.setProgressText(f"Number of features in fixed_layer: {fixed_layer.featureCount()}")
