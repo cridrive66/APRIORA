@@ -314,8 +314,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # feedback.setProgressText(f"\nFlow values normalised: {y} ")
         # y = StandardScaler().fit_transform(y.values.reshape(-1,1))
 
-        y = gaug_stat_df["Mean Flow"]
-        feedback.setProgressText(f"\nFlow values: {y} ")
+        # y = gaug_stat_df["Mean Flow"]
+        y = gaug_stat_df["Mean Flow"]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
 
 
         """
@@ -448,7 +448,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # Run the model to calculate "Mean Flow"
         # estimation of mean flow
-        y_catch = model.predict(x_catch)
+        y_catch_normalized = model.predict(x_catch)
+        y_catch = y_catch_normalized * warnow_subcatch_gf_df["AREA_SC"] # I need to put warnow_subcatch_gf_df and not x_catch because it can happen that the AREA_SC will not be use to make the prediction.
 
         # THIRD PART OF THE MODEL
         # The flow is estimated for each ungauged subcatchment and now it is time to store it in a new shapfile. 

@@ -539,7 +539,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         #         )
 
         for river in waternet.getFeatures():
-            feedback.pushInfo(f"\nProcessing river section ID: {river.id()}")
+            # feedback.pushInfo(f"\nProcessing river section ID: {river.id()}")
 
             '''getting the selected segment'''
             startF = river  # river section to start with
@@ -610,7 +610,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             del i
 
             # little debugging
-            feedback.pushInfo(f"\nPrint net_route: {net_route}")
+            # feedback.pushInfo(f"\nPrint net_route: {net_route}")
 
             # convert net_route (river IDs) to a set for a faster loop
             net_route_set = set(net_route)
@@ -622,7 +622,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                     net_id_values.append(feature["CATCH_ID"])
 
             # little debugging
-            feedback.pushInfo(f"Extracted CATCH_ID values: {net_id_values}")
+            # feedback.pushInfo(f"Extracted CATCH_ID values: {net_id_values}")
             
             # construct the expression to filter the subcatchment based on the IDs stored in net_id_values
             net_id_str = ", ".join(map(str, net_id_values)) # convert IDs to a comma-separeted string
@@ -635,7 +635,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 'OUTPUT':'TEMPORARY_OUTPUT'})
             upstream_catch = upstream_catch_result["OUTPUT"]
 
-            feedback.pushInfo("\nupstream_catch_result = done")
+            # feedback.pushInfo("\nupstream_catch_result = done")
 
             # dissolve the contributing subcatchments to have only one area
             dissolve_result = processing.run("native:dissolve",{
@@ -645,7 +645,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 'OUTPUT':'TEMPORARY_OUTPUT'
                 })
             dissolve_layer = dissolve_result["OUTPUT"]
-            feedback.pushInfo("\ndissolve_layer = done")
+            # feedback.pushInfo("\ndissolve_layer = done")
 
             # find the subcatchment with the same CATCH_ID
             matching_attributes = None
@@ -660,7 +660,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
 
             # feedback.pushInfo(f"Sink fields: {[field.name() for field in subcat_layer.fields()]}")
             # feedback.pushInfo(f"river attributes: {matching_attributes}")
-            feedback.pushInfo(f"Working on river section with CATCH_ID: {river['CATCH_ID']}")
+            # feedback.pushInfo(f"Working on river section with CATCH_ID: {river['CATCH_ID']}")
             
             # store the result in the output
             dissolve_feature = next(dissolve_layer.getFeatures())
@@ -677,7 +677,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             sink_ungauged.addFeature(new_feature)
 
             for gaug in gaug_reproject.getFeatures():
-                feedback.pushInfo(f"\nProcessing gauging station with CATCH ID: {gaug['CATCH_ID']}")
+                # feedback.pushInfo(f"\nProcessing gauging station with CATCH ID: {gaug['CATCH_ID']}")
                 if gaug["CATCH_ID"] == new_feature["CATCH_ID"]:
                     gauged_feature = QgsFeature(gauged_fields)
                     gauged_feature.setGeometry(dissolve_geom)
