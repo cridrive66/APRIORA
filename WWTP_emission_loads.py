@@ -30,18 +30,23 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 
 __revision__ = '$Format:%H$'
 
-from qgis.PyQt.QtCore import QCoreApplication
-from qgis.core import ( QgsProcessing,
+import pandas as pd
+import os
+from qgis.PyQt.QtCore import (QCoreApplication, QVariant)
+from qgis.core import ( QgsFeature,
+                        QgsFeatureSink,
+                        QgsFields,
+                        QgsField,
+                        QgsProcessing,
                         QgsProcessingAlgorithm,
                         QgsProcessingParameterFeatureSource,
-                        QgsProcessingParameterFeatureSink
+                        QgsProcessingParameterFeatureSink,
+                        QgsProcessingParameterField,
+                        QgsProcessingParameterString,
+                        QgsProcessingUtils,
+                        QgsVectorLayer,
+                        QgsWkbTypes                    
                         )
-
-
-
-
-
-
 
 
 class EmissionLoads(QgsProcessingAlgorithm):
@@ -71,7 +76,56 @@ class EmissionLoads(QgsProcessingAlgorithm):
             )
         )
 
-    # We add a feature sink in which to store our processed features (this
+        # id
+        self.addParameter(
+            QgsProcessingParameterField(
+                name='field_id',
+                description=self.tr('Select ID field'),
+                parentLayerParameterName=self.emissionPoints,
+                type=QgsProcessingParameterField.Any
+            )
+        )
+
+        # inhabitants connected
+        self.addParameter(
+            QgsProcessingParameterField(
+                name='field_inhabitants',
+                description=self.tr('Select Inhabitants Connected field'),
+                parentLayerParameterName=self.emissionPoints,
+                type=QgsProcessingParameterField.Any
+            )
+        )
+
+        # technology class
+        self.addParameter(
+            QgsProcessingParameterField(
+                name='field_techclass',
+                description=self.tr('Select Technology Class field'),
+                parentLayerParameterName=self.emissionPoints,
+                type=QgsProcessingParameterField.Any
+            )
+        )
+        
+        # show the user's selection
+        # Read contents from the .txt file
+        plugin_dir = os.path.dirname(__file__)
+        file_path = os.path.join(plugin_dir, "user_selection.txt")
+
+        try:
+            with open(file_path, "r") as file:
+                selection_text = file.read().strip()
+        except Exception as e:
+            selection_text = f"Could not load selection.txt: {e}"
+        
+        self.addParameter(
+            QgsProcessingParameterString(
+                name="USER_SELECTION_INFO",
+                description=self.tr("Current API Selection"),
+                defaultValue=selection_text.replace(",", ", ").replace("\n", "\n"),
+            )
+        )
+
+        # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
         # algorithm is run in QGIS).
         self.addParameter(
@@ -86,9 +140,39 @@ class EmissionLoads(QgsProcessingAlgorithm):
         """
         Here is where the processing itself takes place.
         """
+        # retrieve the selection of the user
+        plugin_dir = os.path.dirname(__file__)
+        file_path = os.path.join(plugin_dir, "user_selection.txt")
 
-        emission_point = self.parameterAsPoint(parameters, self.emissionPoints, context)
+        # read and show content
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'r') as file:
+                    selection_data = file.read()
 
+                # push to the panel
+                feedback.pushInfo("User selection loaded:\n"+selection_data)
+
+            except Exception as e:
+                feedback.reportError(f"Error reading user_selection.txt: {e}")
+                selection_data = None
+        
+        else:
+            feedback.reportError("user_selection.txt not found")
+            selection_data = None
+
+        # retrieve the consumption data from our database
+        excel_file = os.path.join(plugin_dir, "B2 input.xlsx")
+        try:
+            df = pd.read_excel(excel_file)
+        except Exception as e:
+            feedback.reportError(f"Could not read Excel file: {e}")
+            return {}
+
+        # load selection
+        try:
+            with open
+        
 
 
 
@@ -143,7 +227,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return ''
+        return 'API emission'
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

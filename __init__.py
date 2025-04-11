@@ -36,4 +36,5 @@ def classFactory(iface):  # pylint: disable=invalid-name
     """
     #
     from .APRIORA import APRIORAPlugin
-    return APRIORAPlugin()
+    
+    return APRIORAPlugin(iface)
