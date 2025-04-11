@@ -724,7 +724,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return ''
+        return 'Flow Estimation'
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

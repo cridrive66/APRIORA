@@ -181,14 +181,24 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         canvas.setMapTool(self._map_tool)
     
     def find_closest_vertex(self, parameters, context, feedback, point, spatial_index, vertex_map, threshold):
-        nearest_ids = spatial_index.nearestNeighbor(QgsGeometry.fromPointXY(point), 5) # get 5 nearest vertices
+        # Get 5 nearest vertices using a geometry built from the input point
+        nearest_ids = spatial_index.nearestNeighbor(QgsGeometry.fromPointXY(point), 5)
+
         closest_vertex = None
         min_distance = threshold
 
+        point_geom = QgsGeometry.fromPointXY(point)  # Geometry from the input point (only once)
+
         for vertex_id in nearest_ids:
             vertex = vertex_map[vertex_id]
-            distance = QgsGeometry.fromPointXY(QgsPointXY(point)).distance(QgsGeometry.fromPointXY(QgsPointXY(vertex)))
-            
+
+            # If vertex isn't already a QgsPointXY, convert it
+            if not isinstance(vertex, QgsPointXY):
+                vertex = QgsPointXY(vertex)
+
+            vertex_geom = QgsGeometry.fromPointXY(vertex)
+            distance = point_geom.distance(vertex_geom)
+
             if distance < min_distance:
                 closest_vertex = vertex
                 min_distance = distance
@@ -337,7 +347,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)
         fixed_layer = fixed_result["OUTPUT"]
-        QgsProject.instance().addMapLayer(fixed_layer)
+        #QgsProject.instance().addMapLayer(fixed_layer)
         #del split_river_layer
 
         feedback.setProgressText(f"Number of features in fixed_layer: {fixed_layer.featureCount()}")
@@ -376,7 +386,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             feature = QgsFeature()
             feature.setId(point_id)
             feature.setGeometry(QgsGeometry.fromPointXY(vertex))
-            spatial_index.insertFeature(feature)
+            spatial_index.addFeature(feature)
         
         # iterate over river network vertices with optimized search
         features_to_update = []
@@ -635,8 +645,8 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             '''
             ge = ft.geometry()
             vertex_list = [v for v in ge.vertices()]
-            vert1 = QgsGeometry().fromPoint(vertex_list[0])
-            vert2 = QgsGeometry().fromPoint(vertex_list[-1])
+            vert1 = QgsGeometry.fromPointXY(QgsPointXY(vertex_list[0]))
+            vert2 = QgsGeometry.fromPointXY(QgsPointXY(vertex_list[-1]))
             column_id = str(ft.attribute(idxid))
             return [vert1, vert2, ft.id(), column_id]
 
@@ -927,7 +937,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return ''
+        return 'Flow Estimation'
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
