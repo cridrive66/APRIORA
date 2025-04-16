@@ -113,7 +113,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.gaugedSubcatchments,
-                self.tr('Gauged subcatchments'),
+                self.tr('Gauged subcatchments with geofactors'),
                 [QgsProcessing.TypeVectorPolygon]
             )
         )
@@ -121,7 +121,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.ungaugedSubcatchments,
-                self.tr('Ungauged subcatchments'),
+                self.tr('Ungauged subcatchments with geofactors'),
                 [QgsProcessing.TypeVectorPolygon]
             )
         )
@@ -266,20 +266,12 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # check if the field already exists
         if field_name not in [field.name() for field in fields]:
-            warnow_subcatch_gf = processing.run("native:joinattributesbylocation", {
-                'INPUT': warnow_subcatch_layer,
-                'PREDICATE':[0],
-                'JOIN': river_layer,
-                'JOIN_FIELDS':['id_catch'],   
-                'METHOD':2,
-                'DISCARD_NONMATCHING':True,
-                'PREFIX':'',
-                'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-            feedback.pushInfo(f"\nNumber of features in the warnow_subcatch_gf: {warnow_subcatch_gf.featureCount()}")
+            feedback.pushError(f"No field {field_name} in the ungauged subcatchment file.")
+
         
         else:
             warnow_subcatch_gf = warnow_subcatch_layer
-            feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.") 
+            feedback.pushInfo(f"\nField '{field_name}' exists.") 
         
         
         ##### FIRST PART OF THE MODEL
@@ -339,12 +331,12 @@ class CalculateFlow(QgsProcessingAlgorithm):
             # replace NaNs with a large value (e.g. 1.0, meaning maximum distance)
             distance_matrix = np.nan_to_num(distance_matrix, nan = 1.0)
 
-            feedback.setProgressText(f"\nDistance Matrix: {distance_matrix}")
+            #feedback.setProgressText(f"\nDistance Matrix: {distance_matrix}")
            
             # perform hierarchical clustering
             dist_linkage = hierarchy.ward(squareform(distance_matrix)) # ward clustering is grouping a lot of features together in the case of a small catchment
             #dist_linkage = hierarchy.linkage(squareform(distance_matrix), method = "single")
-            feedback.setProgressText(f"\nLinkage Matrix: {dist_linkage}")
+            #feedback.setProgressText(f"\nLinkage Matrix: {dist_linkage}")
 
             # cluster features based on threshold
             max_linkage_distance = np.max(dist_linkage[:, 2]) # get the max linkage distance
@@ -352,7 +344,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             
             cluster_ids = hierarchy.fcluster(dist_linkage, adjusted_threshold, criterion = "distance")
             cluster_id_to_feature_ids = defaultdict(list)
-            feedback.setProgressText(f"\nCluster IDs: {cluster_ids}")
+            #feedback.setProgressText(f"\nCluster IDs: {cluster_ids}")
 
             for idx, cluster_id in enumerate(cluster_ids):
                 cluster_id_to_feature_ids[cluster_id].append(idx)
@@ -416,9 +408,6 @@ class CalculateFlow(QgsProcessingAlgorithm):
         r2 = r2_score(y_test, y_pred)
         feedback.setProgressText(f"\nValidation RMSE: {rmse}")
         feedback.setProgressText(f"Validation R-squared: {r2}\n")
-        # print("Validation RMSE:", mean_squared_error(y_test, y_pred, squared=False))
-        # print("Validation R-squared:", r2_score(y_test, y_pred))
-
 
         ##### SECOND PART OF THE MODEL
         ### Estimate flow in ungauged subcatchments
