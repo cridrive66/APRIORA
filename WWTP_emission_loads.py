@@ -142,13 +142,16 @@ class EmissionLoads(QgsProcessingAlgorithm):
         """
         # retrieve the selection of the user
         plugin_dir = os.path.dirname(__file__)
-        file_path = os.path.join(plugin_dir, "user_selection.txt")
+        selection_file = os.path.join(plugin_dir, "user_selection.txt")
+        excel_file = os.path.join(plugin_dir, "B2_input.xlsx")
 
         # read and show content
-        if os.path.exists(file_path):
+        if os.path.exists(selection_file):
             try:
-                with open(file_path, 'r') as file:
-                    selection_data = file.read()
+                with open(selection_file, 'r') as file:
+                    lines = [line.strip() for line in file if line.strip()]
+                    selection_data = "\n".join(lines)
+                    selections = [line.split(",") for line in lines]
 
                 # push to the panel
                 feedback.pushInfo("User selection loaded:\n"+selection_data)
@@ -162,34 +165,119 @@ class EmissionLoads(QgsProcessingAlgorithm):
             selection_data = None
 
         # retrieve the consumption data from our database
-        excel_file = os.path.join(plugin_dir, "B2 input.xlsx")
         try:
-            df = pd.read_excel(excel_file)
+            df = pd.read_excel(excel_file, sheet_name="API input")
+            removal_df = pd.read_excel(excel_file, sheet_name="Removal rates")
         except Exception as e:
             feedback.reportError(f"Could not read Excel file: {e}")
             return {}
 
-        # load selection
-        try:
-            with open
-        
+        # get input parameters
+        layer = self.parameterAsVectorLayer(parameters, self.emissionPoints, context)
+        id_field = self.parameterAsString(parameters, "field_id", context)
+        field_inhabitants = self.parameterAsString(parameters, "field_inhabitants",context)
+        tech_field = self.parameterAsString(parameters, "field_techclass", context)
 
+        # clone original fields
+        fields = QgsFields(layer.fields())
 
+        # add one new field per API
+        api_columns = []
+        for sel in selections:
+            api = sel[0].strip()
+            short_field_name = f"{api[:5]}[kg/a]"
+            field_name = f"{api}"
+            api_columns.append((api, field_name))
+            fields.append(QgsField(short_field_name, QVariant.Double))
 
-
-
-
-
-
-
-        '''sink definition'''
+        # prepare output sink
         (sink, dest_id) = self.parameterAsSink(
             parameters,
             self.OUTPUT,
             context,
-            out_fields, #change
-            emission_point.wkbType(),
-            emission_point.sourceCrs())
+            fields,
+            layer.wkbType(),
+            layer.sourceCrs()
+        )
+
+        # build dictionary with consumptiond data
+        api_consumption_values = {}
+        for (api, field_name), sel in zip(api_columns, selections):
+            year = sel[1].strip()
+            country = sel[2].strip()
+            region = sel[3].strip()
+
+            # find matching row in the Excel database
+            match = df[
+                (df["API name"].astype(str) == api) &
+                (df["year"].astype(str) == year) &
+                (df["country"].astype(str) == country) &
+                (df["region"].astype(str) == region)
+            ]
+
+            if not match.empty:
+                value = match.iloc[0]["API input (mg/inh.a)"]
+                value_float = float(value)
+                api_consumption_values[field_name] = value_float
+
+            else:
+                feedback.reportError(f"No match found for {api}, {year}, {country}, {region}")
+                api_consumption_values[field_name] = 0
+        
+        # print consumption values
+        feedback.pushInfo(f"\nAPI consumption value: {api_consumption_values} in mg/inh/a")
+
+
+        # iterate over each emission point
+        for feature in layer.getFeatures():
+            feedback.pushInfo(f"\nAnalyzing WWTP with ID: {feature[id_field]}")
+            attrs = feature.attributes()
+            geom = feature.geometry()
+
+            # get inhabitants value
+            try:
+                inh = float(feature[field_inhabitants])
+                feedback.pushInfo(f"Connected inhabitant: {inh}")
+            except(TypeError, ValueError):
+                inh = 0.0
+                feedback.reportError(f"Inhabitants field missing or invalid for feature {feature[id_field]}")
+
+            # get technical class
+            try:
+                tech_class = int(feature[tech_field])
+                feedback.pushInfo(f"Tech class: {tech_class}")
+            except (TypeError, ValueError):
+                tech_class = None
+                feedback.reportError(f"Tech class missing or invalid feature for {feature[id_field]}")
+
+            # prepare new attributes with additional API columns
+            new_attrs = attrs [:]
+
+            for api_field, consumption_value in api_consumption_values.items():
+                # get the removal rate of each specific API
+                removal_row = removal_df[removal_df["API name"] == api_field]
+                if not removal_row.empty and tech_class and f"TC{tech_class} removal rate" in removal_row.columns:
+                    try:
+                        removal_rate = float(removal_row.iloc[0][f"TC{tech_class} removal rate"])
+                        feedback.pushInfo(f"Removal rate of {api_field}: {removal_rate}\n")
+                    except Exception as e:
+                        feedback.reportError(f"Could not find removal rate for {api_field}, TC{tech_class}: {e}")
+                        removal_rate = 0.0
+                else:
+                    removal_rate = 0.0
+                    feedback.reportError(f"No removal found rate for {api_field} and TC{tech_class}")
+                
+                # calculate final load
+                load = consumption_value*inh
+                adjusted_load = (load*(1-removal_rate)/1000000)
+                new_attrs.append(adjusted_load)
+
+            # create and add the new feature
+            new_feature = QgsFeature()
+            new_feature.setGeometry(geom)
+            new_feature.setAttributes(new_attrs)
+            sink.addFeature(new_feature, QgsFeatureSink.FastInsert)
+            
 
         return {self.OUTPUT: dest_id}
 
