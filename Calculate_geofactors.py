@@ -164,7 +164,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUTungauged,
-                self.tr('ungauged_subcatch_geofactors'),
+                self.tr('Ungauged subcatch geofactors'),
                 QgsProcessing.TypeVectorPolygon
             )
         )
@@ -172,7 +172,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUTgauged,
-                self.tr('gauged_subcatch_geofactors'),
+                self.tr('Gauged subcatch geofactors'),
                 QgsProcessing.TypeVectorPolygon
             )
         )
@@ -205,7 +205,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'OVERLAY_FIELDS': 'ID_SC',
              'OVERLAY_FIELDS_PREFIX': "",
              'OUTPUT': 'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)["OUTPUT"]
+            context=context)["OUTPUT"]
         context.temporaryLayerStore().addMapLayer(intersections)
 
         #Calculates area/length of target parts
@@ -229,7 +229,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'VALUES_FIELD_NAME':fieldName+"_SC",
              'CATEGORIES_FIELD_NAME': 'ID_SC',
              'OUTPUT': 'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)["OUTPUT"]
+            context=context)["OUTPUT"]
         context.temporaryLayerStore().addMapLayer(Summarize)
         
         #Joins the sum of area information to catchments
@@ -243,7 +243,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'DISCARD_NONMATCHING': False,
              'PREFIX': fieldName+'_',
              'OUTPUT': 'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)['OUTPUT']
+            context=context)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(JoinCatchmentsSummarize)
         del intersections, Summarize
         return JoinCatchmentsSummarize
@@ -275,7 +275,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'COLUMN_PREFIX': "H_",
              'STATISTICS': [2, 4, 5],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)['OUTPUT']
+            context=context)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(catchments_ungauged)
 
         #Set area and perimeter field to layer
@@ -318,7 +318,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'INPUT_VECTOR': catchments_ungauged,
              'COLUMN_PREFIX': "Slp_",
              'STATISTICS': [2, 4]},
-            context=context, feedback=feedback)
+            context=context)
         
         #Calculates statistics based on river network
         JoinCatchmentsRiverSummarize = self.processPropotions(parameters, context, feedback, catchments_ungauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork],1)
@@ -513,7 +513,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'COLUMN_PREFIX': "PrecYearly_",        
              'STATISTICS': [1,2], #sum and mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
-             context=context, feedback=feedback)['OUTPUT']
+             context=context)['OUTPUT']
         
         feedback.setProgressText("\nStart the zonal statistic of august precipitation")
         finalLayer_ungauged = processing.run("native:zonalstatisticsfb",
@@ -523,7 +523,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'COLUMN_PREFIX': "PrecAugust_",
              'STATISTICS': [1,2], # sum and mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)['OUTPUT']
+            context=context)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(finalLayer_ungauged) 
         
         del JoinCatchmentsSetttlementAreaSummarize, precipitation_yearly_ungauged
@@ -581,7 +581,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'COLUMN_PREFIX': "H_",
              'STATISTICS': [2, 4, 5],
              'OUTPUT': 'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)['OUTPUT']
+            context=context)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(catchments_gauged) 
 
         #Set area and perimeter field to layer
@@ -618,7 +618,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'INPUT_VECTOR': catchments_gauged,
              'COLUMN_PREFIX': "Slp_",
              'STATISTICS': [2, 4]},
-            context=context, feedback=feedback)
+            context=context)
 
         #Calculates statistics based on river network
         JoinCatchmentsRiverSummarize = self.processPropotions(parameters, context, feedback, catchments_gauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork],1)
@@ -722,7 +722,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'COLUMN_PREFIX': "PrecYearly_",         
              'STATISTICS': [1,2], #sum and mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)['OUTPUT']
+            context=context)['OUTPUT']
 
         feedback.setProgressText("\nStart the zonal statistic of august precipitation")
         finalLayer_gauged = processing.run("native:zonalstatisticsfb",
@@ -732,7 +732,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'COLUMN_PREFIX': "PrecAugust_",    
              'STATISTICS': [1,2], #sum and mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)['OUTPUT']
+            context=context)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(finalLayer_gauged) 
         
         del JoinCatchmentsSetttlementAreaSummarize, precipitation_yearly_gauged

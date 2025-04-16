@@ -91,7 +91,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_gauged,
-                self.tr('Gauged subcatchments'),
+                self.tr('Gauged subcatch'),
                 QgsProcessing.TypeVectorPolygon
             )
         )
@@ -100,7 +100,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_ungauged,
-                self.tr('Ungauged subcatchments'),
+                self.tr('Ungauged subcatch'),
                 QgsProcessing.TypeVectorPolygon
             )
         )
@@ -225,12 +225,12 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             'INPUT': subcatch,
             'PREDICATE':[0],
             'JOIN': waternet,
-            'JOIN_FIELDS':['CATCH_ID'],   # instead of "NET_ID", consider using a different id {changed to CATCH_ID}
+            'JOIN_FIELDS':['id_catch'],   # instead of "NET_ID", consider using a different id {changed to id_catch}
             'METHOD':2,
             'DISCARD_NONMATCHING':True,
             'PREFIX':'',
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        feedback.pushInfo(f"\nNumber of features in the subcat_layer_with_duplicate: {subcat_layer_with_duplicate.featureCount()}")
+        # feedback.pushInfo(f"\nNumber of features in the subcat_layer_with_duplicate: {subcat_layer_with_duplicate.featureCount()}")
         # QgsProject.instance().addMapLayer(subcat_layer_with_duplicate)
 
         # delete duplicate geometries
@@ -256,7 +256,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             'INPUT': gaug_stat,
             'PREDICATE':[0],
             'JOIN': subcat_layer,
-            'JOIN_FIELDS':['CATCH_ID'],
+            'JOIN_FIELDS':['id_catch'],
             'METHOD':0,
             'DISCARD_NONMATCHING':True,
             'PREFIX':'',
@@ -303,6 +303,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 return(rows_connect)
 
 
+        # this function is probably not necessary with the new method
         def find_closest_river_section(outlet_point, spatial_index, river_map, feedback):
             '''
             Finds the closest river section to the gauging station
@@ -567,7 +568,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             '''load data from layer "waternet" '''
             Data = [[str(f.attribute(idxId)),str(f.attribute(idxPrev)),str(f.attribute(idxNext)),f.id()] for f in waternet.getFeatures()]  # 0:id, 1:from, 2:to, 3id
             DataArr = np.array(Data, dtype= 'object') # save Data as numpy array
-            feedback.setProgressText(self.tr("Data loaded\n Calculating {0}\n").format(str(Section_long)))
+            #feedback.setProgressText(self.tr("Data loaded\n Calculating {0}\n").format(str(Section_long)))
             feedback.setProgress(20)
 
             '''this was planned as an option: should the first selected segment be part of the final selection?
@@ -626,7 +627,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             
             # construct the expression to filter the subcatchment based on the IDs stored in net_id_values
             net_id_str = ", ".join(map(str, net_id_values)) # convert IDs to a comma-separeted string
-            expression = f'"CATCH_ID" IN ({net_id_str})'
+            expression = f'"id_catch" IN ({net_id_str})'
 
             # extract upstream subcatchments
             upstream_catch_result = processing.run("native:extractbyexpression", {
@@ -647,15 +648,15 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             dissolve_layer = dissolve_result["OUTPUT"]
             # feedback.pushInfo("\ndissolve_layer = done")
 
-            # find the subcatchment with the same CATCH_ID
+            # find the subcatchment with the same id_catch
             matching_attributes = None
             for subcatch in subcat_layer.getFeatures():
-                if subcatch["CATCH_ID"] == river["CATCH_ID"]:
+                if subcatch["id_catch"] == river["id_catch"]:
                     matching_attributes = subcatch.attributes()
                     break
 
             if not matching_attributes:
-                feedback.pushInfo(f"\nWarning: no subcatchment found with CATCH_ID {river['CATCH_ID']}. Skipping.")
+                feedback.pushInfo(f"\nWarning: no subcatchment found with id_catch {river['id_catch']}. Skipping.")
                 continue
 
             # feedback.pushInfo(f"Sink fields: {[field.name() for field in subcat_layer.fields()]}")
@@ -677,8 +678,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             sink_ungauged.addFeature(new_feature)
 
             for gaug in gaug_reproject.getFeatures():
-                # feedback.pushInfo(f"\nProcessing gauging station with CATCH ID: {gaug['CATCH_ID']}")
-                if gaug["CATCH_ID"] == new_feature["CATCH_ID"]:
+                # feedback.pushInfo(f"\nProcessing gauging station with CATCH ID: {gaug['id_catch']}")
+                if gaug["id_catch"] == new_feature["id_catch"]:
                     gauged_feature = QgsFeature(gauged_fields)
                     gauged_feature.setGeometry(dissolve_geom)
                     gauged_feature.setAttributes(matching_attributes + [gaug["Mean Flow"]])
