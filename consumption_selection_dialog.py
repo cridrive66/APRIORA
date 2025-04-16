@@ -28,6 +28,8 @@ import pandas as pd
 from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets
 from PyQt5.QtWidgets import QMessageBox # add all the import here instead of using the previous line
+from PyQt5.QtGui import QStandardItemModel, QStandardItem
+from PyQt5.QtCore import Qt
 
 # This loads your .ui file so that PyQt can populate your plugin with the elements from Qt Designer
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -35,6 +37,27 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
 
 
 class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
+    def load_excel_to_table(self, excel_path, sheet_name):
+        try:
+            df = pd.read_excel(excel_path, sheet_name)
+            model = QStandardItemModel()
+            model.setHorizontalHeaderLabels(df.columns.astype(str).tolist())
+
+            for row in df.itertuples(index=False):
+                items = []
+                for val in row:
+                    item = QStandardItem(str(val))
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    items.append(item)
+                model.appendRow(items)
+            
+            self.excelTableView.setModel(model)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not load Excel data: {e}")
+    
+    
+    
     def __init__(self, parent=None):
         """Constructor."""
         super(ConsumptionSelectionDialog, self).__init__(parent)
@@ -45,11 +68,12 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # #widgets-and-dialogs-with-auto-connect
         self.setupUi(self)
         plugin_dir = os.path.dirname(__file__)
-        excel_file = os.path.join(plugin_dir, "B2 input.xlsx")
+        excel_file = os.path.join(plugin_dir, "B2_input.xlsx")
         try:
-            self.df = pd.read_excel(excel_file)
+            self.df = pd.read_excel(excel_file, sheet_name="API input")
+            self.load_excel_to_table(excel_file, "API input")
         except Exception as e:
-            feedback.reportError(f"Could not read Excel file: {e}")
+            QMessageBox.critical(self, "Error", f"Could not read Excel file: {e}")
             return {}
 
         # Connect signals
@@ -143,7 +167,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                         file.write(f"{selection}\n")
 
                 # show successfull saving
-                QMessageBox.information(self, "Success", "File saved successfully!")
+                QMessageBox.information(self, "Success", "Selection saved successfully!")
 
             except PermissionError:
                 QMessageBox.critical(self, "Error", f"Permission denied: could not save the file to:\n{file_path}")

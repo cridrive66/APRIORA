@@ -1,5 +1,2 @@
-Carbamazepine, 2022, Germany, n.d.
-Estrone (E1), 2023, Germany, Mecklenburg-Vorpommern
-Primidone, 2023, Germany, Mecklenburg-Vorpommern
-Trimethoprim, 2023, Germany, Mecklenburg-Vorpommern
-Venlafaxine, 2023, Germany, Mecklenburg-Vorpommern
+Carbamazepine, 2023, Germany, Mecklenburg-Vorpommern
+Diclofenac, 2023, Germany, Mecklenburg-Vorpommern
