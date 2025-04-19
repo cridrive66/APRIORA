@@ -56,6 +56,10 @@ class EmissionLoads(QgsProcessingAlgorithm):
     # calling from the QGIS console.
 
     emissionPoints = 'EmissionPoints'
+    idWwtp = "id_wwtp"
+    nameWwtp = "name_wwtp"
+    connInh = "conn_inh"
+    techClass = "tech_class"
     OUTPUT = 'OUTPUT'
 
     def shortHelpString(self):
@@ -79,17 +83,28 @@ class EmissionLoads(QgsProcessingAlgorithm):
         # id
         self.addParameter(
             QgsProcessingParameterField(
-                name='field_id',
+                self.idWwtp,
                 description=self.tr('Select ID field'),
                 parentLayerParameterName=self.emissionPoints,
                 type=QgsProcessingParameterField.Any
             )
         )
 
+        # name
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.nameWwtp,
+                description=self.tr('Select Name field'),
+                parentLayerParameterName=self.emissionPoints,
+                type=QgsProcessingParameterField.Any
+            )
+        )
+
+
         # inhabitants connected
         self.addParameter(
             QgsProcessingParameterField(
-                name='field_inhabitants',
+                self.connInh,
                 description=self.tr('Select Inhabitants Connected field'),
                 parentLayerParameterName=self.emissionPoints,
                 type=QgsProcessingParameterField.Any
@@ -99,7 +114,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
         # technology class
         self.addParameter(
             QgsProcessingParameterField(
-                name='field_techclass',
+                self.techClass,
                 description=self.tr('Select Technology Class field'),
                 parentLayerParameterName=self.emissionPoints,
                 type=QgsProcessingParameterField.Any
@@ -113,7 +128,9 @@ class EmissionLoads(QgsProcessingAlgorithm):
 
         try:
             with open(file_path, "r") as file:
-                selection_text = file.read().strip()
+                lines = file.readlines()
+                api_names = [line.strip().split(",")[0] for line in lines if line.strip()]
+                selection_text = ", ".join(api_names)
         except Exception as e:
             selection_text = f"Could not load selection.txt: {e}"
         
@@ -143,7 +160,9 @@ class EmissionLoads(QgsProcessingAlgorithm):
         # retrieve the selection of the user
         plugin_dir = os.path.dirname(__file__)
         selection_file = os.path.join(plugin_dir, "user_selection.txt")
-        excel_file = os.path.join(plugin_dir, "B2_input.xlsx")
+        #excel_file = os.path.join(plugin_dir, "B2_input.xlsx")
+        cons_file = os.path.join(plugin_dir, "consumption_dataset.csv")
+        removal_file = os.path.join(plugin_dir, "removal_rates.csv")
 
         # read and show content
         if os.path.exists(selection_file):
@@ -166,20 +185,23 @@ class EmissionLoads(QgsProcessingAlgorithm):
 
         # retrieve the consumption data from our database
         try:
-            df = pd.read_excel(excel_file, sheet_name="API input")
-            removal_df = pd.read_excel(excel_file, sheet_name="Removal rates")
+            df = pd.read_csv(cons_file, sep=",")
+            removal_df = pd.read_csv(removal_file, sep=",")
         except Exception as e:
-            feedback.reportError(f"Could not read Excel file: {e}")
+            feedback.reportError(f"Could not read CSV file: {e}")
             return {}
 
         # get input parameters
         layer = self.parameterAsVectorLayer(parameters, self.emissionPoints, context)
-        id_field = self.parameterAsString(parameters, "field_id", context)
-        field_inhabitants = self.parameterAsString(parameters, "field_inhabitants",context)
-        tech_field = self.parameterAsString(parameters, "field_techclass", context)
+        id_field = self.parameterAsString(parameters, self.idWwtp, context)
+        name_field = self.parameterAsString(parameters, self.nameWwtp, context)
+        field_inhabitants = self.parameterAsString(parameters, self.connInh, context)
+        tech_field = self.parameterAsString(parameters, self.techClass, context)
 
         # clone original fields
-        fields = QgsFields(layer.fields())
+        fields = QgsFields()
+        fields.append(QgsField(id_field, layer.fields().field(id_field).type()))
+        fields.append(QgsField(name_field, layer.fields().field(name_field).type()))
 
         # add one new field per API
         api_columns = []
@@ -251,7 +273,10 @@ class EmissionLoads(QgsProcessingAlgorithm):
                 feedback.reportError(f"Tech class missing or invalid feature for {feature[id_field]}")
 
             # prepare new attributes with additional API columns
-            new_attrs = attrs [:]
+            new_attrs = [
+                feature[id_field],
+                feature[name_field]
+            ]
 
             for api_field, consumption_value in api_consumption_values.items():
                 # get the removal rate of each specific API
