@@ -296,7 +296,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         # snap the river line back together
         split_river_layer = processing.run("native:snapgeometries", {
             'INPUT': difference,
-            'REFERENCE_LAYER': difference,
+            'REFERENCE_LAYER': vertices_river_layer,
             'TOLERANCE':0.05,   # snapping within 5cm
             'BEHAVIOR':0,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
@@ -534,7 +534,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         # delete mistakes of river sections that are wrongly crossing the subcatchment
         # define the threshold length
-        threshold_length = 0.0 
+        threshold_length = 0.05 
 
         # prepare to edit the layer
         with edit(intersection_layer):
@@ -550,7 +550,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             # delete all short features
             if features_to_delete:
                 intersection_layer.dataProvider().deleteFeatures(features_to_delete)
-                feedback.reportError(f"\nDeleted {len(features_to_delete)} short features below {threshold_length}.")
+                feedback.pushInfo(f"\nDeleted {len(features_to_delete)} short features below {threshold_length}.")
         
 
         # dissolve line within the subcatchment
@@ -827,7 +827,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             circ_dict = Counter(tuple(sorted(lst)) for lst in circ_list)
             circ_list_out = [f_ids for f_ids, counted in circ_dict.items() if counted > 1]
             if len(circ_list_out)>0:
-                feedback.pushWarning("Warning: Circle closed at NET_ID = ")
+                feedback.pushWarning("\nWarning: Circle closed at NET_ID = ")
                 for f_ids in circ_list_out:
                     net_ids = [finished_segm[f_id][0] for f_id in f_ids if f_id in finished_segm]
                     feedback.pushWarning(self.tr('{0}, ').format(", ".join(net_ids)))
