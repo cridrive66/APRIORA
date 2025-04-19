@@ -26,7 +26,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 
 # Initialize Qt resources from file resources.py
-from apriora.resources import *
+from .resources import *
 # Import the code for the dialog
 from .consumption_selection_dialog import ConsumptionSelectionDialog
 import os.path
