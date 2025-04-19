@@ -37,9 +37,9 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
 
 
 class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
-    def load_excel_to_table(self, excel_path, sheet_name):
+    def load_csv_to_table(self, csv_path):
         try:
-            df = pd.read_excel(excel_path, sheet_name)
+            df = pd.read_csv(csv_path, sep=",")
             model = QStandardItemModel()
             model.setHorizontalHeaderLabels(df.columns.astype(str).tolist())
 
@@ -54,7 +54,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             self.excelTableView.setModel(model)
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not load Excel data: {e}")
+            QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
     
     
     
@@ -68,10 +68,10 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # #widgets-and-dialogs-with-auto-connect
         self.setupUi(self)
         plugin_dir = os.path.dirname(__file__)
-        excel_file = os.path.join(plugin_dir, "B2_input.xlsx")
+        csv_file = os.path.join(plugin_dir, "consumption_dataset.csv")
         try:
-            self.df = pd.read_excel(excel_file, sheet_name="API input")
-            self.load_excel_to_table(excel_file, "API input")
+            self.df = pd.read_csv(csv_file, sep=",")
+            self.load_csv_to_table(csv_file)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not read Excel file: {e}")
             return {}
