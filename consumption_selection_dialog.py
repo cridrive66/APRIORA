@@ -94,17 +94,58 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         current_country = self.countryComboBox.currentText()
         current_region = self.regionComboBox.currentText()
 
-        df_filtered = self.df.copy()
+        # df_filtered = self.df.copy()
 
-        if current_api: df_filtered = df_filtered[df_filtered['API name'] == current_api]
-        if current_year: df_filtered = df_filtered[df_filtered['year'].astype(str) == current_year]
-        if current_country: df_filtered = df_filtered[df_filtered['country'] == current_country]
-        if current_region: df_filtered = df_filtered[df_filtered['region'] == current_region]
+        # if current_api: df_filtered = df_filtered[df_filtered['API name'] == current_api]
+        # if current_year: df_filtered = df_filtered[df_filtered['year'].astype(str) == current_year]
+        # if current_country: df_filtered = df_filtered[df_filtered['country'] == current_country]
+        # if current_region: df_filtered = df_filtered[df_filtered['region'] == current_region]
 
-        self.set_combo_items(self.apiComboBox, sorted(df_filtered['API name'].unique()), current_api)
-        self.set_combo_items(self.yearComboBox, sorted(df_filtered['year'].astype(str).unique()), current_year)
-        self.set_combo_items(self.countryComboBox, sorted(df_filtered['country'].unique()), current_country)
-        self.set_combo_items(self.regionComboBox, sorted(df_filtered['region'].unique()), current_region)
+        # self.set_combo_items(self.apiComboBox, sorted(df_filtered['API name'].unique()), current_api)
+        # self.set_combo_items(self.yearComboBox, sorted(df_filtered['year'].astype(str).unique()), current_year)
+        # self.set_combo_items(self.countryComboBox, sorted(df_filtered['country'].unique()), current_country)
+        # self.set_combo_items(self.regionComboBox, sorted(df_filtered['region'].unique()), current_region)
+
+        df = self.df
+
+        # create filtered versions of the dataframe for each combo box
+        df_api = df.copy()
+        if current_year:
+            df_api = df_api[df_api['year'].astype(str) == current_year]
+        if current_country: 
+            df_api = df_api[df_api['country'] == current_country]
+        if current_region: 
+            df_api = df_api[df_api['region'] == current_region]
+
+        df_year = df.copy()
+        if current_api:
+            df_year = df_year[df_year['API name'] == current_api]
+        if current_country: 
+            df_year = df_year[df_year['country'] == current_country]
+        if current_region: 
+            df_year = df_year[df_year['region'] == current_region]
+
+        df_country = df.copy()
+        if current_api:
+            df_country = df_country[df_country['API name'] == current_api]
+        if current_year:
+            df_country = df_country[df_country['year'].astype(str) == current_year]
+        if current_region: 
+            df_country = df_country[df_country['region'] == current_region]
+
+        df_region = df.copy()
+        if current_api:
+            df_region = df_region[df_region['API name'] == current_api]
+        if current_year:
+            df_region = df_region[df_region['year'].astype(str) == current_year]
+        if current_country: 
+            df_region = df_region[df_region['country'] == current_country]
+
+        self.set_combo_items(self.apiComboBox, sorted(df_api['API name'].unique()), current_api)
+        self.set_combo_items(self.yearComboBox, sorted(df_year['year'].astype(str).unique()), current_year)
+        self.set_combo_items(self.countryComboBox, sorted(df_country['country'].unique()), current_country)
+        self.set_combo_items(self.regionComboBox, sorted(df_region['region'].unique()), current_region)
+
 
     def set_combo_items(self, combo, items, current):
         block = combo.blockSignals(True)
