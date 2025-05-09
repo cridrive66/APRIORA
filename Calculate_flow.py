@@ -266,7 +266,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # check if the field already exists
         if field_name not in [field.name() for field in fields]:
-            feedback.pushError(f"No field {field_name} in the ungauged subcatchment file.")
+            feedback.reportError(f"No field {field_name} in the ungauged subcatchment file.")
+            raise QgsProcessingException(f"Missing field: '{field_name}' in the ungauged subcatchment layer.")
 
         
         else:
@@ -699,7 +700,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # get the index of the new field in waternet
         field_idx = waternet.fields().indexOf(new_field_name)
         if field_idx == -1:
-            feedback.pushError(f"Error: field {new_field_name} not found in waternet")
+            feedback.reportError(f"Error: field {new_field_name} not found in waternet")
 
         for i, feature in enumerate(features):
             # Stop the algorithm if cancel button has been clicked
