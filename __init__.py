@@ -22,7 +22,7 @@
  This script initializes the plugin, making it known to QGIS.
 """
 
-__author__ = 'Universität Rostock'
+__author__ = 'Cristiano Guidi'
 __date__ = '2024-06-13'
 __copyright__ = '(C) 2024 by Universität Rostock'
 
@@ -36,4 +36,5 @@ def classFactory(iface):  # pylint: disable=invalid-name
     """
     #
     from .APRIORA import APRIORAPlugin
-    return APRIORAPlugin()
+    
+    return APRIORAPlugin(iface)
