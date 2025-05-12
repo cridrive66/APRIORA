@@ -36,6 +36,7 @@ import inspect
 
 from qgis.core import QgsProcessingAlgorithm, QgsApplication
 from .APRIORA_provider import APRIORAProvider
+from .consumption_selection import ConsumptionSelection
 
 cmd_folder = os.path.split(inspect.getfile(inspect.currentframe()))[0]
 
@@ -45,8 +46,10 @@ if cmd_folder not in sys.path:
 
 class APRIORAPlugin(object):
 
-    def __init__(self):
+    def __init__(self, iface):
         self.provider = None
+        self.iface = iface
+        self.consumption_dialog = None
 
     def initProcessing(self):
         """Init Processing provider for QGIS >= 3.8."""
@@ -55,6 +58,23 @@ class APRIORAPlugin(object):
 
     def initGui(self):
         self.initProcessing()
+        
+        # Init and show the ConsumptionSelection plugin in the menu
+        self.consumption_plugin = ConsumptionSelection(self.iface)
+        self.consumption_plugin.initGui()  # This shows the menu entry
+
+        # # Example of adding a custom toolbar button to open the dialog
+        # action = self.iface.addToolBarIcon(self.consumption_dialog.addSelectionButton)
+        # self.iface.addToolBar("Consumption Selection").addAction(action)
 
     def unload(self):
-        QgsApplication.processingRegistry().removeProvider(self.provider)
+        if self.provider:
+            try:
+                QgsApplication.processingRegistry().removeProvider(self.provider)
+            except RuntimeError:
+                # The provider was already deleted
+                pass
+            self.provider = None  # Clear the reference 
+
+        if self.consumption_plugin:
+            self.consumption_plugin.unload()  # Remove its UI elements
