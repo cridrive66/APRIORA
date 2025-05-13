@@ -40,7 +40,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
     riverNetwork = "RiverNetwork"
     catchmentAreas = 'CatchmentAreas'
     gaugingStations = "GaugingStations"
-    # OUTPUT_OPTION = 'OUTPUT_OPTION'
+    meanFlow = "MeanFlow"
+    MNQ = "MNQ"
     OUTPUT_gauged = "OUTPUT_gauged"
     OUTPUT_ungauged = "OUTPUT_ungauged"
 
@@ -79,15 +80,28 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             )
         )
 
-        # self.addParameter(
-        #     QgsProcessingParameterEnum(
-        #         self.OUTPUT_OPTION,
-        #         self.tr("How do you want to display the gauged subcatchments?"),
-        #         ['aggregated output','add also single gauged subcatchments'],
-        #         defaultValue=[0]
-        #     )
-        # )
+        # mean flow
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.meanFlow,
+                description=self.tr('Select Mean Flow field'),
+                parentLayerParameterName=self.gaugingStations,
+                type=QgsProcessingParameterField.Any
+            )
+        )
 
+
+        # mean low flow
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.MNQ,
+                description=self.tr('Select Mean Low Flow field'),
+                parentLayerParameterName=self.gaugingStations,
+                type=QgsProcessingParameterField.Any
+            )
+        )
+
+        # first output related to gauged subcatchments
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_gauged,
@@ -123,6 +137,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         subcatch = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
         subcatch_source = self.parameterAsSource(parameters, self.catchmentAreas, context)
         river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        MQ_field = self.parameterAsString(parameters, self.meanFlow, context)
+        MNQ_field = self.parameterAsString(parameters, self.MNQ, context)
 
         """
         The river network file can present multiple river sections within a subcatchment. 
@@ -266,7 +282,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         feedback.pushInfo(f"\nNumber of features in the gaug_id: {gaug_id.featureCount()}")
 
         gauged_fields = QgsFields(subcat_layer.fields())
-        gauged_fields.append(QgsField("Mean Flow", QVariant.Double))
+        gauged_fields.append(QgsField("Mean_Flow", QVariant.Double))
+        gauged_fields.append(QgsField("M_Low_Flow", QVariant.Double))
 
         # initialize the feature sink for gauged subcatchments
         (sink_gauged, dest_id_gauged) = self.parameterAsSink(
@@ -682,7 +699,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 if gaug["id_catch"] == new_feature["id_catch"]:
                     gauged_feature = QgsFeature(gauged_fields)
                     gauged_feature.setGeometry(dissolve_geom)
-                    gauged_feature.setAttributes(matching_attributes + [gaug["Mean Flow"]])
+                    gauged_feature.setAttributes(matching_attributes + [gaug[MQ_field], gaug[MNQ_field]])
                     sink_gauged.addFeature(gauged_feature)
 
          

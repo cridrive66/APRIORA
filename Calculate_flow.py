@@ -149,9 +149,9 @@ class CalculateFlow(QgsProcessingAlgorithm):
             'Forest Share': 'Forest %',
             'Settlements Share': 'Settl %',
             'Yearly Precipitation Mean': 'PrecYearly',
-            'Yearly Precipitation Sum' : 'PrecYearly_sum', #change this name
+            #'Yearly Precipitation Sum' : 'PrecYearly_sum', #change this name
             'August Precipitation Mean': 'PrecAugust',
-            'August Precipitation Sum': 'PrecAugust_sum' #change this name
+            #'August Precipitation Sum': 'PrecAugust_sum' #change this name
         }
         self.geofactor_options = list(self.geofactor_mapping.keys())
 
@@ -274,219 +274,245 @@ class CalculateFlow(QgsProcessingAlgorithm):
             warnow_subcatch_gf = warnow_subcatch_layer
             feedback.pushInfo(f"\nField '{field_name}' exists.") 
         
+        def flow_estimation(flow, final_output):
+            ##### FIRST PART OF THE MODEL
+            # Selecting input (predictors) and output
+            # In this part of the code, we select the number of predictors that will be used in the model and drop
+            # the not necessaries columns. The predictors are the geofactors previously calculated. 
+            # We also select the output and like we said before, there are 2 outputs of this model: "Mean Low Flow" and "Mean Flow". 
+            # In this part of the code we select "Mean Flow" and in a second part we will estimate "Mean Low Flow". [not in this version of the script]
+
+            # Get the field names
+            field_names = [field.name() for field in gaug_stat.fields()]
+
+            # extract attribute data from the layer
+            features = gaug_stat.getFeatures()
+            data = []
+
+            for feature in features:
+                # collect the attribute values for each feature
+                data.append([feature[field] for field in field_names])
+                
+            # create dataframe
+            gaug_stat_df = pd.DataFrame(data, columns = field_names)
+
         
-        ##### FIRST PART OF THE MODEL
-        # Selecting input (predictors) and output
-        # In this part of the code, we select the number of predictors that will be used in the model and drop
-        # the not necessaries columns. The predictors are the geofactors previously calculated. 
-        # We also select the output and like we said before, there are 2 outputs of this model: "Mean Low Flow" and "Mean Flow". 
-        # In this part of the code we select "Mean Flow" and in a second part we will estimate "Mean Low Flow". [not in this version of the script]
-
-        # Get the field names
-        field_names = [field.name() for field in gaug_stat.fields()]
-
-        # extract attribute data from the layer
-        features = gaug_stat.getFeatures()
-        data = []
-
-        for feature in features:
-            # collect the attribute values for each feature
-            data.append([feature[field] for field in field_names])
+            # filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PrecYearly', 'PrecAugust']
+            # select number of features (predictors) and dependent variable
+            x = gaug_stat_df.filter(items=selected_geofactors)
+            feedback.setProgressText(f"\nDatabase columns: {x.columns} ")
             
-        # create dataframe
-        gaug_stat_df = pd.DataFrame(data, columns = field_names)
+            # # try to normalise the flow for the subcatchment area
+            # y = gaug_stat_df["Mean Flow"]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
+            # feedback.setProgressText(f"\nFlow values normalised: {y} ")
+            # y = StandardScaler().fit_transform(y.values.reshape(-1,1))
 
-    
-        # filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PrecYearly', 'PrecAugust']
-        # select number of features (predictors) and dependent variable
-        x = gaug_stat_df.filter(items=selected_geofactors)
-        feedback.setProgressText(f"\nDatabase columns: {x.columns} ")
-        
-        # # try to normalise the flow for the subcatchment area
-        # y = gaug_stat_df["Mean Flow"]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
-        # feedback.setProgressText(f"\nFlow values normalised: {y} ")
-        # y = StandardScaler().fit_transform(y.values.reshape(-1,1))
-
-        # y = gaug_stat_df["Mean Flow"]
-        y = gaug_stat_df["Mean Flow"]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
+            y = gaug_stat_df[flow]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
 
 
-        """
-        Remove multicollinearity between variables by performing hierarchical clustering on the Spearman rank-order correlations, picking a threshold,
-        and keeping a single feature from each cluster.
-        """
-        def select_non_collinear_features(df, threshold):
-            feedback.setProgressText(f"Collinearity threshold: {threshold}")
-            # compute Spearman correlation matrix
-            corr = spearmanr(df).correlation
-            #corr = (corr + corr.T)/2    # ensure simmetry
-            corr = np.maximum(corr, corr.T) # ensure simmetry
-            np.fill_diagonal(corr,1)    # fill diagonal with ones
+            """
+            Remove multicollinearity between variables by performing hierarchical clustering on the Spearman rank-order correlations, picking a threshold,
+            and keeping a single feature from each cluster.
+            """
+            def select_non_collinear_features(df, threshold):
+                feedback.setProgressText(f"Collinearity threshold: {threshold}")
+                # compute Spearman correlation matrix
+                corr = spearmanr(df).correlation
+                #corr = (corr + corr.T)/2    # ensure simmetry
+                corr = np.maximum(corr, corr.T) # ensure simmetry
+                np.fill_diagonal(corr,1)    # fill diagonal with ones
 
-            # convert correlation matrix to a distance matrix
-            distance_matrix = 1 - np.abs(corr)
+                # convert correlation matrix to a distance matrix
+                distance_matrix = 1 - np.abs(corr)
 
-            # force perfect symmetry again
-            distance_matrix = np.maximum(distance_matrix, distance_matrix.T)
+                # force perfect symmetry again
+                distance_matrix = np.maximum(distance_matrix, distance_matrix.T)
 
-            # replace NaNs with a large value (e.g. 1.0, meaning maximum distance)
-            distance_matrix = np.nan_to_num(distance_matrix, nan = 1.0)
+                # replace NaNs with a large value (e.g. 1.0, meaning maximum distance)
+                distance_matrix = np.nan_to_num(distance_matrix, nan = 1.0)
 
-            #feedback.setProgressText(f"\nDistance Matrix: {distance_matrix}")
-           
-            # perform hierarchical clustering
-            dist_linkage = hierarchy.ward(squareform(distance_matrix)) # ward clustering is grouping a lot of features together in the case of a small catchment
-            #dist_linkage = hierarchy.linkage(squareform(distance_matrix), method = "single")
-            #feedback.setProgressText(f"\nLinkage Matrix: {dist_linkage}")
-
-            # cluster features based on threshold
-            max_linkage_distance = np.max(dist_linkage[:, 2]) # get the max linkage distance
-            adjusted_threshold = threshold * max_linkage_distance # scale the user threshold
+                #feedback.setProgressText(f"\nDistance Matrix: {distance_matrix}")
             
-            cluster_ids = hierarchy.fcluster(dist_linkage, adjusted_threshold, criterion = "distance")
-            cluster_id_to_feature_ids = defaultdict(list)
-            #feedback.setProgressText(f"\nCluster IDs: {cluster_ids}")
+                # perform hierarchical clustering
+                dist_linkage = hierarchy.ward(squareform(distance_matrix)) # ward clustering is grouping a lot of features together in the case of a small catchment
+                #dist_linkage = hierarchy.linkage(squareform(distance_matrix), method = "single")
+                #feedback.setProgressText(f"\nLinkage Matrix: {dist_linkage}")
 
-            for idx, cluster_id in enumerate(cluster_ids):
-                cluster_id_to_feature_ids[cluster_id].append(idx)
+                # cluster features based on threshold
+                max_linkage_distance = np.max(dist_linkage[:, 2]) # get the max linkage distance
+                adjusted_threshold = threshold * max_linkage_distance # scale the user threshold
+                
+                cluster_ids = hierarchy.fcluster(dist_linkage, adjusted_threshold, criterion = "distance")
+                cluster_id_to_feature_ids = defaultdict(list)
+                #feedback.setProgressText(f"\nCluster IDs: {cluster_ids}")
 
-            # select one representative feature from each cluster
-            # the number inside v[x] means which feature is going to be selected
-            selected_features = [v[0] for v in cluster_id_to_feature_ids.values()]
-            selected_features_names = df.columns[selected_features]
+                for idx, cluster_id in enumerate(cluster_ids):
+                    cluster_id_to_feature_ids[cluster_id].append(idx)
 
-            # return new dataframe with selected features
-            return df[selected_features_names]
-        
-        # remove multicollinearity features
-        x_nc = select_non_collinear_features(x, threshold = threshold_user)
+                # select one representative feature from each cluster
+                # the number inside v[x] means which feature is going to be selected
+                selected_features = [v[0] for v in cluster_id_to_feature_ids.values()]
+                selected_features_names = df.columns[selected_features]
 
-        feedback.setProgressText(f"\nMulticollinearity features removed, this is the new database: {x_nc.columns} ")
-        
-        
-        ### Random Forest Regressor
-        ##### Split the data for calibration (train) and validation (test)
-
-        # prepare the data: divide into train and test set
-        # scale the data
-        scaler = StandardScaler()
-        x_train, x_test, y_train, y_test = train_test_split(x_nc, y, test_size=0.2, random_state=42)
-        x_train = scaler.fit_transform(x_train) 
-        x_test = scaler.transform(x_test)
-
-        # Initialize the model
-        # model initialization
-        model = RandomForestRegressor()
-
-        # model training
-        model.fit(x_train,y_train)
-
-        ##### Calibration
-        # Here we work with the train dataset (x_train) to calibrate the model. 
-        # After, we print the performance of the model through two metrics like RMSE and R^2.
-        # I would like to print the metric of RMSE and Rsquared in the log messages panel of the plugin 
-        # in order to give an idea of the performance of the model. [The metric is not part of the output]
-        # If it is not possible, the "print" command can be deleted. 
-
-        # performance of the trained model
-        y_train_pred = model.predict(x_train)
-        mse = mean_squared_error(y_train, y_train_pred)
-        rmse = sqrt(mse)
-        r2 = r2_score(y_train, y_train_pred)
-        feedback.setProgressText(f"\nCalibration RMSE: {rmse}")
-        feedback.setProgressText(f"Calibration R-squared: {r2}")
-        # print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
-        # print("Calibration R-squared:", r2_score(y_train, y_train_pred))
-
-        ##### Validation
-        # Now, we work with the test dataset (x_test) to validate the model and make estimation on new different data. 
-        # Like in the calibration, the performance of the model are evaluated by the metrics RMSE and R^2.
-
-        # prediction and evaluation
-        y_pred = model.predict(x_test)
-        mse = mean_squared_error(y_test, y_pred)
-        rmse = sqrt(mse)
-        r2 = r2_score(y_test, y_pred)
-        feedback.setProgressText(f"\nValidation RMSE: {rmse}")
-        feedback.setProgressText(f"Validation R-squared: {r2}\n")
-
-        ##### SECOND PART OF THE MODEL
-        ### Estimate flow in ungauged subcatchments
-        # Now it is time to run the model with the ungauged subcatchments and make an estimation of "Mean Flow".
-        # First, we select the predictors of the model (geofactors) and we drop all the other 
-        # columns that are not necessaries.
-
-        # Get the field names
-        field_names = [field.name() for field in warnow_subcatch_gf.fields()]
-
-        # extract attribute data from the layer
-        features = warnow_subcatch_gf.getFeatures()
-        data = []
-
-        for feature in features:
-            # collect the attribute values for each feature
-            data.append([feature[field] for field in field_names])
+                # return new dataframe with selected features
+                return df[selected_features_names]
             
-        # create dataframe
-        warnow_subcatch_gf_df = pd.DataFrame(data, columns = field_names)
+            # remove multicollinearity features
+            x_nc = select_non_collinear_features(x, threshold = threshold_user)
 
-        # select number of features (predictors) and dependent variable
-        x_catch = warnow_subcatch_gf_df[x_nc.columns] #filter geofactors
+            feedback.setProgressText(f"\nMulticollinearity features removed, this is the new database: {x_nc.columns} ")
+            
+            
+            ### Random Forest Regressor
+            ##### Split the data for calibration (train) and validation (test)
 
-        # scale the data
-        x_catch = scaler.transform(x_catch)
+            # prepare the data: divide into train and test set
+            # scale the data
+            scaler = StandardScaler()
+            x_train, x_test, y_train, y_test = train_test_split(x_nc, y, test_size=0.2, random_state=42)
+            x_train = scaler.fit_transform(x_train) 
+            x_test = scaler.transform(x_test)
 
-        # Run the model to calculate "Mean Flow"
-        # estimation of mean flow
-        y_catch_normalized = model.predict(x_catch)
-        y_catch = y_catch_normalized * warnow_subcatch_gf_df["AREA_SC"] # I need to put warnow_subcatch_gf_df and not x_catch because it can happen that the AREA_SC will not be use to make the prediction.
+            # Initialize the model
+            # model initialization
+            model = RandomForestRegressor()
 
-        # THIRD PART OF THE MODEL
-        # The flow is estimated for each ungauged subcatchment and now it is time to store it in a new shapfile. 
-        # The goal of this part of the code is to create a new polygon file with 2 columns(+ geometry): 
-        # the gbk_lawa code of the ungauged subcatchment where the flow estimation was made,
-        # the flow estimation + the geometry of the ungauged subcatchment.
+            # model training
+            model.fit(x_train,y_train)
 
-        # create new dataframe
-        output_df = pd.DataFrame({"id_catch": warnow_subcatch_gf_df["id_catch"].astype(int),"Mean Flow": y_catch})
+            ##### Calibration
+            # Here we work with the train dataset (x_train) to calibrate the model. 
+            # After, we print the performance of the model through two metrics like RMSE and R^2.
+            # I would like to print the metric of RMSE and Rsquared in the log messages panel of the plugin 
+            # in order to give an idea of the performance of the model. [The metric is not part of the output]
+            # If it is not possible, the "print" command can be deleted. 
+
+            # performance of the trained model
+            y_train_pred = model.predict(x_train)
+            mse = mean_squared_error(y_train, y_train_pred)
+            rmse = sqrt(mse)
+            r2 = r2_score(y_train, y_train_pred)
+            feedback.setProgressText(f"\nCalibration {flow} RMSE: {rmse}")
+            feedback.setProgressText(f"Calibration {flow} R-squared: {r2}")
+            # print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
+            # print("Calibration R-squared:", r2_score(y_train, y_train_pred))
+
+            ##### Validation
+            # Now, we work with the test dataset (x_test) to validate the model and make estimation on new different data. 
+            # Like in the calibration, the performance of the model are evaluated by the metrics RMSE and R^2.
+
+            # prediction and evaluation
+            y_pred = model.predict(x_test)
+            mse = mean_squared_error(y_test, y_pred)
+            rmse = sqrt(mse)
+            r2 = r2_score(y_test, y_pred)
+            feedback.setProgressText(f"\nValidation {flow} RMSE: {rmse}")
+            feedback.setProgressText(f"Validation {flow} R-squared: {r2}\n")
+
+            ##### SECOND PART OF THE MODEL
+            ### Estimate flow in ungauged subcatchments
+            # Now it is time to run the model with the ungauged subcatchments and make an estimation of "Mean Flow".
+            # First, we select the predictors of the model (geofactors) and we drop all the other 
+            # columns that are not necessaries.
+
+            # Get the field names
+            field_names = [field.name() for field in warnow_subcatch_gf.fields()]
+
+            # extract attribute data from the layer
+            features = warnow_subcatch_gf.getFeatures()
+            data = []
+
+            for feature in features:
+                # collect the attribute values for each feature
+                data.append([feature[field] for field in field_names])
+                
+            # create dataframe
+            warnow_subcatch_gf_df = pd.DataFrame(data, columns = field_names)
+
+            # select number of features (predictors) and dependent variable
+            x_catch = warnow_subcatch_gf_df[x_nc.columns] #filter geofactors
+
+            # scale the data
+            x_catch = scaler.transform(x_catch)
+
+            # Run the model to calculate "Mean Flow"
+            # estimation of mean flow
+            y_catch_normalized = model.predict(x_catch)
+            y_catch = y_catch_normalized * warnow_subcatch_gf_df["AREA_SC"] # I need to put warnow_subcatch_gf_df and not x_catch because it can happen that the AREA_SC will not be use to make the prediction.
+
+            # THIRD PART OF THE MODEL
+            # The flow is estimated for each ungauged subcatchment and now it is time to store it in a new shapfile. 
+            # The goal of this part of the code is to create a new polygon file with 2 columns(+ geometry): 
+            # the gbk_lawa code of the ungauged subcatchment where the flow estimation was made,
+            # the flow estimation + the geometry of the ungauged subcatchment.
+
+            # create new dataframe
+            output_df = pd.DataFrame({"id_catch": warnow_subcatch_gf_df["id_catch"].astype(int), flow: y_catch})
+
+            # start editing
+            final_output.startEditing()
+
+            # add 'id_catch' if it does not exist
+            existing_fields = [field.name() for field in final_output.fields()]
+
+            if "id_catch" not in existing_fields:
+                final_output.addAttribute(QgsField("id_catch", QVariant.Int))
+
+            # add the new flow field
+            if flow not in existing_fields:
+                final_output.addAttribute(QgsField(flow, QVariant.Double))
+
+            # # creation of my fields
+            # for head in output_df.columns:
+            #     # determine the column data type
+            #     if head == "id_catch":
+            #         field_type = QVariant.Int
+            #     elif pd.api.types.is_integer_dtype(output_df[head]):
+            #         field_type = QVariant.Int
+            #     elif pd.api.types.is_numeric_dtype(output_df[head]):
+            #         field_type = QVariant.Double
+            #     elif pd.api.types.is_string_dtype(output_df[head]):
+            #         field_type = QVariant.String
+            #     else:
+            #         field_type = QVariant.String # default to string for other types
+
+            #     myField = QgsField(head, field_type)
+            #     final_output.addAttribute(myField)
+                
+            # update
+            final_output.updateFields()
+
+            # builf a lookup table of existing features by id_catch
+            existing_features = {f["id_catch"]: f for f in final_output.getFeatures()}
+            
+            # addition of features
+            for row in output_df.itertuples():
+                catch_id = getattr(row, "id_catch")
+                flow_value = getattr(row, flow)
+
+                if catch_id in existing_features:
+                    # update existing features
+                    feature = existing_features[catch_id]
+                    feature.setAttribute(flow, flow_value)
+                    final_output.updateFeature(feature)
+
+                else:
+                    # create new features
+                    feature = QgsFeature(final_output.fields())
+                    feature.setAttribute("id_catch", catch_id)
+                    feature.setAttribute(flow, flow_value)
+                    final_output.addFeature(feature)
+                
+            # saving changes
+            final_output.commitChanges()
 
         # create new shapefile     
         crs = warnow_subcatch_gf.sourceCrs()
         final_output = QgsVectorLayer("Polygon?crs={}".format(crs.authid()), "output test", "memory")
         final_output_provider = final_output.dataProvider()
 
-        # start editing
-        final_output.startEditing()
-
-        # creation of my fields
-        for head in output_df.columns:
-            # determine the column data type
-            if head == "id_catch":
-                field_type = QVariant.Int
-            elif pd.api.types.is_integer_dtype(output_df[head]):
-                field_type = QVariant.Int
-            elif pd.api.types.is_numeric_dtype(output_df[head]):
-                field_type = QVariant.Double
-            elif pd.api.types.is_string_dtype(output_df[head]):
-                field_type = QVariant.String
-            else:
-                field_type = QVariant.String # default to string for other types
-
-            myField = QgsField(head, field_type)
-            final_output.addAttribute(myField)
-            
-        # update
-        final_output.updateFields()
-
-        # addition of features
-        for row in output_df.itertuples():
-            f = QgsFeature()
-            f.setAttributes([int(row[1]), row[2]])  # why only [1] and [2] and not row[1:]?
-            final_output.addFeature(f)
-            
-        # saving changes
-        final_output.commitChanges()
-
+        flow_estimation("Mean_Flow", final_output)
+        flow_estimation("M_Low_Flow", final_output)
 
         # # create a new layer with Mean Flow and gbk_lawa + geometry from warnow_subcatch        
         # (sink_catch, dest_id_catch) = self.parameterAsSink(parameters, self.OUTPUT_catch,
@@ -588,7 +614,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         'FIELD':'id_catch',
         'INPUT_2':final_output,
         'FIELD_2':'id_catch',
-        'FIELDS_TO_COPY':['Mean Flow'],
+        'FIELDS_TO_COPY':['Mean_Flow', 'M_Low_Flow'],
         'METHOD':1,
         'DISCARD_NONMATCHING':False,
         'PREFIX':'',
@@ -601,6 +627,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
         else:
             feedback.pushInfo("Join completed successfully.")
 
+        """
+        Accumulate Mean Flow
+        """
+
         '''loading the network'''
         #waternet = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         waternet = join_output
@@ -609,7 +639,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         id_field = "CATCH_ID"
         next_field = "CATCH_TO"
         prev_field = "CATCH_FROM"
-        calc_field = "Mean Flow"
+        calc_field = "Mean_Flow"
         
         '''field index for id,next segment, previous segment'''
         idxId = waternet.fields().indexFromName(id_field) 
@@ -691,16 +721,16 @@ class CalculateFlow(QgsProcessingAlgorithm):
             feedback.setProgress((1-(len(calc_segm)/total2))*100)
 
         '''add new field'''
-        new_field_name = 'calc_'+calc_field
-        waternet.dataProvider().addAttributes([QgsField(new_field_name, QVariant.Double)])
+        MQ_field_name = 'calc_'+calc_field
+        waternet.dataProvider().addAttributes([QgsField(MQ_field_name, QVariant.Double)])
         waternet.updateFields()
         features = waternet.getFeatures()
 
         waternet.startEditing()
         # get the index of the new field in waternet
-        field_idx = waternet.fields().indexOf(new_field_name)
+        field_idx = waternet.fields().indexOf(MQ_field_name)
         if field_idx == -1:
-            feedback.reportError(f"Error: field {new_field_name} not found in waternet")
+            feedback.reportError(f"Error: field {MQ_field_name} not found in waternet")
 
         for i, feature in enumerate(features):
             # Stop the algorithm if cancel button has been clicked
@@ -708,13 +738,89 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 break
             # set the value for the new field
             value_to_set = float(DataArr[i, 3])
-            #feedback.setProgressText(f"Setting feature {feature.id()} field {new_field_name} to {value_to_set}")
+            #feedback.setProgressText(f"Setting feature {feature.id()} field {MQ_field_name} to {value_to_set}")
 
             # set the new field
             feature.setAttribute(field_idx, value_to_set)
             waternet.updateFeature(feature)
         waternet.commitChanges()
 
+        """
+        Accumulate Mean Low Flow
+        """
+        '''names of fields for id,next segment, previous segment'''
+        calc_field = "M_Low_Flow"
+        
+        '''field index for id,next segment, previous segment'''
+        idxCalc = waternet.fields().indexFromName(calc_field)
+
+        '''load data from layer "waternet" '''
+        feedback.setProgressText(self.tr("Loading network layer\n "))
+        Data = []
+        Data = [[
+            str(f.attribute(idxId)),
+            str(f.attribute(idxPrev)),
+            str(f.attribute(idxNext)),
+            f.attribute(idxCalc),
+            f.id()
+        ] for f in waternet.getFeatures()]
+        DataArr = np.array(Data, dtype='object')
+        DataArr[np.where(DataArr[:,3] == None),3]=0
+        feedback.setProgressText(self.tr("Data loaded \n Calculating flow paths \n"))
+
+        '''segments with numbers'''
+        calc_column = np.copy(DataArr[:,3])  # deep copy of column to do calculations on
+        calc_segm = np.where(calc_column > 0)[0].tolist()  # indices!
+        calc_segm = [i for i in calc_segm if (DataArr[i,1] != 'unconnected' and DataArr[i,2] != 'unconnected')]
+        DataArr[:,3] = 0 # set all to 0
+
+        total2 = len(calc_segm)
+        while len(calc_segm) > 0:
+            if feedback.isCanceled():
+                break
+            StartRow = calc_segm[0]
+            amount = calc_column[StartRow] # amount to add to flow path
+            calc_column[StartRow] = 0 #"delete" calculated amount from list (set 0)
+            Fl_pth = FlowPath(StartRow, amount) # get flow path of StartRow 
+            if len(Fl_pth)== 2:
+                calc_segm = calc_segm + Fl_pth[1] # if flow path devides add new segments to calc_segm
+            DataArr[Fl_pth[0],3] = DataArr[Fl_pth[0],3]+amount # Add the amount to the calculated flow path
+            calc_segm = calc_segm[1:] # delete used segment
+            calc_segm = list(set(calc_segm)) #delete duplicate values
+            feedback.setProgress((1-(len(calc_segm)/total2))*100)
+
+        '''add new field'''
+        MNQ_field_name = 'calc_'+calc_field
+        waternet.dataProvider().addAttributes([QgsField(MNQ_field_name, QVariant.Double)])
+        waternet.updateFields()
+        features = waternet.getFeatures()
+
+        waternet.startEditing()
+        # get the index of the new field in waternet
+        field_idx = waternet.fields().indexOf(MNQ_field_name)
+        if field_idx == -1:
+            feedback.reportError(f"Error: field {MNQ_field_name} not found in waternet")
+
+        for i, feature in enumerate(features):
+            # Stop the algorithm if cancel button has been clicked
+            if feedback.isCanceled():
+                break
+            # set the value for the new field
+            value_to_set = float(DataArr[i, 3])
+            #feedback.setProgressText(f"Setting feature {feature.id()} field {MNQ_field_name} to {value_to_set}")
+
+            # set the new field
+            feature.setAttribute(field_idx, value_to_set)
+            waternet.updateFeature(feature)
+        waternet.commitChanges()
+
+
+        #define new fields
+        out_fields = QgsFields()
+        wnet_fields = waternet.fields()
+        #append fields
+        for field in wnet_fields:
+            out_fields.append(QgsField(field.name(), field.type()))
 
         #define new fields
         out_fields = QgsFields()
@@ -751,7 +857,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             'FIELD':'id_catch',
             'INPUT_2':waternet,
             'FIELD_2':'id_catch',
-            'FIELDS_TO_COPY':[new_field_name],
+            'FIELDS_TO_COPY':[MQ_field_name, MNQ_field_name],
             'METHOD':1,
             'DISCARD_NONMATCHING':False,
             'PREFIX':'',
