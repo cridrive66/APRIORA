@@ -390,9 +390,19 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # performance of the trained model
         y_train_pred = model.predict(x_train)
-        mse = mean_squared_error(y_train, y_train_pred)
+
+        # get the matching areas for y_train by preserving index
+        train_idx = y_train.index
+        area_train = gaug_stat_df.loc[train_idx, "AREA_SC"]
+
+        # convert normalized flows back to total flows
+        y_train_total = y_train * area_train
+        y_train_pred_total = y_train_pred * area_train
+
+        # evaluation
+        mse = mean_squared_error(y_train_total, y_train_pred_total)
         rmse = sqrt(mse)
-        r2 = r2_score(y_train, y_train_pred)
+        r2 = r2_score(y_train_total, y_train_pred_total)
         feedback.setProgressText(f"\nCalibration RMSE: {rmse}")
         feedback.setProgressText(f"Calibration R-squared: {r2}")
         # print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
@@ -404,9 +414,19 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         # prediction and evaluation
         y_pred = model.predict(x_test)
-        mse = mean_squared_error(y_test, y_pred)
+        
+        # get the matching areas for y_train by preserving index
+        test_idx = y_test.index
+        area_test = gaug_stat_df.loc[test_idx, "AREA_SC"]
+
+        # convert normalized flows back to total flows
+        y_test_total = y_test * area_test
+        y_pred_total = y_pred * area_test
+
+        # evaluation
+        mse = mean_squared_error(y_test_total, y_pred_total)
         rmse = sqrt(mse)
-        r2 = r2_score(y_test, y_pred)
+        r2 = r2_score(y_test_total, y_pred_total)
         feedback.setProgressText(f"\nValidation RMSE: {rmse}")
         feedback.setProgressText(f"Validation R-squared: {r2}\n")
 
