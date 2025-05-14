@@ -149,9 +149,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             'Forest Share': 'Forest %',
             'Settlements Share': 'Settl %',
             'Yearly Precipitation Mean': 'PrecYearly',
-            'Yearly Precipitation Sum' : 'PrecYearly_sum', #change this name
             'August Precipitation Mean': 'PrecAugust',
-            'August Precipitation Sum': 'PrecAugust_sum' #change this name
         }
         self.geofactor_options = list(self.geofactor_mapping.keys())
 
