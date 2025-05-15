@@ -720,7 +720,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT': JoinCatchmentsSetttlementAreaSummarize,
              'COLUMN_PREFIX': "PrecYearly_",         
-             'STATISTICS': [1,2], #sum and mean
+             'STATISTICS': [2], #mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context)['OUTPUT']
 
@@ -730,7 +730,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT': precipitation_yearly_gauged,
              'COLUMN_PREFIX': "PrecAugust_",    
-             'STATISTICS': [1,2], #sum and mean
+             'STATISTICS': [2], #mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(finalLayer_gauged) 
@@ -740,7 +740,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         # Remove "mean" from the column name if it exists
         if 'PrecYearly_mean' in [field.name() for field in finalLayer_gauged.fields()]:
             with edit(finalLayer_gauged):
-                idx = finalLayer_gauged.fields().indexOf('PrecYearly_mean')     #need to change the name of the _sum as well
+                idx = finalLayer_gauged.fields().indexOf('PrecYearly_mean')   
                 finalLayer_gauged.renameAttribute(idx, 'PrecYearly')
         
         if 'PrecAugust_mean' in [field.name() for field in finalLayer_gauged.fields()]:
