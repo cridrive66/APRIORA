@@ -5,12 +5,12 @@
 [general]
 name=APRIORA
 qgisMinimumVersion=3.0
-description=Flow estimation in ungauged subcatchments
-version=0.2
+description=Estimation of flow and Active Pharmaceutical Ingredients (API) in a catchment
+version=0.4
 author=Cristiano Guidi
 email=cristiano.guidi2@uni-rostock.de
 
-about=This plugin contains a series of tools that are useful to estimate annual mean flow in ungauged subcatchments.
+about=This plugin contains a series of tools divided into two subgroups: Flow Estimation and API emission. Flow estimation -> useful to estimate annual mean flow and annual mean low flow in ungauged subcatchments. API emission -> calculate the load of API from waste water treatment plants and their concentration in the river network.
 
 tracker=http://bugs
 repository=http://repo
