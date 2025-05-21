@@ -127,16 +127,17 @@ class Accumulation(QgsProcessingAlgorithm):
         Here is where the processing itself takes place.
         """
         selected_api_fields = self.parameterAsFields(parameters, self.selectedAPI, context)
-        load = self.parameterAsVectorLayer(parameters, self.APIload, context)
+        load_original = self.parameterAsVectorLayer(parameters, self.APIload, context)
         river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
 
-    
-
-
-        # add a snapping function that connects the emission load points to the river section (check wich snapping option to use)
-
-
-
+        # snapping function that connects the emission load points to the river section
+        tolerance = 100 # 100m
+        load = processing.run("native:snapgeometries", {
+            'INPUT':load_original,
+            'REFERENCE_LAYER':river_layer,
+            'TOLERANCE':tolerance,
+            'BEHAVIOR':1,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
         
         # find the closest river section for each emission point
         # create a spatial index for river sections
@@ -161,6 +162,12 @@ class Accumulation(QgsProcessingAlgorithm):
             if river_geom.intersects(point_geom) or river_geom.distance(point_geom) < 1e-6:
                 section_id = river_feat['NET_ID']
                 section_to_points.setdefault(section_id, []).append((point_feat, river_geom))
+            else:
+                # raise error if point too far after the snapping
+                raise QgsProcessingException(
+                    f"Emission point with id {point_feat.id()} is too far from the closest river section.\n"
+                    f"Please edit the emission point to be within a distance of {tolerance} m."
+                )
 
         # simple version to print
         for section_id, features in section_to_points.items():
