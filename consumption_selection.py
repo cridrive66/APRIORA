@@ -67,6 +67,9 @@ class ConsumptionSelection:
         # Must be set in initGui() to survive plugin reloads
         self.first_start = None
 
+        # initialize toolbar
+        self.toolbar = None
+
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
         """Get the translation for a string using Qt translation API.
@@ -159,13 +162,23 @@ class ConsumptionSelection:
 
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
+        # get the directory of the plugin for the icon
+        plugin_dir = os.path.dirname(__file__)
+        icon_path = os.path.join(plugin_dir, 'icon.png')
+        
+        # create a custom toolbar
+        self.toolbar = self.iface.addToolBar('Consumption Selection')
+        self.toolbar.setObjectName('ConsumptionSelectionToolbar')
 
-        icon_path = ':/plugins/apriora/icon.png'
-        self.add_action(
+        action = self.add_action(
             icon_path,
-            text=self.tr(u'Find consumption data of API'),
+            text=self.tr(u'Consumption Selection'),
             callback=self.run,
-            parent=self.iface.mainWindow())
+            parent=self.iface.mainWindow(),
+            add_to_toolbar=False
+        )
+        
+        self.toolbar.addAction(action)
 
         # will be set False in run()
         self.first_start = True
@@ -177,8 +190,12 @@ class ConsumptionSelection:
             self.iface.removePluginMenu(
                 self.tr(u'&Consumption Selection'),
                 action)
-            self.iface.removeToolBarIcon(action)
+            if self.toolbar is not None:
+                self.iface.removeToolBarIcon(action)
 
+        # remove the entire toolbar
+        if self.toolbar is not None:
+            del self.toolbar
 
     def run(self):
         """Run method that performs all the real work"""

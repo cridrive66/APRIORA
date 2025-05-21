@@ -2,210 +2,158 @@
 <ui version="4.0">
  <class>ConsumptionSelectionDialogBase</class>
  <widget class="QDialog" name="ConsumptionSelectionDialogBase">
-  <property name="geometry">
-   <rect>
-    <x>0</x>
-    <y>0</y>
-    <width>687</width>
-    <height>502</height>
-   </rect>
-  </property>
   <property name="windowTitle">
    <string>Consumption Selection</string>
   </property>
-  <widget class="QDialogButtonBox" name="button_box">
-   <property name="geometry">
-    <rect>
-     <x>490</x>
-     <y>450</y>
-     <width>171</width>
-     <height>32</height>
-    </rect>
-   </property>
-   <property name="orientation">
-    <enum>Qt::Horizontal</enum>
-   </property>
-   <property name="standardButtons">
-    <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
-   </property>
-  </widget>
-  <widget class="QComboBox" name="apiComboBox">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>240</y>
-     <width>241</width>
-     <height>31</height>
-    </rect>
-   </property>
-  </widget>
-  <widget class="QComboBox" name="yearComboBox">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>300</y>
-     <width>241</width>
-     <height>31</height>
-    </rect>
-   </property>
-  </widget>
-  <widget class="QComboBox" name="countryComboBox">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>360</y>
-     <width>241</width>
-     <height>31</height>
-    </rect>
-   </property>
-  </widget>
-  <widget class="QComboBox" name="regionComboBox">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>420</y>
-     <width>241</width>
-     <height>31</height>
-    </rect>
-   </property>
-  </widget>
-  <widget class="QPushButton" name="addSelectionButton">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>460</y>
-     <width>121</width>
-     <height>23</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Add to the selection</string>
-   </property>
-  </widget>
-  <widget class="QPushButton" name="resetButton">
-   <property name="geometry">
-    <rect>
-     <x>180</x>
-     <y>460</y>
-     <width>91</width>
-     <height>23</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Reset</string>
-   </property>
-  </widget>
-  <widget class="QLabel" name="label">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>220</y>
-     <width>61</width>
-     <height>16</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>API name</string>
-   </property>
-  </widget>
-  <widget class="QLabel" name="label_2">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>280</y>
-     <width>47</width>
-     <height>14</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Year</string>
-   </property>
-  </widget>
-  <widget class="QLabel" name="label_3">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>340</y>
-     <width>47</width>
-     <height>14</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Country</string>
-   </property>
-  </widget>
-  <widget class="QLabel" name="label_4">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>400</y>
-     <width>47</width>
-     <height>14</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Region</string>
-   </property>
-  </widget>
-  <widget class="QListWidget" name="selectionListWidget">
-   <property name="geometry">
-    <rect>
-     <x>345</x>
-     <y>240</y>
-     <width>311</width>
-     <height>201</height>
-    </rect>
-   </property>
-  </widget>
-  <widget class="QPushButton" name="removeSelectionButton">
-   <property name="geometry">
-    <rect>
-     <x>340</x>
-     <y>450</y>
-     <width>91</width>
-     <height>23</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Remove</string>
-   </property>
-  </widget>
-  <widget class="QLabel" name="label_5">
-   <property name="geometry">
-    <rect>
-     <x>350</x>
-     <y>220</y>
-     <width>141</width>
-     <height>16</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Selected consumption data</string>
-   </property>
-  </widget>
-  <widget class="QTableView" name="excelTableView">
-   <property name="geometry">
-    <rect>
-     <x>25</x>
-     <y>30</y>
-     <width>631</width>
-     <height>181</height>
-    </rect>
-   </property>
-  </widget>
-  <widget class="QLabel" name="label_6">
-   <property name="geometry">
-    <rect>
-     <x>30</x>
-     <y>10</y>
-     <width>141</width>
-     <height>16</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Consumption data available</string>
-   </property>
-  </widget>
+  <layout class="QGridLayout" name="gridLayout">
+   <item row="2" column="2">
+    <widget class="QLabel" name="label_5">
+     <property name="text">
+      <string>Selected consumption data</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_2">
+     <property name="text">
+      <string>Year</string>
+     </property>
+    </widget>
+   </item>
+   <item row="8" column="0">
+    <widget class="QLabel" name="label_4">
+     <property name="text">
+      <string>Region</string>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="3">
+    <widget class="QDialogButtonBox" name="button_box">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_6">
+     <property name="text">
+      <string>Consumption data available</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="0" colspan="4">
+    <widget class="QTableView" name="excelTableView">
+     <attribute name="horizontalHeaderVisible">
+      <bool>true</bool>
+     </attribute>
+    </widget>
+   </item>
+   <item row="7" column="0" colspan="2">
+    <widget class="QComboBox" name="countryComboBox">
+     <property name="minimumSize">
+      <size>
+       <width>225</width>
+       <height>25</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="0" colspan="2">
+    <widget class="QComboBox" name="regionComboBox">
+     <property name="minimumSize">
+      <size>
+       <width>225</width>
+       <height>25</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="0" colspan="2">
+    <widget class="QComboBox" name="apiComboBox">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>225</width>
+       <height>25</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="0" colspan="2">
+    <widget class="QComboBox" name="yearComboBox">
+     <property name="minimumSize">
+      <size>
+       <width>225</width>
+       <height>25</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="2">
+    <widget class="QPushButton" name="removeSelectionButton">
+     <property name="text">
+      <string>Remove</string>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="0">
+    <widget class="QPushButton" name="addSelectionButton">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>75</width>
+       <height>0</height>
+      </size>
+     </property>
+     <property name="text">
+      <string>Add to the selection</string>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="label_3">
+     <property name="text">
+      <string>Country</string>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>0</height>
+      </size>
+     </property>
+     <property name="text">
+      <string>API name</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="2" rowspan="7" colspan="2">
+    <widget class="QListWidget" name="selectionListWidget"/>
+   </item>
+   <item row="10" column="1">
+    <widget class="QPushButton" name="resetButton">
+     <property name="text">
+      <string>Reset</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
  </widget>
  <resources/>
  <connections>
