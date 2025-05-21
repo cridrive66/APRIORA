@@ -521,7 +521,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 feedback.reportError(f"Field {calc_field} not found")
                 continue
 
-            feedback.setProgressText(self.tr("Processing {calc_field}...\n"))
+            feedback.setProgressText(f"\nProcessing {calc_field}...")
 
             # create full working copy of DataArr and add flow values
             DataArr = np.insert(DataArr_static.copy(), 3, 0.0, axis=1)
