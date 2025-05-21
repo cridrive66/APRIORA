@@ -530,7 +530,14 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             new_feature.setAttributes(matching_attributes)
             # add the new feature to the sink
             feedback.pushInfo(f"\nPreparing to save gauged subcatchments")
-            sink_gauged.addFeature(new_feature)
+
+            for gaug in gaug_reproject.getFeatures():
+                # feedback.pushInfo(f"\nProcessing gauging station with CATCH ID: {gaug['id_catch']}")
+                if gaug["id_catch"] == new_feature["id_catch"]:
+                    gauged_feature = QgsFeature(gauged_fields)
+                    gauged_feature.setGeometry(dissolve_geom)
+                    gauged_feature.setAttributes(matching_attributes + [gaug[MQ_field], gaug[MNQ_field]])
+                    sink_gauged.addFeature(gauged_feature)
 
         # ungaged coded subcatchments
         feedback.pushInfo(f"\nPreparing to save ungauged subcatchments")
