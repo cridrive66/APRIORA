@@ -396,8 +396,11 @@ class Accumulation(QgsProcessingAlgorithm):
             # save the original flow
             if base_id not in original_flows:
                 original_flows[base_id] = {
+                    'mean_flow': feat["Mean_Flow"],
                     'acc_mean_flow': feat["calc_Mean_"],
-                    'mean_flow': feat["Mean_Flow"]
+                    'mean_low_flow': feat["M_Low_Flow"],
+                    'acc_mean_low_flow': feat["calc_M_Low"]
+
                 }
         
         # update flow using proportional length
@@ -408,22 +411,39 @@ class Accumulation(QgsProcessingAlgorithm):
             if total_length == 0:
                 continue
 
-            # get flow values from first feature
+            # get mean flow values from first feature
             base_features = [non_null_geom_layer.getFeature(fid) for fid, _ in parts]
             acc_end = original_flows[base_id]['acc_mean_flow']
             mean_total = original_flows[base_id]['mean_flow']
             acc_start = acc_end - mean_total
 
+            # get mean low flow values from first feature
+            acc_low_end = original_flows[base_id]["acc_mean_low_flow"]
+            mean_low_total = original_flows[base_id]["mean_low_flow"]
+            acc_low_start = acc_low_end - mean_low_total
+
             # cumulative length to distribute flow
             cumulative = 0
+            cumulative_low = 0
             for feat_id, part_length in parts:
                 feat = non_null_geom_layer.getFeature(feat_id)
                 cumulative += part_length
                 ratio = cumulative/total_length
+                percentage = part_length/total_length
 
                 # new flow values
-                feat["Mean_Flow"] = mean_total * ratio
-                feat["calc_Mean_"] = acc_start + feat['Mean_Flow']
+                feat["Mean_Flow"] = percentage * mean_total
+                feat["calc_Mean_"] = acc_start + (mean_total * ratio)
+                non_null_geom_layer.updateFeature(feat)
+
+                # same process for low flow values
+                cumulative_low += part_length
+                ratio_low = cumulative_low/total_length
+                percentage_low = part_length/total_length
+
+                # new flow values
+                feat["M_Low_Flow"] = percentage_low * mean_low_total
+                feat["calc_M_Low"] = acc_low_start + (mean_low_total * ratio_low)
                 non_null_geom_layer.updateFeature(feat)
 
         # 6. transfer the API load to the river section
@@ -593,7 +613,12 @@ class Accumulation(QgsProcessingAlgorithm):
         """
 
         # conversion factor: from kg/year and m^3/s to mg/L
-        conversion_factor = 1_000_000 / 31_536_000 
+        # convert m^3/s in L/a
+        conversion_flow = 1000*31_536_000 # L in 1 m^3/s and second in a year
+        # convert kg/a in ng/a
+        conversion_load = 1_000_000_000_000
+        # total conversion
+        conversion_factor = conversion_load / conversion_flow 
 
         # prepare indices
         idx_mean_flow = waternet.fields().indexOf("calc_Mean_")
