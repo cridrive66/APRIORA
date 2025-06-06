@@ -150,19 +150,56 @@ class Accumulation(QgsProcessingAlgorithm):
         for point_feat in load.getFeatures():
             point_geom = point_feat.geometry()
 
-            # find the nearest river section
-            nearest_ids = river_index.nearestNeighbor(point_geom.asPoint(),1)
-            if not nearest_ids:
-                continue # skip if no match found
+            # # find the nearest river section
+            # nearest_ids = river_index.nearestNeighbor(point_geom.asPoint(),1)
+            # if not nearest_ids:
+            #     continue # skip if no match found
 
-            river_feat = next(river_layer.getFeatures(QgsFeatureRequest(nearest_ids[0])))
-            river_geom = river_feat.geometry()
+            # river_feat = next(river_layer.getFeatures(QgsFeatureRequest(nearest_ids[0])))
+            # river_geom = river_feat.geometry()
+
+            # # debug: print the actual distance for troubleshooting
+            # feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {river_feat['NET_ID']}")
+
+            # alternative method to find closest river section
+            river_index = QgsSpatialIndex()
+            river_feat_dict = {}
+
+            for feat in river_layer.getFeatures():
+                river_index.insertFeature(feat)
+                river_feat_dict[feat.id()] = feat
+
+            # create bounding box
+            search_rect = point_geom.boundingBox().buffered(tolerance)
+
+            # use spatial index to get candidate IDs
+            candidate_ids = river_index.intersects(search_rect)
+            
+            nearest_river = None
+            min_distance = float('inf')
+
+            for fid in candidate_ids:
+                river_feat = river_feat_dict[fid]
+                river_geom = river_feat.geometry()
+                dist = river_geom.distance(point_geom)
+
+                if dist < min_distance:
+                    min_distance = dist
+                    nearest_river = river_feat
+            
+            # check if a river is found
+            if not nearest_river:
+                continue
+
+            river_geom = nearest_river.geometry()
+            feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {nearest_river['NET_ID']}")
 
             # double check intersection or proximity
             if river_geom.intersects(point_geom) or river_geom.distance(point_geom) < 1e-6:
-                section_id = river_feat['NET_ID']
+                section_id = nearest_river['NET_ID']
                 section_to_points.setdefault(section_id, []).append((point_feat, river_geom))
             else:
+               
                 # raise error if point too far after the snapping
                 raise QgsProcessingException(
                     f"Emission point with id {point_feat.id()} is too far from the closest river section.\n"
@@ -312,7 +349,7 @@ class Accumulation(QgsProcessingAlgorithm):
                     if dist < 5: # 5 meters tolerance
                         letter = string.ascii_uppercase[i] #A, B, C..
                         new_ids_by_feature[feat.id()] = f"{section_id}{letter}"
-                        emission_to_letter[em_id] = string.ascii_uppercase[i+1]
+                        emission_to_letter[em_id] = (str(section_id), string.ascii_uppercase[i+1])
                         used_emission_ids.add(em_id)
                         assigned = True
                         break
@@ -456,22 +493,23 @@ class Accumulation(QgsProcessingAlgorithm):
                 provider.addAttributes([QgsField(field_name, QVariant.Double)])
         non_null_geom_layer.updateFields()
 
-        # then assign the API load values
+        # build a emission feature map
+        base_letter_to_emission = {}
+        for em_id, (base_id, letter) in emission_to_letter.items():
+            em_feat = load.getFeature(em_id)
+            base_letter_to_emission[(base_id, letter)] = em_feat
+
+        # assign the API load values using the mapping
         for feat in non_null_geom_layer.getFeatures():
             net_id = feat['NET_ID']
             base_id = ''.join(filter(str.isdigit, str(net_id)))
             letter = net_id.replace(base_id, "")
 
-            # find the emission point with same letter as river section
-            for em_id, em_letter in emission_to_letter.items():
-                if em_letter == letter:
-                    em_feat = load.getFeature(em_id)
-
-                    for field in selected_api_fields:
-                        feat[field] = em_feat[field]
-
-                    non_null_geom_layer.updateFeature(feat)
-                    break
+            em_feat = base_letter_to_emission.get((base_id, letter))
+            if em_feat:
+                for field in selected_api_fields:
+                    feat[field] = em_feat[field]
+                non_null_geom_layer.updateFeature(feat)
     
         non_null_geom_layer.commitChanges()
         
