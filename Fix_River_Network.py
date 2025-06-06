@@ -214,11 +214,19 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         if outlet_point is None:
             raise QgsProcessingException("No outlet point specified.")
 
-        # add a new column to the catchment layer in order to identify each subcatchment
+        # load input data
         subcatchments_layer_original = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
-        river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        river_layer_imperfections = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         search_radius = self.parameterAsDouble(parameters, self.SEARCH_RADIUS, context)
 
+        # remove imperfections in the river input file
+        river_layer = processing.run("native:simplifygeometries", {
+            'INPUT':river_layer_imperfections,
+            'METHOD':0,
+            'TOLERANCE':0.01, # 1cm
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        # add a new column to the catchment layer in order to identify each subcatchment
         # create a new layer, copy of the subcatchment layer
         subcatchments_layer = subcatchments_layer_original.clone()
         
