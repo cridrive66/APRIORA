@@ -31,6 +31,8 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 __revision__ = '$Format:%H$'
 
 import processing
+import string   # not sure if this library is in PyQgis
+import numpy as np
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
 from qgis.core import (QgsProcessingAlgorithm,
@@ -39,8 +41,10 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsFeature,
                        QgsField,
                        QgsFields,
+                       QgsFeatureRequest,
                        QgsFeatureSink,
                        QgsGeometry,
+                       QgsPointXY,
                        QgsProject,
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterDefinition,
@@ -52,6 +56,7 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsField,
                        QgsSpatialIndex,
                        QgsVectorLayer,
+                       QgsWkbTypes,
                        edit)
 
 
@@ -122,90 +127,600 @@ class Accumulation(QgsProcessingAlgorithm):
         Here is where the processing itself takes place.
         """
         selected_api_fields = self.parameterAsFields(parameters, self.selectedAPI, context)
+        load_original = self.parameterAsVectorLayer(parameters, self.APIload, context)
         river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
-        load = self.parameterAsVectorLayer(parameters, self.APIload, context)
 
-        '''loading the network'''
-        feedback.setProgressText(self.tr("Loading network..\n "))
-        waternet = river_layer
-        waterFt = waternet.getFeatures()
-
+        # snapping function that connects the emission load points to the river section
+        tolerance = 100 # 100m
+        load = processing.run("native:snapgeometries", {
+            'INPUT':load_original,
+            'REFERENCE_LAYER':river_layer,
+            'TOLERANCE':tolerance,
+            'BEHAVIOR':1,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
         
-        
-        
-        def find_closest_river_section(emission_point, spatial_index, river_map, feedback):
-            """
-            Find closest river section to emission point
-            """
-            emission_point_geometry = QgsGeometry.fromPointXY(emission_point)
-            nearest_ids = spatial_index.nearestNeighbor(emission_point_geometry, 5)
-            closest_section = None
-            min_distance = float("inf")
+        # find the closest river section for each emission point
+        # create a spatial index for river sections
+        river_index = QgsSpatialIndex(river_layer.getFeatures())
 
-            # iterate through the closest matches and find the closest section
-            for fid in nearest_ids:
-                feature = river_map[fid]
-                section_geom = feature.geometry()
-                distance = section_geom.distance(emission_point_geometry)
+        # dictionary to store
+        section_to_points = {}
 
-                if distance < min_distance:
-                    min_distance = distance
-                    closest_section = feature
-
-            if closest_section:
-                feedback.pushInfo(f"\nClosest section found: [CATCH_ID]: {closest_section['CATCH_ID']} \n Distance: {min_distance}")
-            else:
-                feedback.pushInfo("\nNo closest section found.")
-
-            return closest_section
-
-
-        # build a spatial index
-        spatial_index = QgsSpatialIndex()
-        river_map = {}
-
-        for feature in waternet.getFeatures():
-            fid = feature.id()
-            river_map[fid] = QgsFeature(feature)
-            spatial_index.insertFeature(feature)
-
-        # prepare data storage for accumulation
-        for f in river_map.values():
-            for api in selected_api_fields:
-                f.setAttribute(api, 0.0)
-
-        # process each emission point
+        # go through each emission point
         for point_feat in load.getFeatures():
-            closest_river = find_closest_river_section(point_feat, spatial_index, river_map, feedback)
-            
-            if closest_river:
-                rid = closest_river.id()
-                target_feat = river_map[rid]
-                for api in selected_api_fields:
-                    value = point_feat[api]
-                    current_value = target_feat[api] or 0.0
-                    target_feat.setAttribute(api, current_value + value)
+            point_geom = point_feat.geometry()
 
+            # # find the nearest river section
+            # nearest_ids = river_index.nearestNeighbor(point_geom.asPoint(),1)
+            # if not nearest_ids:
+            #     continue # skip if no match found
+
+            # river_feat = next(river_layer.getFeatures(QgsFeatureRequest(nearest_ids[0])))
+            # river_geom = river_feat.geometry()
+
+            # # debug: print the actual distance for troubleshooting
+            # feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {river_feat['NET_ID']}")
+
+            # alternative method to find closest river section
+            river_index = QgsSpatialIndex()
+            river_feat_dict = {}
+
+            for feat in river_layer.getFeatures():
+                river_index.insertFeature(feat)
+                river_feat_dict[feat.id()] = feat
+
+            # create bounding box
+            search_rect = point_geom.boundingBox().buffered(tolerance)
+
+            # use spatial index to get candidate IDs
+            candidate_ids = river_index.intersects(search_rect)
+            
+            nearest_river = None
+            min_distance = float('inf')
+
+            for fid in candidate_ids:
+                river_feat = river_feat_dict[fid]
+                river_geom = river_feat.geometry()
+                dist = river_geom.distance(point_geom)
+
+                if dist < min_distance:
+                    min_distance = dist
+                    nearest_river = river_feat
+            
+            # check if a river is found
+            if not nearest_river:
+                continue
+
+            river_geom = nearest_river.geometry()
+            feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {nearest_river['NET_ID']}")
+
+            # double check intersection or proximity
+            if river_geom.intersects(point_geom) or river_geom.distance(point_geom) < 1e-6:
+                section_id = nearest_river['NET_ID']
+                section_to_points.setdefault(section_id, []).append((point_feat, river_geom))
+            else:
+               
+                # raise error if point too far after the snapping
+                raise QgsProcessingException(
+                    f"Emission point with id {point_feat.id()} is too far from the closest river section.\n"
+                    f"Please edit the emission point to be within a distance of {tolerance} m."
+                )
+
+        # simple version to print
+        for section_id, features in section_to_points.items():
+            emission_ids = [f[0].id() for f in features]
+            feedback.pushInfo(f"River section {section_id} --> {emission_ids}")
+
+        # final result
+        sorted_distances = {}
+
+        for section_id, point_data in section_to_points.items():
+            feedback.pushInfo(f"\nProcessing river section: {section_id}")
+
+            # all point_data contain the same river_geom for a section so we take only the first one
+            river_geom = point_data[0][1]
+
+            # extract the line geometry as a polyline
+            if river_geom.type() == QgsWkbTypes.LineGeometry:
+                if QgsWkbTypes.isMultiType(river_geom.wkbType()):
+                    river_line = river_geom.asMultiPolyline()[0]
+                else:
+                    river_line = river_geom.asPolyline()
+            else:
+                feedback.pushInfo(f"Skipping section {section_id}: not a line geometry")
+                continue
+                
+
+            results = []
+
+            for point_feat, _ in point_data:  # the _ ignores the second variable, the river geometry
+                point_geom = point_feat.geometry()
+
+                # snap point to the closest segment on the river
+                snapped_point = river_geom.closestSegmentWithContext(point_geom.asPoint())[1]
+                snapped_geom = QgsGeometry.fromPointXY(snapped_point)
+
+                # distance along river (from its start)
+                river_distance = river_geom.lineLocatePoint(snapped_geom)
+
+                results.append((point_feat.id(), river_distance))
+
+            # sort all points in this section by river distance
+            sorted_results = sorted(results, key=lambda x:x[1])
+            sorted_distances[section_id] = sorted_results
+
+            # print results
+            feedback.pushInfo(f"River section {section_id} sorted emission points:")
+            for emission_id, distance in sorted_results:
+                feedback.pushInfo(f"Emission {emission_id} -> {distance:.2f} meters")
+
+
+        # splitting river network at lines by creating buffer at vertices
+        buffer = processing.run("native:buffer", {
+            'INPUT': load,
+            'DISTANCE':0.02,    # buffer of 2 cm
+            'SEGMENTS':5,
+            'END_CAP_STYLE':0,
+            'JOIN_STYLE':0,
+            'MITER_LIMIT':2,
+            'DISSOLVE':False,
+            'SEPARATE_DISJOINT':False,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        # split with the buffer
+        split_with_errors = processing.run("native:splitwithlines", {
+            'INPUT':river_layer,
+            'LINES':buffer,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
+        # remove the segments within the buffer from the river layer
+        difference = processing.run("native:difference", {
+            'INPUT':split_with_errors,
+            'OVERLAY':buffer,
+            'OUTPUT':'TEMPORARY_OUTPUT',
+            'GRID_SIZE':None})["OUTPUT"]
+
+        # snap the river line back together
+        split_river_layer = processing.run("native:snapgeometries", {
+            'INPUT': difference,
+            'REFERENCE_LAYER': load,
+            'TOLERANCE':0.05,   # snapping within 5cm
+            'BEHAVIOR':0,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
+        # the file has geometries that need to be fixed
+        feedback.setProgressText("\nFixing the geometries of the file...")
+        fixed_layer = processing.run("native:fixgeometries", {
+            'INPUT':split_river_layer,
+            'METHOD':1, # not sure about which method use
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
+
+        # remove null geometries from the layer
+        feedback.setProgressText("\nRemoving the null geometries...")
+        non_null_geom_layer = processing.run("native:removenullgeometries", {
+            'INPUT':fixed_layer,
+            'REMOVE_EMPTY':True,
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
+
+        # We create new river sections at each emission point. We need to update the name of the section (NET_ID) and 
+        # the relationship with the other river sections (NET_TO). We create a new naming system where if section 1001
+        # has multiple emission points, it is divided and renamed in 1001A, 1001B, 1001C, ...
+        
+        new_ids_by_feature = {} # store new NET_ID
+        used_emission_ids = set()
+        emission_to_letter = {} # assign letter to emission points
+
+        for section_id, sorted_results in sorted_distances.items():
+            if not sorted_results:
+                continue
+
+            # get all features split from this river section
+            section_feats = [f for f in non_null_geom_layer.getFeatures() if f['NET_ID'] == section_id]
+
+            # assign a letter based on which emission points is closest to its downstream vertex
+            for feat in section_feats:
+                geom = feat.geometry()
+
+                # get end point
+                if geom.isMultipart():
+                    line = geom.asMultiPolyline()[0]
+                else:
+                    line = geom.asPolyline()
+
+                if not line:
+                    continue
+
+                end_point = line[-1]
+                end_geom = QgsGeometry.fromPointXY(end_point)
+
+                assigned = False
+                for i, (em_id, _) in enumerate(sorted_results):
+                    if em_id in used_emission_ids:
+                        continue
+
+                    # find geometry of emission point
+                    em_feat = next(load.getFeatures(QgsFeatureRequest(em_id)))
+                    em_point = em_feat.geometry().asPoint()
+                    em_geom = QgsGeometry.fromPointXY(em_point)
+
+                    dist = end_geom.distance(em_geom)
+                    if dist < 5: # 5 meters tolerance
+                        letter = string.ascii_uppercase[i] #A, B, C..
+                        new_ids_by_feature[feat.id()] = f"{section_id}{letter}"
+                        emission_to_letter[em_id] = (str(section_id), string.ascii_uppercase[i+1])
+                        used_emission_ids.add(em_id)
+                        assigned = True
+                        break
+
+                if not assigned:
+                    # assign final (n+1)th letter if no match found
+                    letter = string.ascii_uppercase[len(sorted_results)]
+                    new_ids_by_feature[feat.id()] = f"{section_id}{letter}"
+        
+        # 1. update NET_ID
+        non_null_geom_layer.startEditing()
+        
+        for feat in non_null_geom_layer.getFeatures():
+            if feat.id() in new_ids_by_feature:
+                feat.setAttribute('NET_ID', new_ids_by_feature[feat.id()])
+                non_null_geom_layer.updateFeature(feat)
+                    
+        # 2. create a mapping with original NET_ID, feature and new NET_ID
+        grouped = {}
+
+        for feat in non_null_geom_layer.getFeatures():
+            fid = feat.id()
+            if fid in new_ids_by_feature:
+                new_id = new_ids_by_feature[fid]
+                base_id =''.join(filter(str.isdigit, new_id)) #e.g., from '1001A'-->'1001'
+
+                if base_id not in grouped:
+                    grouped[base_id] = []
+
+                grouped[base_id].append((feat, new_id))
+        
+        # 3. update NET_TO fields
+        for base_id in grouped:
+            # sort by the new_id
+            sorted_feats = sorted(grouped[base_id], key=lambda x: x[1])
+
+            for i, (feat, new_id) in enumerate(sorted_feats):
+                if i < len(sorted_feats) -1:
+                    next_id = sorted_feats[i+1][1]
+                    feat.setAttribute('NET_TO', next_id)
+                # last one keep its original NET_TO
+                non_null_geom_layer.updateFeature(feat)
+
+        # 4. update NET_TO, set NET_FROM = NET_ID
+        section_id_to_first_new_id = {}
+        for new_id in new_ids_by_feature.values():
+            base_id = ''.join(filter(str.isdigit, new_id))
+            if base_id not in section_id_to_first_new_id:
+                section_id_to_first_new_id[base_id] = new_id
+
+        for feat in non_null_geom_layer.getFeatures():
+            net_id = feat['NET_ID']
+            net_to = feat['NET_TO']
+
+            # update NET_TO
+            if net_to in section_id_to_first_new_id:
+                feat.setAttribute('NET_TO', section_id_to_first_new_id[net_to])
+
+            # set NET_FROM to NET_ID
+            feat.setAttribute('NET_FROM', net_id)
+            non_null_geom_layer.updateFeature(feat)
         
 
+        # 5. after building the correct river section relationships, we need to update the flow estimation and scale it
+        # based on the section_length/total_section_length
+        # group split features by base section ID
+        split_groups = {}
+        original_flows = {}
+
+        for feat in non_null_geom_layer.getFeatures():
+            net_id = feat['NET_ID']
+            base_id = ''.join(filter(str.isdigit, str(net_id)))
+
+            if base_id not in split_groups:
+                split_groups[base_id] = []
+
+            geom = feat.geometry()
+            length = geom.length()
+            split_groups[base_id].append((feat.id(), length))
+
+            # save the original flow
+            if base_id not in original_flows:
+                original_flows[base_id] = {
+                    'mean_flow': feat["Mean_Flow"],
+                    'acc_mean_flow': feat["calc_Mean_"],
+                    'mean_low_flow': feat["M_Low_Flow"],
+                    'acc_mean_low_flow': feat["calc_M_Low"]
+
+                }
+        
+        # update flow using proportional length
+        for base_id, parts in split_groups.items():
+            parts = sorted(parts, key=lambda x: x[1])
+
+            total_length = sum(length for _, length in parts)
+            if total_length == 0:
+                continue
+
+            # get mean flow values from first feature
+            base_features = [non_null_geom_layer.getFeature(fid) for fid, _ in parts]
+            acc_end = original_flows[base_id]['acc_mean_flow']
+            mean_total = original_flows[base_id]['mean_flow']
+            acc_start = acc_end - mean_total
+
+            # get mean low flow values from first feature
+            acc_low_end = original_flows[base_id]["acc_mean_low_flow"]
+            mean_low_total = original_flows[base_id]["mean_low_flow"]
+            acc_low_start = acc_low_end - mean_low_total
+
+            # cumulative length to distribute flow
+            cumulative = 0
+            cumulative_low = 0
+            for feat_id, part_length in parts:
+                feat = non_null_geom_layer.getFeature(feat_id)
+                cumulative += part_length
+                ratio = cumulative/total_length
+                percentage = part_length/total_length
+
+                # new flow values
+                feat["Mean_Flow"] = percentage * mean_total
+                feat["calc_Mean_"] = acc_start + (mean_total * ratio)
+                non_null_geom_layer.updateFeature(feat)
+
+                # same process for low flow values
+                cumulative_low += part_length
+                ratio_low = cumulative_low/total_length
+                percentage_low = part_length/total_length
+
+                # new flow values
+                feat["M_Low_Flow"] = percentage_low * mean_low_total
+                feat["calc_M_Low"] = acc_low_start + (mean_low_total * ratio_low)
+                non_null_geom_layer.updateFeature(feat)
+
+        # 6. transfer the API load to the river section
+        # first add the selected_api_fields to the layer
+        provider = non_null_geom_layer.dataProvider()
+        existing_fields = [field.name() for field in non_null_geom_layer.fields()]
+
+        for field_name in selected_api_fields:
+            if field_name not in existing_fields:
+                provider.addAttributes([QgsField(field_name, QVariant.Double)])
+        non_null_geom_layer.updateFields()
+
+        # build a emission feature map
+        base_letter_to_emission = {}
+        for em_id, (base_id, letter) in emission_to_letter.items():
+            em_feat = load.getFeature(em_id)
+            base_letter_to_emission[(base_id, letter)] = em_feat
+
+        # assign the API load values using the mapping
+        for feat in non_null_geom_layer.getFeatures():
+            net_id = feat['NET_ID']
+            base_id = ''.join(filter(str.isdigit, str(net_id)))
+            letter = net_id.replace(base_id, "")
+
+            em_feat = base_letter_to_emission.get((base_id, letter))
+            if em_feat:
+                for field in selected_api_fields:
+                    feat[field] = em_feat[field]
+                non_null_geom_layer.updateFeature(feat)
+    
+        non_null_geom_layer.commitChanges()
+        
+        #QgsProject.instance().addMapLayer(non_null_geom_layer)
+
+        """ACCUMULATION FUNCTION"""
+        '''loading the network'''
+        waternet = non_null_geom_layer
+
+        '''names of fields for id,next segment, previous segment'''
+        id_field = "NET_ID"
+        next_field = "NET_TO"
+        prev_field = "NET_FROM"
+
+        '''field index for id,next segment, previous segment'''
+        idxId = waternet.fields().indexFromName(id_field) 
+        idxPrev = waternet.fields().indexFromName(prev_field)
+        idxNext = waternet.fields().indexFromName(next_field)
+
+        '''load data from layer'''
+        feedback.setProgressText(self.tr("Loading network layer\n "))
+        Data = [[
+            str(f.attribute(idxId)),
+            str(f.attribute(idxPrev)),
+            str(f.attribute(idxNext)),
+            f.id()
+        ] for f in waternet.getFeatures()]
+        DataArr_static = np.array(Data, dtype='object')
+        feedback.setProgressText(self.tr("Data loaded \n Calculating flow paths \n"))
+
+        '''function to find next features in the net'''
+        def nextFtsCalc (MARKER2):
+            vtx_to = DataArr[np.where(DataArr[:,0] == MARKER2)[0].tolist(),2][0] # "to"-vertex of actual segment
+            rows_to = np.where(DataArr[:,1] == vtx_to)[0].tolist() # find rows in DataArr with matching "from"-vertices to vtx_to
+            unconnected_errors = [DataArr[x, 4] for x in rows_to if DataArr[x, 2]=='unconnected']  # this can only happen after manual editing
+            if len(unconnected_errors) > 0:
+                waternet.removeSelection()
+                waternet.selectByIds(unconnected_errors, waternet.SelectBehavior(1))
+                raise QgsProcessingException(
+                    'The selected features in the flow are marked as \'unconnected\' '
+                    + '(most likely because of manual editing). Please delete the columns with the network information ('
+                    + next_field
+                    + ', '
+                    + prev_field
+                    + ') and run tool 1 \"Water Network Constructor\" again.'
+                )
+            return(rows_to)
+
+        '''function to find flow path'''
+        def FlowPath (Start_Row, fp_amount):
+            MARKER=DataArr[Start_Row,0] #set MARKER to ID of the first segment
+            Weg = [Start_Row]    
+            i=0
+            while i!=len(DataArr):
+                next_rows = nextFtsCalc(MARKER)
+                if len(next_rows) > 1: # deviding flow path
+                    calc_column[StartRow] = 0
+                    calc_column[next_rows] = calc_column[next_rows]+fp_amount/len(next_rows) # this can be changed to weightet separation later
+                    out = [Weg, next_rows]
+                    break
+                if len(next_rows) == 1: # continuing flow path
+                    Weg = Weg + next_rows
+                    MARKER=DataArr[next_rows[0],0] # change MARKER to Id of next segment 
+                if len(next_rows) == 0: # end point
+                    out = [Weg]
+                    break
+                i=i+1
+            return (out)
+
+        # loop through all selected substances
+        for calc_field in selected_api_fields:
+            idxCalc = waternet.fields().indexFromName(calc_field)
+            if idxCalc == -1:
+                feedback.reportError(f"Field {calc_field} not found")
+                continue
+
+            feedback.setProgressText(f"\nProcessing {calc_field}...")
+
+            # create full working copy of DataArr and add flow values
+            DataArr = np.insert(DataArr_static.copy(), 3, 0.0, axis=1)
+            for f in waternet.getFeatures():
+                val = f.attribute(idxCalc)
+                if val is not None:
+                    fid = f.id()
+                    row_idx = np.where(DataArr[:,4] == fid)[0]
+                    if row_idx.size > 0:
+                        DataArr[row_idx[0], 3] = val
+            DataArr[np.where(DataArr[:,3] == None), 3] = 0
+            calc_column = np.copy(DataArr[:, 3]).astype(float)
+            DataArr[:, 3] = 0.0
+
+            calc_segm = np.where(calc_column > 0)[0].tolist()
+            calc_segm = [i for i in calc_segm if (DataArr[i, 1] != 'unconnected' and DataArr[i,2] != 'unconnected')]
+
+            total2 = len(calc_segm)
+            while len(calc_segm) > 0:
+                if feedback.isCanceled():
+                    break
+                StartRow = calc_segm[0]
+                amount = calc_column[StartRow] # amount to add to flow path
+                calc_column[StartRow] = 0 #"delete" calculated amount from list (set 0)
+                Fl_pth = FlowPath(StartRow, amount) # get flow path of StartRow 
+                if len(Fl_pth)== 2:
+                    calc_segm = calc_segm + Fl_pth[1] # if flow path devides add new segments to calc_segm
+                DataArr[Fl_pth[0],3] = DataArr[Fl_pth[0],3]+amount # Add the amount to the calculated flow path
+                calc_segm = calc_segm[1:] # delete used segment
+                calc_segm = list(set(calc_segm)) #delete duplicate values
+                feedback.setProgress((1-(len(calc_segm)/total2))*100)
+
+            # add output field
+            # get API name for renaming the field
+            api_short = calc_field[:5]
+            new_field_name = f'acc_{api_short}'
+            if new_field_name not in [f.name() for f in waternet.fields()]:
+                waternet.dataProvider().addAttributes([QgsField(new_field_name, QVariant.Double)])
+                waternet.updateFields()
+            
+            field_idx = waternet.fields().indexOf(new_field_name)
+            if field_idx == -1:
+                feedback.reportError(f"Error: field {new_field_name} not found in waternet")
+                continue
+
+            waternet.startEditing()
+            for i, feature in enumerate(waternet.getFeatures()):
+                # Stop the algorithm if cancel button has been clicked
+                if feedback.isCanceled():
+                    break
+                # set the value for the new field
+                value_to_set = float(DataArr[i, 3])
+                # set the new field
+                feature.setAttribute(field_idx, value_to_set)
+                waternet.updateFeature(feature)
+            waternet.commitChanges()
+            feedback.setProgressText(self.tr(f"{new_field_name} written successfully"))
 
 
+        """
+        Calculate concentration in each river section
+        """
 
+        # conversion factor: from kg/year and m^3/s to mg/L
+        # convert m^3/s in L/a
+        conversion_flow = 1000*31_536_000 # L in 1 m^3/s and second in a year
+        # convert kg/a in ng/a
+        conversion_load = 1_000_000_000_000
+        # total conversion
+        conversion_factor = conversion_load / conversion_flow 
 
+        # prepare indices
+        idx_mean_flow = waternet.fields().indexOf("calc_Mean_")
+        idx_low_flow = waternet.fields().indexOf("calc_M_Low")
 
+        # add new concentration fields if they don't exist
+        new_fields = []
+        for api_field in selected_api_fields:
+            api_short = api_field[:5]
+            acc_field = f"acc_{api_short}"
+            conc_field_mean = f"conc_{api_short}"
+            conc_field_low = f"conL_{api_short}"
+
+            if conc_field_mean not in waternet.fields().names():
+                new_fields.append(QgsField(conc_field_mean, QVariant.Double))
+            if conc_field_low not in waternet.fields().names():
+                new_fields.append(QgsField(conc_field_low, QVariant.Double))
+
+        if new_fields:
+            waternet.dataProvider().addAttributes(new_fields)
+            waternet.updateFields()
+
+        # calculate concentration values
+        waternet.startEditing()
+        for feature in waternet.getFeatures():
+            flow_mean = feature[idx_mean_flow]
+            flow_low = feature[idx_low_flow]
+
+            if not flow_mean or flow_mean == 0 or not flow_low or flow_low == 0:
+                continue # skip to avoid division by zero
+
+            for api_field in selected_api_fields:
+                api_short = api_field[:5]
+                acc_field = f"acc_{api_short}"
+                acc_value = feature[acc_field]
+                
+                if acc_value is None:
+                    continue
+
+                conc_field_mean = f"conc_{api_short}"
+                conc_field_low = f"conL_{api_short}"
+
+                conc_mean = (acc_value * conversion_factor)/flow_mean
+                conc_low = (acc_value * conversion_factor)/flow_low
+
+                feature.setAttribute(conc_field_mean, conc_mean)
+                feature.setAttribute(conc_field_low, conc_low)
+
+            waternet.updateFeature(feature)
+        waternet.commitChanges()
 
         # prepare the output sink
         (sink, dest_id) = self.parameterAsSink(
             parameters,
             self.OUTPUT,
             context,
-            list(waternet.fields()),
+            waternet.fields(),
             waternet.wkbType(),
             waternet.sourceCrs()
         )
 
-        for feat in river_map.values():
-            sink.addFeature(feat, QgsFeatureSink.FastInsert)
+        # add to the sink
+        for feature in waternet.getFeatures():
+            sink.addFeature(feature)
 
         return {self.OUTPUT: dest_id}
 
