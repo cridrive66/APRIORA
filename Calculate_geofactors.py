@@ -38,10 +38,12 @@ from osgeo import gdal
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
 from qgis.core import (QgsProcessingAlgorithm,
+                       QgsCoordinateReferenceSystem,
                        QgsProcessing,
                        QgsProject,
                        QgsField,
                        QgsProcessingAlgorithm,
+                       QgsProcessingParameterBoolean,
                        QgsProcessingParameterEnum,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFeatureSource,
@@ -71,6 +73,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
     forestArea = 'ForestArea'
     settlementArea = 'SettlementArea'
     precipitationData = 'PrecipitationData'
+    aggregated = 'Aggregated'
 
     def shortHelpString(self):
         return self.tr(""" This tool calculates the geofactors for each subcatchment. The geofactors are necessaries to estimate the flow in the tool "4 - Flow estimation".
@@ -154,6 +157,14 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 self.precipitationData,
                 self.tr('Precipitation data (folder)'),
                 behavior=QgsProcessingParameterFile.Folder
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.aggregated,
+                self.tr('The folder contains an aggregated file'),
+                defaultValue=False
             )
         )
         
@@ -388,6 +399,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         feedback.setProgressText("\nCalculate precipitation")
         feedback.setProgress(80)    # set the progress to 80% because otherwise it is stuck at 100
         netcdf_dir = self.parameterAsString(parameters, self.precipitationData, context)
+        aggregated_selection = self.parameterAsBoolean(parameters, self.aggregated, context)
         # list of all .nc file in the directory
         netcdf_files = QDir(netcdf_dir).entryList(["*.nc"], QDir.Files)
 
@@ -405,43 +417,102 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         ymin = None
         ymax = None
 
-        for filename in netcdf_files:
-            i=1
-            netcdf_file = os.path.join(netcdf_dir, filename)
-            subdataset_path = 'NETCDF:"{}":pr'.format(netcdf_file)
-            raster_layer_unc = QgsRasterLayer(subdataset_path, "Annual precipitation")
-            rasterDataSource = gdal.Open(str(raster_layer_unc.source()))
-            yearlyTemp = None
-            if firstFile:
-                spatref = raster_layer_unc.crs()
-                xres = raster_layer_unc.rasterUnitsPerPixelX()
-                yres = raster_layer_unc.rasterUnitsPerPixelY()
-                ext = raster_layer_unc.extent()
-                xmin = ext.xMinimum()
-                xmax = ext.xMaximum()
-                ymin = ext.yMinimum()
-                ymax = ext.yMaximum()
-            while i <= rasterDataSource.RasterCount:
-                if i == 1:
-                    yearlyTemp = np.array([rasterDataSource.GetRasterBand(i).ReadAsArray()])
-                else:
-                    yearlyTemp= np.append(yearlyTemp, [rasterDataSource.GetRasterBand(i).ReadAsArray()], axis=0)
-                i+=1
-                
-            yearlyMean = np.sum(yearlyTemp, axis=0)
-            augustMean = rasterDataSource.GetRasterBand(8).ReadAsArray()
-            
-            if firstRound:
-                yearlyMeanRaster = np.array([yearlyMean])
-                augustMeanRaster = np.array([augustMean])
-                firstRound = False
-            else:
-                yearlyMeanRaster= np.append(yearlyMeanRaster, [yearlyMean], axis=0)
-                augustMeanRaster= np.append(augustMeanRaster, [augustMean], axis=0)
-            
+        if aggregated_selection:
+            if not netcdf_files:
+                feedback.reportError("No NetCDF file found in the selected folder", fatalError=True)    # change in order to have only one .nc file in the folder
+                return{}
 
-        finalYearlyMeanRaster = np.mean(yearlyMeanRaster, axis=0)
-        finalAugustMeanRaster = np.mean(augustMeanRaster, axis=0)
+            netcdf_file = os.path.join(netcdf_dir, netcdf_files[0])
+            subset_path = 'NETCDF:"{}":tp'.format(netcdf_file) #check if it is correct or if "tp" is the variable name
+            raster_layer = QgsRasterLayer(subset_path, "Precipitation (all bands)")
+            raster_ds = gdal.Open(raster_layer.source())
+
+            if not raster_layer.isValid():
+                feedback.reportError("The NetCDF raster layer is not valid.", fatalError=True)
+                return {}
+
+            # spatial metadata
+            spatref = raster_layer.crs() if raster_layer.crs().isValid() else QgsCoordinateReferenceSystem('EPSG:4326')
+            xres = raster_layer.rasterUnitsPerPixelX()
+            yres = raster_layer.rasterUnitsPerPixelY()
+            ext = raster_layer.extent()
+            xmin = ext.xMinimum()
+            xmax = ext.xMaximum()
+            ymin = ext.yMinimum()
+            ymax = ext.yMaximum()
+
+            # number of bands
+            raster_count = raster_ds.RasterCount
+            feedback.pushInfo(f"Number of bands: {raster_count}")
+            num_years = raster_count // 12
+
+            # initialize arrays
+            yearly_sum = None
+            august_sum = None
+
+            # sum all bands
+            for b in range(1, raster_count +1):
+                band_array = raster_ds.GetRasterBand(b).ReadAsArray()
+                if yearly_sum is None:
+                    yearly_sum = band_array
+                else:
+                    yearly_sum += band_array
+            
+            # final yearly average
+            finalYearlyMeanRaster = yearly_sum*1000*30.4375 / num_years #30.4375 is the average number of days in a month over a 30 years time series with 7.5 leap years
+
+            # august mean
+            for i in range(num_years):
+                august_band_index = i * 12 + 8
+                band_array = raster_ds.GetRasterBand(august_band_index).ReadAsArray()
+
+                if august_sum is None:
+                    august_sum = band_array
+                else:
+                    august_sum += band_array
+            
+            # final august average
+            finalAugustMeanRaster = august_sum*1000*31 / num_years
+
+
+        if not aggregated_selection:
+            for filename in netcdf_files:
+                i=1
+                netcdf_file = os.path.join(netcdf_dir, filename)
+                subdataset_path = 'NETCDF:"{}":pr'.format(netcdf_file)
+                raster_layer_unc = QgsRasterLayer(subdataset_path, "Annual precipitation")
+                rasterDataSource = gdal.Open(str(raster_layer_unc.source()))
+                yearlyTemp = None
+                if firstFile:
+                    spatref = raster_layer_unc.crs()
+                    xres = raster_layer_unc.rasterUnitsPerPixelX()
+                    yres = raster_layer_unc.rasterUnitsPerPixelY()
+                    ext = raster_layer_unc.extent()
+                    xmin = ext.xMinimum()
+                    xmax = ext.xMaximum()
+                    ymin = ext.yMinimum()
+                    ymax = ext.yMaximum()
+                while i <= rasterDataSource.RasterCount:
+                    if i == 1:
+                        yearlyTemp = np.array([rasterDataSource.GetRasterBand(i).ReadAsArray()])
+                    else:
+                        yearlyTemp= np.append(yearlyTemp, [rasterDataSource.GetRasterBand(i).ReadAsArray()], axis=0)
+                    i+=1
+                    
+                yearlyMean = np.sum(yearlyTemp, axis=0)
+                augustMean = rasterDataSource.GetRasterBand(8).ReadAsArray()
+                
+                if firstRound:
+                    yearlyMeanRaster = np.array([yearlyMean])
+                    augustMeanRaster = np.array([augustMean])
+                    firstRound = False
+                else:
+                    yearlyMeanRaster= np.append(yearlyMeanRaster, [yearlyMean], axis=0)
+                    augustMeanRaster= np.append(augustMeanRaster, [augustMean], axis=0)
+                
+
+            finalYearlyMeanRaster = np.mean(yearlyMeanRaster, axis=0)
+            finalAugustMeanRaster = np.mean(augustMeanRaster, axis=0)
 
         outfnYearly = outputDir+ungaugedSourceName+'_yearlyPrecipitation.tif'
         outfnAugust = outputDir+ungaugedSourceName+'_augustPrecipitation.tif'
@@ -511,7 +582,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT': JoinCatchmentsSetttlementAreaSummarize,
              'COLUMN_PREFIX': "PrecYearly_",        
-             'STATISTICS': [1,2], #sum and mean
+             'STATISTICS': [2], # mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
              context=context)['OUTPUT']
         
@@ -521,7 +592,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'RASTER_BAND':1,
              'INPUT': precipitation_yearly_ungauged,
              'COLUMN_PREFIX': "PrecAugust_",
-             'STATISTICS': [1,2], # sum and mean
+             'STATISTICS': [2], # mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(finalLayer_ungauged) 
