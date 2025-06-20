@@ -39,6 +39,7 @@ from qgis.core import ( QgsFeature,
                         QgsField,
                         QgsProcessing,
                         QgsProcessingAlgorithm,
+                        QgsProcessingParameterBoolean,
                         QgsProcessingParameterFeatureSource,
                         QgsProcessingParameterFeatureSink,
                         QgsProcessingParameterField,
@@ -60,6 +61,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
     nameWwtp = "name_wwtp"
     connInh = "conn_inh"
     techClass = "tech_class"
+    custom = "custom"
     OUTPUT = 'OUTPUT'
 
     def shortHelpString(self):
@@ -120,6 +122,15 @@ class EmissionLoads(QgsProcessingAlgorithm):
                 type=QgsProcessingParameterField.Any
             )
         )
+
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.custom,
+                self.tr('Use the custom table from "Consumption Selection" tool'),
+                defaultValue=False
+            )
+        )
+        
         
         # show the user's selection
         # Read contents from the .txt file
@@ -163,6 +174,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
         #excel_file = os.path.join(plugin_dir, "B2_input.xlsx")
         cons_file = os.path.join(plugin_dir, "consumption_dataset.csv")
         removal_file = os.path.join(plugin_dir, "removal_rates.csv")
+        custom_table = os.path.join(plugin_dir, "wwtp_consumption_table.csv")
 
         # read and show content
         if os.path.exists(selection_file):
@@ -183,20 +195,13 @@ class EmissionLoads(QgsProcessingAlgorithm):
             feedback.reportError("user_selection.txt not found")
             selection_data = None
 
-        # retrieve the consumption data from our database
-        try:
-            df = pd.read_csv(cons_file, sep=",")
-            removal_df = pd.read_csv(removal_file, sep=",")
-        except Exception as e:
-            feedback.reportError(f"Could not read CSV file: {e}")
-            return {}
-
         # get input parameters
         layer = self.parameterAsVectorLayer(parameters, self.emissionPoints, context)
         id_field = self.parameterAsString(parameters, self.idWwtp, context)
         name_field = self.parameterAsString(parameters, self.nameWwtp, context)
         field_inhabitants = self.parameterAsString(parameters, self.connInh, context)
         tech_field = self.parameterAsString(parameters, self.techClass, context)
+        custom_selection = self.parameterAsBoolean(parameters, self.custom, context)
 
         # clone original fields
         fields = QgsFields()
@@ -222,86 +227,141 @@ class EmissionLoads(QgsProcessingAlgorithm):
             layer.sourceCrs()
         )
 
-        # build dictionary with consumptiond data
-        api_consumption_values = {}
-        for (api, field_name), sel in zip(api_columns, selections):
-            year = sel[1].strip()
-            country = sel[2].strip()
-            region = sel[3].strip()
+        if custom_selection:
+            # load custom table
+            custom_df = pd.read_csv(custom_table, sep=",")
 
-            # find matching row in the Excel database
-            match = df[
-                (df["API name"].astype(str) == api) &
-                (df["year"].astype(str) == year) &
-                (df["country"].astype(str) == country) &
-                (df["region"].astype(str) == region)
-            ]
+            # get API columns
+            #api_columns = [api for api in api_names if api in custom_df.columns]
 
-            if not match.empty:
-                value = match.iloc[0]["API input (mg/inh.a)"]
-                value_float = float(value)
-                api_consumption_values[field_name] = value_float
-
-            else:
-                feedback.reportError(f"No match found for {api}, {year}, {country}, {region}")
-                api_consumption_values[field_name] = 0
-        
-        # print consumption values
-        feedback.pushInfo(f"\nAPI consumption value: {api_consumption_values} in mg/inh/a")
-
-
-        # iterate over each emission point
-        for feature in layer.getFeatures():
-            feedback.pushInfo(f"\nAnalyzing WWTP with ID: {feature[id_field]}")
-            attrs = feature.attributes()
-            geom = feature.geometry()
-
-            # get inhabitants value
-            try:
-                inh = float(feature[field_inhabitants])
-                feedback.pushInfo(f"Connected inhabitant: {inh}")
-            except(TypeError, ValueError):
-                inh = 0.0
-                feedback.reportError(f"Inhabitants field missing or invalid for feature {feature[id_field]}")
-
-            # get technical class
-            try:
-                tech_class = int(feature[tech_field])
-                feedback.pushInfo(f"Tech class: {tech_class}")
-            except (TypeError, ValueError):
-                tech_class = None
-                feedback.reportError(f"Tech class missing or invalid feature for {feature[id_field]}")
-
-            # prepare new attributes with additional API columns
-            new_attrs = [
-                feature[id_field],
-                feature[name_field]
-            ]
-
-            for api_field, consumption_value in api_consumption_values.items():
-                # get the removal rate of each specific API
-                removal_row = removal_df[removal_df["API name"] == api_field]
-                if not removal_row.empty and tech_class and f"TC{tech_class} removal rate" in removal_row.columns:
-                    try:
-                        removal_rate = float(removal_row.iloc[0][f"TC{tech_class} removal rate"])
-                        feedback.pushInfo(f"Removal rate of {api_field}: {removal_rate}\n")
-                    except Exception as e:
-                        feedback.reportError(f"Could not find removal rate for {api_field}, TC{tech_class}: {e}")
-                        removal_rate = 0.0
-                else:
-                    removal_rate = 0.0
-                    feedback.reportError(f"No removal found rate for {api_field} and TC{tech_class}")
+            for feature in layer.getFeatures():
+                wwtp_id = feature[id_field]
+                geom = feature.geometry()
                 
-                # calculate final load
-                load = consumption_value*inh
-                adjusted_load = (load*(1-removal_rate)/1000000)
-                new_attrs.append(adjusted_load)
+                # match row by WWTP ID
+                row = custom_df[custom_df["WWTP ID"] == int(wwtp_id)]
+                if row.empty:
+                    feedback.reportError(f"No match in custom table for WWTP ID {wwtp_id}")
+                    continue
 
-            # create and add the new feature
-            new_feature = QgsFeature()
-            new_feature.setGeometry(geom)
-            new_feature.setAttributes(new_attrs)
-            sink.addFeature(new_feature, QgsFeatureSink.FastInsert)
+                # get inhabitants
+                try:
+                    inh = float(feature[field_inhabitants])
+                except (TypeError, ValueError):
+                    feedback.reportError(f"Inhabitants invalid for {wwtp_id}")
+                    inh = 0.0
+
+                new_attrs = [
+                    feature[id_field],
+                    feature[name_field]
+                ]
+
+                for api, _ in api_columns:
+                    input_val = float(row.iloc[0][api])
+                    rr_col = f"RR_{api}"
+                    rr = float(row.iloc[0][rr_col]) if rr_col in row else 0.0
+
+                    adjusted_load = input_val * inh * (1 - rr)/1_000_000
+                    new_attrs.append(adjusted_load)
+
+                # create and add the new feature
+                new_feature = QgsFeature()
+                new_feature.setGeometry(geom)
+                new_feature.setAttributes(new_attrs)
+                sink.addFeature(new_feature, QgsFeatureSink.FastInsert)
+
+
+
+
+        if not custom_selection:
+            # retrieve the consumption data and removal rate from our database
+            try:
+                df = pd.read_csv(cons_file, sep=",")
+                removal_df = pd.read_csv(removal_file, sep=",")
+            except Exception as e:
+                feedback.reportError(f"Could not read CSV file: {e}")
+                return {}
+            
+            # build dictionary with consumption data
+            api_consumption_values = {}
+            for (api, field_name), sel in zip(api_columns, selections):
+                year = sel[1].strip()
+                country = sel[2].strip()
+                region = sel[3].strip()
+
+                # find matching row in the Excel database
+                match = df[
+                    (df["API name"].astype(str) == api) &
+                    (df["year"].astype(str) == year) &
+                    (df["country"].astype(str) == country) &
+                    (df["region"].astype(str) == region)
+                ]
+
+                if not match.empty:
+                    value = match.iloc[0]["API input (mg/inh.a)"]
+                    value_float = float(value)
+                    api_consumption_values[field_name] = value_float
+
+                else:
+                    feedback.reportError(f"No match found for {api}, {year}, {country}, {region}")
+                    api_consumption_values[field_name] = 0
+            
+            # print consumption values
+            feedback.pushInfo(f"\nAPI consumption value: {api_consumption_values} in mg/inh/a")
+
+
+            # iterate over each emission point
+            for feature in layer.getFeatures():
+                feedback.pushInfo(f"\nAnalyzing WWTP with ID: {feature[id_field]}")
+                attrs = feature.attributes()
+                geom = feature.geometry()
+
+                # get inhabitants value
+                try:
+                    inh = float(feature[field_inhabitants])
+                    feedback.pushInfo(f"Connected inhabitant: {inh}")
+                except(TypeError, ValueError):
+                    inh = 0.0
+                    feedback.reportError(f"Inhabitants field missing or invalid for feature {feature[id_field]}")
+
+                # get technical class
+                try:
+                    tech_class = int(feature[tech_field])
+                    feedback.pushInfo(f"Tech class: {tech_class}")
+                except (TypeError, ValueError):
+                    tech_class = None
+                    feedback.reportError(f"Tech class missing or invalid feature for {feature[id_field]}")
+
+                # prepare new attributes with additional API columns
+                new_attrs = [
+                    feature[id_field],
+                    feature[name_field]
+                ]
+
+                for api_field, consumption_value in api_consumption_values.items():
+                    # get the removal rate of each specific API
+                    removal_row = removal_df[removal_df["API name"] == api_field]
+                    if not removal_row.empty and tech_class and f"TC{tech_class} removal rate" in removal_row.columns:
+                        try:
+                            removal_rate = float(removal_row.iloc[0][f"TC{tech_class} removal rate"])
+                            feedback.pushInfo(f"Removal rate of {api_field}: {removal_rate}\n")
+                        except Exception as e:
+                            feedback.reportError(f"Could not find removal rate for {api_field}, TC{tech_class}: {e}")
+                            removal_rate = 0.0
+                    else:
+                        removal_rate = 0.0
+                        feedback.reportError(f"No removal found rate for {api_field} and TC{tech_class}")
+                    
+                    # calculate final load
+                    load = consumption_value*inh
+                    adjusted_load = (load*(1-removal_rate)/1000000)
+                    new_attrs.append(adjusted_load)
+
+                # create and add the new feature
+                new_feature = QgsFeature()
+                new_feature.setGeometry(geom)
+                new_feature.setAttributes(new_attrs)
+                sink.addFeature(new_feature, QgsFeatureSink.FastInsert)
             
 
         return {self.OUTPUT: dest_id}

@@ -2,110 +2,20 @@
 <ui version="4.0">
  <class>ConsumptionSelectionDialogBase</class>
  <widget class="QDialog" name="ConsumptionSelectionDialogBase">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>633</width>
+    <height>514</height>
+   </rect>
+  </property>
   <property name="windowTitle">
    <string>Consumption Selection</string>
   </property>
-  <layout class="QGridLayout" name="gridLayout">
-   <item row="2" column="2">
-    <widget class="QLabel" name="label_5">
-     <property name="text">
-      <string>Selected consumption data</string>
-     </property>
-    </widget>
-   </item>
-   <item row="4" column="0">
-    <widget class="QLabel" name="label_2">
-     <property name="text">
-      <string>Year</string>
-     </property>
-    </widget>
-   </item>
-   <item row="8" column="0">
-    <widget class="QLabel" name="label_4">
-     <property name="text">
-      <string>Region</string>
-     </property>
-    </widget>
-   </item>
-   <item row="10" column="3">
-    <widget class="QDialogButtonBox" name="button_box">
-     <property name="orientation">
-      <enum>Qt::Horizontal</enum>
-     </property>
-     <property name="standardButtons">
-      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
-     </property>
-    </widget>
-   </item>
-   <item row="0" column="0">
-    <widget class="QLabel" name="label_6">
-     <property name="text">
-      <string>Consumption data available</string>
-     </property>
-    </widget>
-   </item>
-   <item row="1" column="0" colspan="4">
-    <widget class="QTableView" name="excelTableView">
-     <attribute name="horizontalHeaderVisible">
-      <bool>true</bool>
-     </attribute>
-    </widget>
-   </item>
-   <item row="7" column="0" colspan="2">
-    <widget class="QComboBox" name="countryComboBox">
-     <property name="minimumSize">
-      <size>
-       <width>225</width>
-       <height>25</height>
-      </size>
-     </property>
-    </widget>
-   </item>
-   <item row="9" column="0" colspan="2">
-    <widget class="QComboBox" name="regionComboBox">
-     <property name="minimumSize">
-      <size>
-       <width>225</width>
-       <height>25</height>
-      </size>
-     </property>
-    </widget>
-   </item>
-   <item row="3" column="0" colspan="2">
-    <widget class="QComboBox" name="apiComboBox">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="minimumSize">
-      <size>
-       <width>225</width>
-       <height>25</height>
-      </size>
-     </property>
-    </widget>
-   </item>
-   <item row="5" column="0" colspan="2">
-    <widget class="QComboBox" name="yearComboBox">
-     <property name="minimumSize">
-      <size>
-       <width>225</width>
-       <height>25</height>
-      </size>
-     </property>
-    </widget>
-   </item>
-   <item row="10" column="2">
-    <widget class="QPushButton" name="removeSelectionButton">
-     <property name="text">
-      <string>Remove</string>
-     </property>
-    </widget>
-   </item>
-   <item row="10" column="0">
-    <widget class="QPushButton" name="addSelectionButton">
+  <layout class="QGridLayout" name="gridLayout_2">
+   <item row="1" column="1">
+    <widget class="QPushButton" name="closeButton">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
        <horstretch>0</horstretch>
@@ -118,76 +28,375 @@
        <height>0</height>
       </size>
      </property>
-     <property name="text">
-      <string>Add to the selection</string>
-     </property>
-    </widget>
-   </item>
-   <item row="6" column="0">
-    <widget class="QLabel" name="label_3">
-     <property name="text">
-      <string>Country</string>
-     </property>
-    </widget>
-   </item>
-   <item row="2" column="0">
-    <widget class="QLabel" name="label">
-     <property name="minimumSize">
+     <property name="maximumSize">
       <size>
-       <width>0</width>
-       <height>0</height>
+       <width>100</width>
+       <height>30</height>
       </size>
      </property>
      <property name="text">
-      <string>API name</string>
+      <string>Close</string>
      </property>
     </widget>
    </item>
-   <item row="3" column="2" rowspan="7" colspan="2">
-    <widget class="QListWidget" name="selectionListWidget"/>
-   </item>
-   <item row="10" column="1">
-    <widget class="QPushButton" name="resetButton">
-     <property name="text">
-      <string>Reset</string>
+   <item row="0" column="0" colspan="2">
+    <widget class="QTabWidget" name="tabWidget">
+     <property name="currentIndex">
+      <number>0</number>
      </property>
+     <widget class="QWidget" name="tab_1">
+      <attribute name="title">
+       <string>Consumption data</string>
+      </attribute>
+      <layout class="QGridLayout" name="gridLayout">
+       <item row="4" column="2" rowspan="7" colspan="5">
+        <widget class="QListWidget" name="selectionListWidget"/>
+       </item>
+       <item row="10" column="0" colspan="2">
+        <widget class="QComboBox" name="regionComboBox">
+         <property name="minimumSize">
+          <size>
+           <width>225</width>
+           <height>25</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>API name</string>
+         </property>
+        </widget>
+       </item>
+       <item row="8" column="0" colspan="2">
+        <widget class="QComboBox" name="countryComboBox">
+         <property name="minimumSize">
+          <size>
+           <width>225</width>
+           <height>25</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="9" column="0">
+        <widget class="QLabel" name="label_4">
+         <property name="text">
+          <string>Region</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0" colspan="7">
+        <widget class="QTableView" name="excelTableView">
+         <attribute name="horizontalHeaderVisible">
+          <bool>true</bool>
+         </attribute>
+        </widget>
+       </item>
+       <item row="11" column="0">
+        <widget class="QPushButton" name="addSelectionButton">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>75</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Add to the selection</string>
+         </property>
+        </widget>
+       </item>
+       <item row="11" column="6">
+        <widget class="QPushButton" name="removeSelectionButton">
+         <property name="text">
+          <string>Remove</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="6">
+        <widget class="QPushButton" name="restoreButton_1">
+         <property name="maximumSize">
+          <size>
+           <width>100</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Restore original</string>
+         </property>
+        </widget>
+       </item>
+       <item row="7" column="0">
+        <widget class="QLabel" name="label_3">
+         <property name="text">
+          <string>Country</string>
+         </property>
+        </widget>
+       </item>
+       <item row="11" column="1">
+        <widget class="QPushButton" name="resetButton">
+         <property name="text">
+          <string>Reset</string>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="0">
+        <widget class="QLabel" name="label_2">
+         <property name="text">
+          <string>Year</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="2">
+        <widget class="QLabel" name="label_5">
+         <property name="text">
+          <string>Selected consumption data</string>
+         </property>
+        </widget>
+       </item>
+       <item row="6" column="0" colspan="2">
+        <widget class="QComboBox" name="yearComboBox">
+         <property name="minimumSize">
+          <size>
+           <width>225</width>
+           <height>25</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="0">
+        <widget class="QLabel" name="label_6">
+         <property name="text">
+          <string>Consumption data available</string>
+         </property>
+        </widget>
+       </item>
+       <item row="11" column="3" colspan="3">
+        <widget class="QPushButton" name="saveSelectionButton">
+         <property name="text">
+          <string>Save selection</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="0" colspan="2">
+        <widget class="QComboBox" name="apiComboBox">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>225</width>
+           <height>25</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="5">
+        <widget class="QPushButton" name="removeButton_tab1">
+         <property name="maximumSize">
+          <size>
+           <width>25</width>
+           <height>23</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>-</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="4">
+        <widget class="QPushButton" name="addButton_tab1">
+         <property name="maximumSize">
+          <size>
+           <width>25</width>
+           <height>23</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>+</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tab_2">
+      <attribute name="title">
+       <string>Removal rate</string>
+      </attribute>
+      <widget class="QLabel" name="label_11">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>10</y>
+         <width>141</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Removal rate data available</string>
+       </property>
+      </widget>
+      <widget class="QTableView" name="RRTableView">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>30</y>
+         <width>591</width>
+         <height>331</height>
+        </rect>
+       </property>
+       <attribute name="horizontalHeaderVisible">
+        <bool>true</bool>
+       </attribute>
+      </widget>
+      <widget class="QPushButton" name="addButton_tab2">
+       <property name="geometry">
+        <rect>
+         <x>440</x>
+         <y>0</y>
+         <width>25</width>
+         <height>23</height>
+        </rect>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>25</width>
+         <height>23</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>+</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="removeButton_tab2">
+       <property name="geometry">
+        <rect>
+         <x>470</x>
+         <y>0</y>
+         <width>25</width>
+         <height>23</height>
+        </rect>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>25</width>
+         <height>23</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>-</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="restoreButton_2">
+       <property name="geometry">
+        <rect>
+         <x>500</x>
+         <y>0</y>
+         <width>100</width>
+         <height>23</height>
+        </rect>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>100</width>
+         <height>16777215</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>Restore original</string>
+       </property>
+      </widget>
+     </widget>
+     <widget class="QWidget" name="tab_3">
+      <attribute name="title">
+       <string>Custom table</string>
+      </attribute>
+      <layout class="QGridLayout" name="gridLayout_3">
+       <item row="0" column="0">
+        <widget class="QLabel" name="label_7">
+         <property name="text">
+          <string>Select WWTP file</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QLabel" name="label_8">
+         <property name="text">
+          <string>ID field</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="2">
+        <widget class="QLabel" name="label_9">
+         <property name="text">
+          <string>Name field</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="3">
+        <widget class="QLabel" name="label_10">
+         <property name="text">
+          <string>Technical Class</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QComboBox" name="WWTPcomboBox"/>
+       </item>
+       <item row="1" column="1">
+        <widget class="QComboBox" name="IDcomboBox"/>
+       </item>
+       <item row="1" column="2">
+        <widget class="QComboBox" name="NamecomboBox"/>
+       </item>
+       <item row="1" column="3">
+        <widget class="QComboBox" name="TCcomboBox"/>
+       </item>
+       <item row="1" column="4">
+        <widget class="QPushButton" name="loadButton">
+         <property name="text">
+          <string>Load Table</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0" colspan="5">
+        <widget class="QTableView" name="wwtpTableView"/>
+       </item>
+       <item row="3" column="3">
+        <widget class="QPushButton" name="restoreButton_3">
+         <property name="text">
+          <string>Restore original</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="4">
+        <widget class="QPushButton" name="saveButton">
+         <property name="text">
+          <string>Save</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
   </layout>
  </widget>
  <resources/>
- <connections>
-  <connection>
-   <sender>button_box</sender>
-   <signal>accepted()</signal>
-   <receiver>ConsumptionSelectionDialogBase</receiver>
-   <slot>accept()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>330</x>
-     <y>250</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>20</x>
-     <y>20</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>button_box</sender>
-   <signal>rejected()</signal>
-   <receiver>ConsumptionSelectionDialogBase</receiver>
-   <slot>reject()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>330</x>
-     <y>250</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>20</x>
-     <y>20</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
+ <connections/>
 </ui>
