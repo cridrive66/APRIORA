@@ -49,6 +49,7 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsFeatureSink,
                        QgsProject,
                        QgsProcessingAlgorithm,
+                       QgsProcessingParameterBoolean,
                        QgsProcessingParameterDefinition,
                        QgsProcessingParameterEnum,
                        QgsProcessingParameterFeatureSource,
@@ -90,6 +91,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
     riverNetwork = "RiverNetwork"
     selectedGeofactors = "selected_geofactors"
     threshold_user = "threshold"
+    adjusted = 'adjusted'
     # INPUT_FIELD_ID = 'INPUT_FIELD_ID'
     # INPUT_FIELD_NEXT = 'INPUT_FIELD_NEXT'
     # INPUT_FIELD_PREV = 'INPUT_FIELD_PREV'
@@ -131,6 +133,14 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 self.riverNetwork,
                 self.tr('River network'),
                 [QgsProcessing.TypeVectorLine]
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.adjusted,
+                self.tr('There are none or few gauging stations in the catchment'),
+                defaultValue=False
             )
         )
 

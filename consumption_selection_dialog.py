@@ -25,6 +25,7 @@
 import os
 import pandas as pd
 
+from qgis.core import QgsProject, QgsMapLayer, QgsWkbTypes, QgsMessageLog, Qgis #last two for debugging
 from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets
 from PyQt5.QtWidgets import QMessageBox # add all the import here instead of using the previous line
@@ -47,11 +48,30 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 items = []
                 for val in row:
                     item = QStandardItem(str(val))
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    #item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     items.append(item)
                 model.appendRow(items)
             
             self.excelTableView.setModel(model)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
+
+    def load_RR_to_table(self, csv_path):
+        try:
+            df_RR = pd.read_csv(csv_path, sep=",")
+            model = QStandardItemModel()
+            model.setHorizontalHeaderLabels(df_RR.columns.astype(str).tolist())
+
+            for row in df_RR.itertuples(index=False):
+                items = []
+                for val in row:
+                    item = QStandardItem(str(val))
+                    #item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    items.append(item)
+                model.appendRow(items)
+            
+            self.RRTableView.setModel(model)
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
@@ -69,24 +89,45 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.setupUi(self)
         plugin_dir = os.path.dirname(__file__)
         csv_file = os.path.join(plugin_dir, "consumption_dataset.csv")
+        RR_file = os.path.join(plugin_dir, "removal_rates.csv")
         try:
+            # consumption data
             self.df = pd.read_csv(csv_file, sep=",")
             self.load_csv_to_table(csv_file)
+            # removal rate
+            self.df_RR = pd.read_csv(RR_file, sep=",")
+            self.load_RR_to_table(RR_file)
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not read Excel file: {e}")
             return {}
 
         # Connect signals
+        # tab 1
         self.apiComboBox.currentTextChanged.connect(self.update_filters)
         self.yearComboBox.currentTextChanged.connect(self.update_filters)
         self.countryComboBox.currentTextChanged.connect(self.update_filters)
         self.regionComboBox.currentTextChanged.connect(self.update_filters)
         self.addSelectionButton.clicked.connect(self.add_selection)
+        self.saveSelectionButton.clicked.connect(self.save_selection_to_file)
         self.removeSelectionButton.clicked.connect(self.remove_selected_item)
         self.resetButton.clicked.connect(self.reset_filters)
-        self.button_box.accepted.connect(self.save_selection_to_file)
-
+        self.closeButton.clicked.connect(self.close)
         self.update_filters()
+        self.addButton_tab1.clicked.connect(lambda: self.add_row_to_table(self.excelTableView))
+        self.removeButton_tab1.clicked.connect(lambda: self.remove_selected_row(self.excelTableView))
+        self.restoreButton_1.clicked.connect(lambda: self.load_csv_to_table(csv_file))
+        # tab 2
+        self.addButton_tab2.clicked.connect(lambda: self.add_row_to_table(self.RRTableView))
+        self.removeButton_tab2.clicked.connect(lambda: self.remove_selected_row(self.RRTableView))
+        self.restoreButton_2.clicked.connect(lambda: self.load_RR_to_table(RR_file))
+        # tab 3
+        self.WWTPcomboBox.currentIndexChanged.connect(self.update_field_combos)
+        self.loadButton.clicked.connect(self.load_wwtp_table)
+        self.populate_layer_combo()
+        self.restoreButton_3.clicked.connect(self.load_wwtp_table)
+        self.saveButton.clicked.connect(self.save_wwtp_table_to_csv)
+
 
     def update_filters(self):
         current_api = self.apiComboBox.currentText()
@@ -147,6 +188,10 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.set_combo_items(self.regionComboBox, sorted(df_region['region'].unique()), current_region)
 
 
+    """
+    Tab 1 - Consumption data
+    """
+    
     def set_combo_items(self, combo, items, current):
         block = combo.blockSignals(True)
         combo.clear()
@@ -186,6 +231,21 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.countryComboBox.setCurrentIndex(0)
         self.regionComboBox.setCurrentIndex(0)
 
+    def add_row_to_table(self, table_view):
+        model = table_view.model()
+        if model:
+            cols = model.columnCount()
+            new_items = [QStandardItem("") for _ in range(cols)]
+            for item in new_items:
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
+            model.appendRow(new_items)
+
+    def remove_selected_row(self, table_view):
+        model = table_view.model()
+        selection = table_view.selectionModel().selectedRows()
+        for index in sorted(selection, reverse = True):
+            model.removeRow(index.row())
+
     def save_selection_to_file(self):
         # get the plugin's directory path
         plugin_dir = os.path.dirname(__file__)
@@ -224,3 +284,166 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             "country": self.countryComboBox.currentText(),
             "region": self.regionComboBox.currentText()
         }
+
+    """
+    Tab 2 - Removal rate
+    """
+
+    
+    """
+    Tab 3 - Custom table
+    """
+    
+    def populate_layer_combo(self):
+        self.WWTPcomboBox.clear()
+        layers = [layer for layer in QgsProject.instance().mapLayers().values() if layer.type() == QgsMapLayer.VectorLayer and layer.geometryType() == QgsWkbTypes.PointGeometry]
+        self.vector_layers = layers
+        for layer in layers:
+            self.WWTPcomboBox.addItem(layer.name())
+
+    def update_field_combos(self):
+        index = self.WWTPcomboBox.currentIndex()
+        if index == -1:
+            return
+
+        layer = self.vector_layers[index]
+        field_names = [field.name() for field in layer.fields()]
+
+        self.IDcomboBox.clear()
+        self.NamecomboBox.clear()
+        self.TCcomboBox.clear()
+        self.IDcomboBox.addItems(field_names)
+        self.NamecomboBox.addItems(field_names)
+        self.TCcomboBox.addItems(field_names)
+
+    def load_wwtp_table(self):
+        # get the plugin's directory path
+        plugin_dir = os.path.dirname(__file__)
+        removal_file = os.path.join(plugin_dir, "removal_rates.csv")
+        removal_df = pd.read_csv(removal_file)
+        QgsMessageLog.logMessage(f"Available columns: {removal_df.columns.tolist()}", level=Qgis.Info)
+
+        try:
+            index = self.WWTPcomboBox.currentIndex()
+            if index == -1:
+                QMessageBox.warning(self, "No Layer selected", "Please select a point shapefile layer.")
+                return
+
+            layer = self.vector_layers[index]
+            id_field = self.IDcomboBox.currentText()
+            name_field = self.NamecomboBox.currentText()
+            tc_field = self.TCcomboBox.currentText()
+            
+
+            if not id_field or not name_field or not tc_field:
+                QMessageBox.warning(self, "Missing Field", "Please select all fields.")
+                return
+
+            model = QStandardItemModel()
+            
+            # get all selected API combinations from the list widget in tab 1
+            selections = []
+            for i in range(self.selectionListWidget.count()):
+                selections.append(self.selectionListWidget.item(i).text().split(", "))
+
+            api_names = [sel[0] for sel in selections]
+            removal_names = [f"RR_{api}" for api in api_names]
+
+            model.setHorizontalHeaderLabels(["WWTP ID", "WWTP name", "Technical Class"] + api_names + removal_names)
+
+            for feature in layer.getFeatures():
+                api_items = []
+                # id and name
+                id_val = feature[id_field]
+                id_item = QStandardItem(str(id_val))
+                api_items.append(id_item)
+                name_val = feature[name_field]
+                name_item = QStandardItem(str(name_val))
+                api_items.append(name_item)
+
+                try:
+                    tech_class = int(feature[tc_field])
+                except (TypeError, ValueError, KeyError):
+                    tech_class = None
+                tech_item = QStandardItem(str(tech_class))
+                api_items.append(tech_item)
+                
+                # add each API value based on match
+                for api_name, year, country, region in selections:
+                    match = self.df[
+                        (self.df["API name"] == api_name) &
+                        (self.df["year"].astype(str) == year) &
+                        (self.df["country"] == country) &
+                        (self.df["region"] == region)
+                    ]
+                    val = match["API input (mg/inh.a)"].values[0] if not match.empty else ""
+                    api_item = QStandardItem(str(val))
+                    #api_item.setFlags(api_item.flags() & ~Qt.ItemIsEditable)
+                    api_items.append(api_item)
+
+                # add removal rates (RR) values
+                for api in api_names:
+                    # little debugging
+                    QgsMessageLog.logMessage(f"Selected API: '{api}'", level=Qgis.Info)
+                    QgsMessageLog.logMessage(f"Matching rows: {removal_df[removal_df['API name'].str.strip() == api.strip()]}", level=Qgis.Info)
+                    QgsMessageLog.logMessage(f"Tech class: {tech_class}, Column name: TC{tech_class} removal rate", level=Qgis.Info)
+                    
+                    removal_val = ""
+                    removal_row = removal_df[removal_df["API name"] == api]
+                    if not removal_row.empty and tech_class:
+                        col_name = f"TC{tech_class} removal rate"
+                        # little debugging
+                        QgsMessageLog.logMessage(f"Raw removal value: {removal_row.iloc[0][col_name]}", level=Qgis.Info)
+
+                        if col_name in removal_row.columns:
+                            try:
+                                removal_val = float(removal_row.iloc[0][col_name])
+                            except Exception:
+                                removal_val = ""
+                    else:
+                        QgsMessageLog.logMessage("No matching row found in removal_df", level=Qgis.Warning)
+                    rr_item = QStandardItem(str(removal_val))
+                    api_items.append(rr_item)
+                
+                for item in (id_item, name_item, tech_item):
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                model.appendRow(api_items)
+
+
+                #model.appendRow([id_item, name_item] + api_items)
+            
+            self.wwtpTableView.setModel(model)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not load WWTP data: {e}")
+
+    def save_wwtp_table_to_csv(self):
+        model = self.wwtpTableView.model()
+        if model is None:
+            QMessageBox.warning(self, "No Data", "There is no data to save.")
+            return
+
+        plugin_dir = os.path.dirname(__file__)
+        save_path = os.path.join(plugin_dir, "wwtp_consumption_table.csv")
+
+        try:
+            # extract header
+            headers = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+
+            # extract rows
+            data = []
+            for row in range(model.rowCount()):
+                row_data = []
+                for col in range(model.columnCount()):
+                    index = model.index(row, col)
+                    row_data.append(index.data())
+                data.append(row_data)
+
+            # save using pandas
+            df_save = pd.DataFrame(data, columns=headers)
+            df_save.to_csv(save_path, index=False)
+
+            QMessageBox.information(self, "Saved", f"Table successfully saved to: \n{save_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not save file:\n{e}")
