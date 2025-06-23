@@ -24,11 +24,12 @@
 
 import os
 import pandas as pd
+import tempfile
 
 from qgis.core import QgsProject, QgsMapLayer, QgsWkbTypes, QgsMessageLog, Qgis #last two for debugging
 from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets
-from PyQt5.QtWidgets import QMessageBox # add all the import here instead of using the previous line
+from PyQt5.QtWidgets import QMessageBox, QStyle # add all the import here instead of using the previous line
 from PyQt5.QtGui import QStandardItemModel, QStandardItem
 from PyQt5.QtCore import Qt
 
@@ -54,6 +55,13 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             
             self.excelTableView.setModel(model)
 
+            # remove temporary file if there are
+            if self.temp_cons == True:
+                os.remove(self.temp_consumption_path)
+                # set a flag
+                self.temp_cons = False
+            self.update_filters()
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
 
@@ -73,6 +81,12 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             
             self.RRTableView.setModel(model)
 
+            # remove temporary file if there are
+            if self.temp_rr == True:
+                os.remove(self.temp_rr_path)
+                # set a flag
+                self.temp_rr = False
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
     
@@ -87,6 +101,13 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # http://qt-project.org/doc/qt-4.8/designer-using-a-ui-file.html
         # #widgets-and-dialogs-with-auto-connect
         self.setupUi(self)
+        # set a save icon
+        self.saveButton_1.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        self.saveButton_2.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        # set a flag
+        self.temp_cons = False
+        self.temp_rr = False
+        # directory of the databases
         plugin_dir = os.path.dirname(__file__)
         csv_file = os.path.join(plugin_dir, "consumption_dataset.csv")
         RR_file = os.path.join(plugin_dir, "removal_rates.csv")
@@ -109,7 +130,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.countryComboBox.currentTextChanged.connect(self.update_filters)
         self.regionComboBox.currentTextChanged.connect(self.update_filters)
         self.addSelectionButton.clicked.connect(self.add_selection)
-        self.saveSelectionButton.clicked.connect(self.save_selection_to_file)
+        # self.saveSelectionButton.clicked.connect(self.save_selection_to_file)
         self.removeSelectionButton.clicked.connect(self.remove_selected_item)
         self.resetButton.clicked.connect(self.reset_filters)
         self.closeButton.clicked.connect(self.close)
@@ -117,10 +138,14 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.addButton_tab1.clicked.connect(lambda: self.add_row_to_table(self.excelTableView))
         self.removeButton_tab1.clicked.connect(lambda: self.remove_selected_row(self.excelTableView))
         self.restoreButton_1.clicked.connect(lambda: self.load_csv_to_table(csv_file))
+        self.saveButton_1.clicked.connect(self.handle_save_consumption)
+        
         # tab 2
         self.addButton_tab2.clicked.connect(lambda: self.add_row_to_table(self.RRTableView))
         self.removeButton_tab2.clicked.connect(lambda: self.remove_selected_row(self.RRTableView))
         self.restoreButton_2.clicked.connect(lambda: self.load_RR_to_table(RR_file))
+        self.saveButton_2.clicked.connect(self.handle_save_rr)
+
         # tab 3
         self.WWTPcomboBox.currentIndexChanged.connect(self.update_field_combos)
         self.loadButton.clicked.connect(self.load_wwtp_table)
@@ -135,19 +160,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         current_country = self.countryComboBox.currentText()
         current_region = self.regionComboBox.currentText()
 
-        # df_filtered = self.df.copy()
-
-        # if current_api: df_filtered = df_filtered[df_filtered['API name'] == current_api]
-        # if current_year: df_filtered = df_filtered[df_filtered['year'].astype(str) == current_year]
-        # if current_country: df_filtered = df_filtered[df_filtered['country'] == current_country]
-        # if current_region: df_filtered = df_filtered[df_filtered['region'] == current_region]
-
-        # self.set_combo_items(self.apiComboBox, sorted(df_filtered['API name'].unique()), current_api)
-        # self.set_combo_items(self.yearComboBox, sorted(df_filtered['year'].astype(str).unique()), current_year)
-        # self.set_combo_items(self.countryComboBox, sorted(df_filtered['country'].unique()), current_country)
-        # self.set_combo_items(self.regionComboBox, sorted(df_filtered['region'].unique()), current_region)
-
-        df = self.df
+        # load the original file or the custom one
+        if self.temp_cons:
+            df = pd.read_csv(self.temp_consumption_path)
+        else:
+            df = self.df
 
         # create filtered versions of the dataframe for each combo box
         df_api = df.copy()
@@ -218,12 +235,14 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 return
 
         self.selectionListWidget.addItem(text)
+        self.save_selection_to_file()
 
     def remove_selected_item(self):
         selected_items = self.selectionListWidget.selectedItems()
         for item in selected_items:
             row = self.selectionListWidget.row(item)
             self.selectionListWidget.takeItem(row)
+        self.save_selection_to_file()
 
     def reset_filters(self):
         self.apiComboBox.setCurrentIndex(0)
@@ -246,6 +265,34 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         for index in sorted(selection, reverse = True):
             model.removeRow(index.row())
 
+    def save_temp_table(self, table_view, name):
+        model = table_view.model()
+        if model is None:
+            return None
+
+        headers = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+        data = []
+        for row in range(model.rowCount()):
+            row_data = [model.index(row, col).data() for col in range(model.columnCount())]
+            data.append(row_data)
+
+        df = pd.DataFrame(data, columns = headers)
+
+        # create a temp file and store path
+        plugin_dir = os.path.dirname(__file__)
+        custom_dir = os.path.join(plugin_dir, "custom_dataset")
+        os.makedirs(custom_dir, exist_ok=True)
+        
+        temp_file = os.path.join(custom_dir, f"{name}.csv")
+        df.to_csv(temp_file, index=False)
+        return temp_file
+
+    def handle_save_consumption(self):
+        self.temp_consumption_path = self.save_temp_table(self.excelTableView, "consumption_")
+        self.temp_cons = True
+        self.update_filters()
+
+    
     def save_selection_to_file(self):
         # get the plugin's directory path
         plugin_dir = os.path.dirname(__file__)
@@ -259,25 +306,13 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             item = self.selectionListWidget.item(index)
             selected_items.append(item.text())
 
-        # check it there are any selections
-        if selected_items:
-            try:
-                # Create the text file and write the selections
-                with open(file_path, "w") as file:
-                    for selection in selected_items:
-                        file.write(f"{selection}\n")
-
-                # show successfull saving
-                QMessageBox.information(self, "Success", "Selection saved successfully!")
-
-            except PermissionError:
-                QMessageBox.critical(self, "Error", f"Permission denied: could not save the file to:\n{file_path}")
-
-        else:
-            QMessageBox.warning(self, "No selections", "There are no selections to save")
+        # Create the text file and write the selections
+        with open(file_path, "w") as file:
+            for selection in selected_items:
+                file.write(f"{selection}\n")
 
     
-    def get_selected_filters(self): # not necessary I think
+    def get_selected_filters(self):
         return {
             "API name": self.apiComboBox.currentText(),
             "year": self.yearComboBox.currentText(),
@@ -288,6 +323,9 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     """
     Tab 2 - Removal rate
     """
+    def handle_save_rr(self):
+        self.temp_rr_path = self.save_temp_table(self.RRTableView, "removal_")
+        self.temp_rr = True
 
     
     """
@@ -319,9 +357,13 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     def load_wwtp_table(self):
         # get the plugin's directory path
         plugin_dir = os.path.dirname(__file__)
-        removal_file = os.path.join(plugin_dir, "removal_rates.csv")
-        removal_df = pd.read_csv(removal_file)
-        QgsMessageLog.logMessage(f"Available columns: {removal_df.columns.tolist()}", level=Qgis.Info)
+        
+        if self.temp_rr == True:
+            removal_df = pd.read_csv(self.temp_rr_path)
+        else:
+            removal_file = os.path.join(plugin_dir, "removal_rates.csv")
+            removal_df = pd.read_csv(removal_file)
+            QgsMessageLog.logMessage(f"Available columns: {removal_df.columns.tolist()}", level=Qgis.Info)
 
         try:
             index = self.WWTPcomboBox.currentIndex()
@@ -369,13 +411,18 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 api_items.append(tech_item)
                 
                 # add each API value based on match
+                QgsMessageLog.logMessage(f"Flag is {self.temp_cons}")
                 for api_name, year, country, region in selections:
-                    match = self.df[
-                        (self.df["API name"] == api_name) &
-                        (self.df["year"].astype(str) == year) &
-                        (self.df["country"] == country) &
-                        (self.df["region"] == region)
+                    df = pd.read_csv(self.temp_consumption_path) if self.temp_cons else self.df     #change the names, confusion can be made
+                    match = df[
+                        (df["API name"] == api_name) &
+                        (df["year"].astype(str) == year) &
+                        (df["country"] == country) &
+                        (df["region"] == region)
                     ]
+
+                    QgsMessageLog.logMessage(f"Matching rows for {api_name}, {year}, {country}, {region}:\n{match}", level=Qgis.Info)
+
                     val = match["API input (mg/inh.a)"].values[0] if not match.empty else ""
                     api_item = QStandardItem(str(val))
                     #api_item.setFlags(api_item.flags() & ~Qt.ItemIsEditable)
