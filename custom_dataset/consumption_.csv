@@ -1,0 +1,16 @@
+API input (mg/inh.a),API name,CAS No.,year,country,region,data source,coverage rate,ATC-Codes included
+525.56,Carbamazepine,298-46-4,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,N03AF01
+80.01,Clarithromycin,81103-11-9,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,more than 1
+160.35,Diclofenac,15307-86-5,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,nan
+n.d.,Estrone (E1),53-16-7,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,nan
+8.26,Fluconazole,86386-73-4,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,nan
+1002.21,Metoprolol,37350-58-6,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,nan
+97.55,Primidone,125-33-7,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,nan
+23.1,Sulfamethoxazole,129378-89-8,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,nan
+43.15,Trimethoprim,738-70-5,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,nan
+347.39,Venlafaxine,93413-69-5,2023,Germany,Mecklenburg-Vorpommern,WIdO (https://www.wido.de/),0.88,nan
+tbd,Carbamazepine,298-46-4,2024,Germany,n.d.,IQVIA,nan,N03AF01
+tbd,Carbamazepine,298-46-4,2023,Germany,n.d.,IQVIA,nan,N03AF01
+tbd,Carbamazepine,298-46-4,2022,Germany,n.d.,IQVIA,nan,N03AF01
+12345,Coffeine,123,2025,Latvia,Riga,nan,nan,nan
+750,Cocaine,-,2024,Finland,Helsinki,,,
