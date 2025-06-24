@@ -790,6 +790,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                     ).format(first_ft_data[2], parameters[self.INPUT_LAYER]))
                 raise QgsProcessingException()
             else:
+                flip_list.append(start_f_id)
                 connected_list = connected_list_1
 
         else:  # first vertex connecting
