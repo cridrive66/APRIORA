@@ -212,7 +212,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
         api_columns = []
         for sel in selections:
             api = sel[0].strip()
-            short_field_name = f"{api[:5]}[kg/a]"
+            short_field_name = f"{api[:4]}[kg/a]"
             field_name = f"{api}"
             api_columns.append((api, field_name))
             fields.append(QgsField(short_field_name, QVariant.Double))
