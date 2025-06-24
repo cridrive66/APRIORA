@@ -104,7 +104,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # set a save icon
         self.saveButton_1.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
         self.saveButton_2.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
-        # set a flag
+        # set a reload icon
+        self.reloadButton_3.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         self.temp_cons = False
         self.temp_rr = False
         # directory of the databases
@@ -150,6 +151,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.WWTPcomboBox.currentIndexChanged.connect(self.update_field_combos)
         self.loadButton.clicked.connect(self.load_wwtp_table)
         self.populate_layer_combo()
+        self.reloadButton_3.clicked.connect(self.populate_layer_combo)
         self.restoreButton_3.clicked.connect(self.load_wwtp_table)
         self.saveButton.clicked.connect(self.save_wwtp_table_to_csv)
 
@@ -363,7 +365,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         else:
             removal_file = os.path.join(plugin_dir, "removal_rates.csv")
             removal_df = pd.read_csv(removal_file)
-            QgsMessageLog.logMessage(f"Available columns: {removal_df.columns.tolist()}", level=Qgis.Info)
+            #QgsMessageLog.logMessage(f"Available columns: {removal_df.columns.tolist()}", level=Qgis.Info)
 
         try:
             index = self.WWTPcomboBox.currentIndex()
@@ -411,7 +413,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 api_items.append(tech_item)
                 
                 # add each API value based on match
-                QgsMessageLog.logMessage(f"Flag is {self.temp_cons}")
+                #QgsMessageLog.logMessage(f"Flag is {self.temp_cons}")
                 for api_name, year, country, region in selections:
                     df = pd.read_csv(self.temp_consumption_path) if self.temp_cons else self.df     #change the names, confusion can be made
                     match = df[
@@ -421,7 +423,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                         (df["region"] == region)
                     ]
 
-                    QgsMessageLog.logMessage(f"Matching rows for {api_name}, {year}, {country}, {region}:\n{match}", level=Qgis.Info)
+                    #QgsMessageLog.logMessage(f"Matching rows for {api_name}, {year}, {country}, {region}:\n{match}", level=Qgis.Info)
 
                     val = match["API input (mg/inh.a)"].values[0] if not match.empty else ""
                     api_item = QStandardItem(str(val))
@@ -431,16 +433,16 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 # add removal rates (RR) values
                 for api in api_names:
                     # little debugging
-                    QgsMessageLog.logMessage(f"Selected API: '{api}'", level=Qgis.Info)
-                    QgsMessageLog.logMessage(f"Matching rows: {removal_df[removal_df['API name'].str.strip() == api.strip()]}", level=Qgis.Info)
-                    QgsMessageLog.logMessage(f"Tech class: {tech_class}, Column name: TC{tech_class} removal rate", level=Qgis.Info)
+                    #QgsMessageLog.logMessage(f"Selected API: '{api}'", level=Qgis.Info)
+                    #QgsMessageLog.logMessage(f"Matching rows: {removal_df[removal_df['API name'].str.strip() == api.strip()]}", level=Qgis.Info)
+                    #QgsMessageLog.logMessage(f"Tech class: {tech_class}, Column name: TC{tech_class} removal rate", level=Qgis.Info)
                     
                     removal_val = ""
                     removal_row = removal_df[removal_df["API name"] == api]
                     if not removal_row.empty and tech_class:
                         col_name = f"TC{tech_class} removal rate"
                         # little debugging
-                        QgsMessageLog.logMessage(f"Raw removal value: {removal_row.iloc[0][col_name]}", level=Qgis.Info)
+                        #QgsMessageLog.logMessage(f"Raw removal value: {removal_row.iloc[0][col_name]}", level=Qgis.Info)
 
                         if col_name in removal_row.columns:
                             try:
@@ -448,7 +450,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                             except Exception:
                                 removal_val = ""
                     else:
-                        QgsMessageLog.logMessage("No matching row found in removal_df", level=Qgis.Warning)
+                        pass
+                        #QgsMessageLog.logMessage("No matching row found in removal_df", level=Qgis.Warning)
                     rr_item = QStandardItem(str(removal_val))
                     api_items.append(rr_item)
                 
