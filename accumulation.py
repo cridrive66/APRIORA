@@ -621,7 +621,7 @@ class Accumulation(QgsProcessingAlgorithm):
 
             # add output field
             # get API name for renaming the field
-            api_short = calc_field[:5]
+            api_short = calc_field[:4]
             new_field_name = f'acc_{api_short}'
             if new_field_name not in [f.name() for f in waternet.fields()]:
                 waternet.dataProvider().addAttributes([QgsField(new_field_name, QVariant.Double)])
@@ -665,7 +665,7 @@ class Accumulation(QgsProcessingAlgorithm):
         # add new concentration fields if they don't exist
         new_fields = []
         for api_field in selected_api_fields:
-            api_short = api_field[:5]
+            api_short = api_field[:4]
             acc_field = f"acc_{api_short}"
             conc_field_mean = f"conc_{api_short}"
             conc_field_low = f"conL_{api_short}"
@@ -689,7 +689,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 continue # skip to avoid division by zero
 
             for api_field in selected_api_fields:
-                api_short = api_field[:5]
+                api_short = api_field[:4]
                 acc_field = f"acc_{api_short}"
                 acc_value = feature[acc_field]
                 
