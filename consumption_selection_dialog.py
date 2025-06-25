@@ -108,6 +108,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.reloadButton_3.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         self.temp_cons = False
         self.temp_rr = False
+        # set a flag for save pop-up
+        self.flag = False
         # directory of the databases
         plugin_dir = os.path.dirname(__file__)
         csv_file = os.path.join(plugin_dir, "consumption_dataset.csv")
@@ -131,7 +133,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.countryComboBox.currentTextChanged.connect(self.update_filters)
         self.regionComboBox.currentTextChanged.connect(self.update_filters)
         self.addSelectionButton.clicked.connect(self.add_selection)
-        # self.saveSelectionButton.clicked.connect(self.save_selection_to_file)
+        self.saveSelectionButton.clicked.connect(self.save_selection_to_file)
         self.removeSelectionButton.clicked.connect(self.remove_selected_item)
         self.resetButton.clicked.connect(self.reset_filters)
         self.closeButton.clicked.connect(self.close)
@@ -221,6 +223,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         combo.blockSignals(block)
 
     def add_selection(self):
+        self.flag = True
         filters = self.get_selected_filters()
 
         # check that all fields are filled
@@ -240,6 +243,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.save_selection_to_file()
 
     def remove_selected_item(self):
+        self.flag = True
         selected_items = self.selectionListWidget.selectedItems()
         for item in selected_items:
             row = self.selectionListWidget.row(item)
@@ -312,6 +316,13 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         with open(file_path, "w") as file:
             for selection in selected_items:
                 file.write(f"{selection}\n")
+
+        if not self.flag:
+            QMessageBox.information(self, "Success", "Selection saved successfully!")
+
+        else:
+            self.flag = False
+
 
     
     def get_selected_filters(self):
