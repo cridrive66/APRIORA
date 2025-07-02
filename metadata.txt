@@ -5,7 +5,7 @@
 [general]
 name=APRIORA
 qgisMinimumVersion=3.0
-description=Estimation of flow and Active Pharmaceutical Ingredients (API) in a catchment
+description=Estimation of flow and Active Pharmaceutical Ingredients (API) in a catchment. Requires the 'scikit-learn' Python library (install via OSGeo4W Shell).
 version=0.4
 author=Cristiano Guidi
 email=cristiano.guidi2@uni-rostock.de
@@ -23,7 +23,7 @@ hasProcessingProvider=yes
 # changelog=
 
 # Tags are comma separated with spaces allowed
-tags=water, catchment, subcatchments, flow estimation, river
+tags=water, catchment, flow estimation, river, pollutants, risk assessment
 
 homepage=http://homepage
 category=Analysis
