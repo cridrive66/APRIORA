@@ -372,7 +372,11 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         feedback.setProgressText(f"Number of features in non_null_geom_layer: {non_null_geom_layer.featureCount()}")
 
         # get all points from the subcatchment vertices layer
-        vertices_catch_points = [QgsPointXY(feature.geometry().asPoint()) for feature in vertices_catch_layer.getFeatures()]
+        vertices_catch_points = [
+            QgsPointXY(feature.geometry().asPoint()) 
+            for feature in vertices_catch_layer.getFeatures()
+            if feature.hasGeometry() and feature.geometry().isGeosValid()
+            ]
 
         # collect changes before applying them
         features_to_update = []
