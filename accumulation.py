@@ -69,6 +69,12 @@ class Accumulation(QgsProcessingAlgorithm):
     APIload = 'APIload'
     selectedAPI = 'selectedAPI'
     riverNetwork = 'RiverNetwork'
+    fieldID = "fieldID"
+    fieldNext = "fieldNext"
+    meanFlow = "MeanFlow"
+    MNQ = "MNQ"
+    accmeanFlow = "AccMeanFlow"
+    accMNQ = "AccMNQ"
     OUTPUT = 'OUTPUT'
 
     def shortHelpString(self):
@@ -107,8 +113,65 @@ class Accumulation(QgsProcessingAlgorithm):
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.fieldID,
+                self.tr("ID Field"),
+                parentLayerParameterName = self.riverNetwork,
+                defaultValue = 'CATCH_ID',   # consider changing it
+                type = QgsProcessingParameterField.Any,
+            )
+        )
 
-        # add as input to specify Mean Flow and Mean Low Flow
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.fieldNext,
+                self.tr("Next Field"),
+                parentLayerParameterName = self.riverNetwork,
+                defaultValue = 'CATCH_TO',   # consider changing it
+                type = QgsProcessingParameterField.Any,
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.meanFlow,
+                self.tr("Mean Flow"),
+                parentLayerParameterName = self.riverNetwork,
+                #defaultValue = '',
+                type = QgsProcessingParameterField.Any,
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.accmeanFlow,
+                self.tr("Acc. Mean Flow"),
+                parentLayerParameterName = self.riverNetwork,
+                #defaultValue = '',
+                type = QgsProcessingParameterField.Any,
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.MNQ,
+                self.tr("Mean Low Flow"),
+                parentLayerParameterName = self.riverNetwork,
+                #defaultValue = '',
+                type = QgsProcessingParameterField.Any,
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.accMNQ,
+                self.tr("Acc. Mean Low Flow"),
+                parentLayerParameterName = self.riverNetwork,
+                #defaultValue = '',
+                type = QgsProcessingParameterField.Any,
+            )
+        )
 
 
         # We add a feature sink in which to store our processed features (this
@@ -129,6 +192,13 @@ class Accumulation(QgsProcessingAlgorithm):
         selected_api_fields = self.parameterAsFields(parameters, self.selectedAPI, context)
         load_original = self.parameterAsVectorLayer(parameters, self.APIload, context)
         river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        id_field = self.parameterAsString(parameters, self.fieldID, context)
+        to_field = self.parameterAsString(parameters, self.fieldNext, context)
+        MQ_field = self.parameterAsString(parameters, self.meanFlow, context)
+        acc_MQ_field = self.parameterAsString(parameters, self.accmeanFlow, context)
+        MNQ_field = self.parameterAsString(parameters, self.MNQ, context)
+        acc_MNQ_field = self.parameterAsString(parameters, self.accMNQ, context)
+
 
         # snapping function that connects the emission load points to the river section
         tolerance = 100 # 100m
@@ -159,7 +229,7 @@ class Accumulation(QgsProcessingAlgorithm):
             # river_geom = river_feat.geometry()
 
             # # debug: print the actual distance for troubleshooting
-            # feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {river_feat['NET_ID']}")
+            # feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {river_feat[id_field]}")
 
             # alternative method to find closest river section
             river_index = QgsSpatialIndex()
@@ -192,11 +262,11 @@ class Accumulation(QgsProcessingAlgorithm):
                 continue
 
             river_geom = nearest_river.geometry()
-            feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {nearest_river['NET_ID']}")
+            feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {nearest_river[id_field]}")
 
             # double check intersection or proximity
             if river_geom.intersects(point_geom) or river_geom.distance(point_geom) < 1e-6:
-                section_id = nearest_river['NET_ID']
+                section_id = nearest_river[id_field]
                 section_to_points.setdefault(section_id, []).append((point_feat, river_geom))
             else:
                
@@ -317,7 +387,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 continue
 
             # get all features split from this river section
-            section_feats = [f for f in non_null_geom_layer.getFeatures() if f['NET_ID'] == section_id]
+            section_feats = [f for f in non_null_geom_layer.getFeatures() if f[id_field] == section_id]
 
             # assign a letter based on which emission points is closest to its downstream vertex
             for feat in section_feats:
@@ -364,7 +434,7 @@ class Accumulation(QgsProcessingAlgorithm):
         
         for feat in non_null_geom_layer.getFeatures():
             if feat.id() in new_ids_by_feature:
-                feat.setAttribute('NET_ID', new_ids_by_feature[feat.id()])
+                feat.setAttribute(id_field, new_ids_by_feature[feat.id()])
                 non_null_geom_layer.updateFeature(feat)
                     
         # 2. create a mapping with original NET_ID, feature and new NET_ID
@@ -389,7 +459,7 @@ class Accumulation(QgsProcessingAlgorithm):
             for i, (feat, new_id) in enumerate(sorted_feats):
                 if i < len(sorted_feats) -1:
                     next_id = sorted_feats[i+1][1]
-                    feat.setAttribute('NET_TO', next_id)
+                    feat.setAttribute(to_field, next_id)
                 # last one keep its original NET_TO
                 non_null_geom_layer.updateFeature(feat)
 
@@ -401,15 +471,15 @@ class Accumulation(QgsProcessingAlgorithm):
                 section_id_to_first_new_id[base_id] = new_id
 
         for feat in non_null_geom_layer.getFeatures():
-            net_id = feat['NET_ID']
-            net_to = feat['NET_TO']
+            net_id = feat[id_field]
+            net_to = feat[to_field]
 
             # update NET_TO
-            if net_to in section_id_to_first_new_id:
-                feat.setAttribute('NET_TO', section_id_to_first_new_id[net_to])
+            if net_to.strip() in section_id_to_first_new_id:
+                feat.setAttribute(to_field, section_id_to_first_new_id[net_to])
 
-            # set NET_FROM to NET_ID
-            feat.setAttribute('NET_FROM', net_id)
+            # # set NET_FROM to NET_ID
+            # feat.setAttribute('NET_FROM', net_id)
             non_null_geom_layer.updateFeature(feat)
         
 
@@ -420,7 +490,7 @@ class Accumulation(QgsProcessingAlgorithm):
         original_flows = {}
 
         for feat in non_null_geom_layer.getFeatures():
-            net_id = feat['NET_ID']
+            net_id = feat[id_field]
             base_id = ''.join(filter(str.isdigit, str(net_id)))
 
             if base_id not in split_groups:
@@ -433,10 +503,15 @@ class Accumulation(QgsProcessingAlgorithm):
             # save the original flow
             if base_id not in original_flows:
                 original_flows[base_id] = {
-                    'mean_flow': feat["Mean_Flow"],
-                    'acc_mean_flow': feat["calc_Mean_"],
-                    'mean_low_flow': feat["M_Low_Flow"],
-                    'acc_mean_low_flow': feat["calc_M_Low"]
+                    'mean_flow': feat[MQ_field],
+                    'acc_mean_flow': feat[acc_MQ_field],
+                    'mean_low_flow': feat[MNQ_field],
+                    'acc_mean_low_flow': feat[acc_MNQ_field]
+                    # 'mean_flow': feat["Mean_Flow"],
+                    # 'acc_mean_flow': feat["calc_Mean_"],
+                    # 'mean_low_flow': feat["M_Low_Flow"],
+                    # 'acc_mean_low_flow': feat["calc_M_Low"]
+
 
                 }
         
@@ -469,8 +544,11 @@ class Accumulation(QgsProcessingAlgorithm):
                 percentage = part_length/total_length
 
                 # new flow values
-                feat["Mean_Flow"] = percentage * mean_total
-                feat["calc_Mean_"] = acc_start + (mean_total * ratio)
+                feat[MQ_field] = percentage * mean_total
+                feat[acc_MQ_field] = acc_start + (mean_total * ratio)
+                # feat["Mean_Flow"] = percentage * mean_total
+                # feat["calc_Mean_"] = acc_start + (mean_total * ratio)
+
                 non_null_geom_layer.updateFeature(feat)
 
                 # same process for low flow values
@@ -479,8 +557,10 @@ class Accumulation(QgsProcessingAlgorithm):
                 percentage_low = part_length/total_length
 
                 # new flow values
-                feat["M_Low_Flow"] = percentage_low * mean_low_total
-                feat["calc_M_Low"] = acc_low_start + (mean_low_total * ratio_low)
+                feat[MNQ_field] = percentage_low * mean_low_total
+                feat[acc_MNQ_field] = acc_low_start + (mean_low_total * ratio_low)
+                # feat["M_Low_Flow"] = percentage_low * mean_low_total
+                # feat["calc_M_Low"] = acc_low_start + (mean_low_total * ratio_low)
                 non_null_geom_layer.updateFeature(feat)
 
         # 6. transfer the API load to the river section
@@ -501,7 +581,7 @@ class Accumulation(QgsProcessingAlgorithm):
 
         # assign the API load values using the mapping
         for feat in non_null_geom_layer.getFeatures():
-            net_id = feat['NET_ID']
+            net_id = feat[id_field]
             base_id = ''.join(filter(str.isdigit, str(net_id)))
             letter = net_id.replace(base_id, "")
 
@@ -520,9 +600,9 @@ class Accumulation(QgsProcessingAlgorithm):
         waternet = non_null_geom_layer
 
         '''names of fields for id,next segment, previous segment'''
-        id_field = "NET_ID"
-        next_field = "NET_TO"
-        prev_field = "NET_FROM"
+        id_field = id_field
+        next_field = to_field
+        prev_field = id_field
 
         '''field index for id,next segment, previous segment'''
         idxId = waternet.fields().indexFromName(id_field) 
@@ -659,8 +739,10 @@ class Accumulation(QgsProcessingAlgorithm):
         conversion_factor = conversion_load / conversion_flow 
 
         # prepare indices
-        idx_mean_flow = waternet.fields().indexOf("calc_Mean_")
-        idx_low_flow = waternet.fields().indexOf("calc_M_Low")
+        idx_mean_flow = waternet.fields().indexOf(acc_MQ_field)
+        idx_low_flow = waternet.fields().indexOf(acc_MNQ_field)
+        # idx_mean_flow = waternet.fields().indexOf("calc_Mean_")
+        # idx_low_flow = waternet.fields().indexOf("calc_M_Low")
 
         # add new concentration fields if they don't exist
         new_fields = []
