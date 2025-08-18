@@ -337,11 +337,15 @@ class Accumulation(QgsProcessingAlgorithm):
             'SEPARATE_DISJOINT':False,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
         
+        feedback.pushInfo(f"Number of feature buffer: {buffer.featureCount()}")
+
         # split with the buffer
         split_with_errors = processing.run("native:splitwithlines", {
             'INPUT':river_layer,
             'LINES':buffer,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        feedback.pushInfo(f"Number of feature split_with_errors: {split_with_errors.featureCount()}")
 
         # remove the segments within the buffer from the river layer
         difference = processing.run("native:difference", {
@@ -349,6 +353,8 @@ class Accumulation(QgsProcessingAlgorithm):
             'OVERLAY':buffer,
             'OUTPUT':'TEMPORARY_OUTPUT',
             'GRID_SIZE':None})["OUTPUT"]
+        
+        feedback.pushInfo(f"Number of feature difference: {difference.featureCount()}")
 
         # snap the river line back together
         split_river_layer = processing.run("native:snapgeometries", {
@@ -357,6 +363,8 @@ class Accumulation(QgsProcessingAlgorithm):
             'TOLERANCE':0.05,   # snapping within 5cm
             'BEHAVIOR':0,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        feedback.pushInfo(f"Number of feature split_river_layer: {split_river_layer.featureCount()}")
 
         # the file has geometries that need to be fixed
         feedback.setProgressText("\nFixing the geometries of the file...")
@@ -365,6 +373,8 @@ class Accumulation(QgsProcessingAlgorithm):
             'METHOD':1, # not sure about which method use
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
+        
+        feedback.pushInfo(f"Number of feature fixed_layer: {fixed_layer.featureCount()}")
 
         # remove null geometries from the layer
         feedback.setProgressText("\nRemoving the null geometries...")
@@ -373,7 +383,18 @@ class Accumulation(QgsProcessingAlgorithm):
             'REMOVE_EMPTY':True,
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
+        
+        feedback.pushInfo(f"Number of feature non_null_geom_layer: {non_null_geom_layer.featureCount()}")
 
+        # # dissolving the layer because after "split with lines" some features are separated
+        # non_null_geom_layer = processing.run("native:dissolve", {
+        #     'INPUT': non_null_geom_layer_no_dissolved,
+        #     'FIELD':['CATCH_ID'],
+        #     'SEPARATE_DISJOINT':False,
+        #     'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        # feedback.pushInfo(f"Number of feature non_null_geom_layer: {non_null_geom_layer.featureCount()}")
+        
         # We create new river sections at each emission point. We need to update the name of the section (NET_ID) and 
         # the relationship with the other river sections (NET_TO). We create a new naming system where if section 1001
         # has multiple emission points, it is divided and renamed in 1001A, 1001B, 1001C, ...
