@@ -90,6 +90,30 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
     
+    def load_PNEC_to_table(self, csv_path):
+        try:
+            df_PNEC = pd.read_csv(csv_path, sep=",")
+            model = QStandardItemModel()
+            model.setHorizontalHeaderLabels(df_PNEC.columns.astype(str).tolist())
+
+            for row in df_PNEC.itertuples(index=False):
+                items = []
+                for val in row:
+                    item = QStandardItem(str(val))
+                    #item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    items.append(item)
+                model.appendRow(items)
+            
+            self.PNECTableView.setModel(model)
+
+            # remove temporary file if there are
+            if self.temp_pnec == True:
+                os.remove(self.temp_pnec_path)
+                # set a flag
+                self.temp_pnec = False
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
     
     
     def __init__(self, parent=None):
@@ -104,16 +128,19 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # set a save icon
         self.saveButton_1.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
         self.saveButton_2.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        self.saveButton_tab4.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
         # set a reload icon
         self.reloadButton_3.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         self.temp_cons = False
         self.temp_rr = False
+        self.temp_pnec = False
         # set a flag for save pop-up
         self.flag = False
         # directory of the databases
         plugin_dir = os.path.dirname(__file__)
         csv_file = os.path.join(plugin_dir, "consumption_dataset.csv")
         RR_file = os.path.join(plugin_dir, "removal_rates.csv")
+        PNEC_file = os.path.join(plugin_dir, "PNEC ERA.csv")
         try:
             # consumption data
             self.df = pd.read_csv(csv_file, sep=",")
@@ -121,6 +148,10 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             # removal rate
             self.df_RR = pd.read_csv(RR_file, sep=",")
             self.load_RR_to_table(RR_file)
+            # PNEC values
+            self.df_PNEC = pd.read_csv(PNEC_file, sep=",")
+            self.load_PNEC_to_table(PNEC_file)
+
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not read Excel file: {e}")
@@ -156,6 +187,12 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.reloadButton_3.clicked.connect(self.populate_layer_combo)
         self.restoreButton_3.clicked.connect(self.load_wwtp_table)
         self.saveButton.clicked.connect(self.save_wwtp_table_to_csv)
+
+        # tab 4
+        self.addButton_tab4.clicked.connect(lambda: self.add_row_to_table(self.PNECTableView))
+        self.removeButton_tab4.clicked.connect(lambda: self.remove_selected_row(self.PNECTableView))
+        self.restoreButton_tab4.clicked.connect(lambda: self.load_PNEC_to_table(PNEC_file))
+        self.saveButton_tab4.clicked.connect(self.handle_save_pnec)
 
 
     def update_filters(self):
@@ -508,3 +545,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not save file:\n{e}")
+
+
+    """
+    Tab 4 - Removal rate
+    """
+    def handle_save_pnec(self):
+        self.temp_pnec_path = self.save_temp_table(self.PNECTableView, "PNEC_")
+        self.temp_pnec = True

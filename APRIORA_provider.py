@@ -37,6 +37,7 @@ from .Fix_River_Network import FixRiverNetwork
 from .Contributing_area_gaug_station import UpstreamDownstream
 from .WWTP_emission_loads import EmissionLoads
 from .accumulation import Accumulation
+from .risk_assessment import RiskAssessment
 
 
 
@@ -65,6 +66,7 @@ class APRIORAProvider(QgsProcessingProvider):
         self.addAlgorithm(UpstreamDownstream())
         self.addAlgorithm(EmissionLoads())
         self.addAlgorithm(Accumulation())
+        self.addAlgorithm(RiskAssessment())
         # add additional algorithms here
         # self.addAlgorithm(MyOtherAlgorithm())
 
