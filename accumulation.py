@@ -118,7 +118,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.fieldID,
                 self.tr("ID Field"),
                 parentLayerParameterName = self.riverNetwork,
-                defaultValue = 'CATCH_ID',   # consider changing it
+                defaultValue = 'NET_ID',   
                 type = QgsProcessingParameterField.Any,
             )
         )
@@ -128,7 +128,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.fieldNext,
                 self.tr("Next Field"),
                 parentLayerParameterName = self.riverNetwork,
-                defaultValue = 'CATCH_TO',   # consider changing it
+                defaultValue = 'NET_TO',
                 type = QgsProcessingParameterField.Any,
             )
         )
@@ -507,7 +507,7 @@ class Accumulation(QgsProcessingAlgorithm):
         # 5. after building the correct river section relationships, we need to update the flow estimation and scale it
         # based on the section_length/total_section_length
         # group split features by base section ID
-        split_groups = {}
+        split_groups = {}       # it is collecting ALL the features instead of only the ones that have been split, change it
         original_flows = {}
 
         for feat in non_null_geom_layer.getFeatures():
