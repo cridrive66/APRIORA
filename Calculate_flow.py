@@ -266,7 +266,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         selected_display_names = [self.geofactor_options[i] for i in selected_indices]
         selected_geofactors = [self.geofactor_mapping[name] for name in selected_display_names]     # convert display names to actual column names
         threshold_user = self.parameterAsDouble(parameters, self.threshold_user, context)
-        river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        river_layer_original = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         
         # add "id_catch" to the subcatchment shapefile        
         field_name = "id_catch"
@@ -565,93 +565,168 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
 
         """
-        The river network file can present multiple river sections within a subcatchment. 
-        Every river section needs to be associated with one subcatchment only and a subcatchment needs to be associated with one river section only.
+        Distribute the estimated flow from subcatchment to river level
         """
-        # create a new layer, copy of the river network
-        river_copy = river_layer.clone()
+        def distribute_flow_to_rivers(subcatch_layer, river_layer, flow_fields, id_field):
+            """
+            subcatch_layer: layer with subcatchment-level flows (mean flow and mean low flow)
+            river_layer: layer with NET_ID, NET_TO and a id_field linking to subcatchment
+            flow_fields: list of flow fields in subcatch_layer to distribute
+            id_field: common linking field (e.g., 'id_catch')
+            """
+
+            # build dictionary: {id_catch: {flow_field: value}}
+            flows_by_catch = {}
+            for f in subcatch_layer.getFeatures():
+                cid = f[id_field]
+                flows_by_catch[cid] = {fld: f[fld] for fld in flow_fields}
+
+            # add output fields to river layer if missing
+            provider = river_layer.dataProvider()
+            existing = [fld.name() for fld in river_layer.fields()]
+            for fld in flow_fields:
+                if fld not in existing:
+                    provider.addAttributes([QgsField(fld, QVariant.Double)])
+            river_layer.updateFields()
+
+            # compute lengths per id_catch
+            lengths = {}
+            for feat in river_layer.getFeatures():
+                cid = feat[id_field]
+                if cid is None:
+                    continue
+                L = feat.geometry().length() or 0.0
+                lengths.setdefault(cid, []).append((feat.id(), L))
+
+            # distribute flows
+            river_layer.startEditing()
+            for cid, feats in lengths.items():
+                total_len = sum(L for _, L in feats)
+                if total_len <= 0:
+                    continue
+                if cid not in flows_by_catch:
+                    continue
+
+                for flow_field in flow_fields:
+                    total_flow = flows_by_catch[cid][flow_field]
+                    if total_flow is None:
+                        continue
+
+                    for fid, L in feats:
+                        share = L / total_len
+                        portion = float(total_flow) * share
+                        f = river_layer.getFeature(fid)
+                        f.setAttribute(flow_field, portion)
+                        river_layer.updateFeature(f)
+
+            river_layer.commitChanges()
+
+        # create an independent copy of the river layer
+        crs = river_layer_original.crs().authid()
+        river_layer = QgsVectorLayer("LineString?crs={}".format(crs), "river_layer_copy", "memory")
+        # copy attributes
+        provider = river_layer.dataProvider()
+        provider.addAttributes(river_layer_original.fields())
+        river_layer.updateFields()
+        # copy features
+        feats = [f for f in river_layer_original.getFeatures()]
+        provider.addFeatures(feats)
+
+
+        # calculate flow distribution in river sections
+        flow_fields = ["Mean_Flow", "M_Low_Flow"]
+        distribute_flow_to_rivers(final_output, river_layer, flow_fields, id_field="id_catch")
         
-        # adding new fields in the river file
-        # add a troubleshooting line to check if these fields already exist or not
-        new_fields = [
-            QgsField("CATCH_ID", QVariant.String),
-            QgsField("CATCH_TO", QVariant.String),
-            QgsField("CATCH_FROM", QVariant.String)
-        ]
+        # """
+        # The river network file can present multiple river sections within a subcatchment. 
+        # Every river section needs to be associated with one subcatchment only and a subcatchment needs to be associated with one river section only.
+        # """
+        # # create a new layer, copy of the river network
+        # river_copy = river_layer.clone()
+        
+        # # adding new fields in the river file
+        # # add a troubleshooting line to check if these fields already exist or not
+        # new_fields = [
+        #     QgsField("CATCH_ID", QVariant.String),
+        #     QgsField("CATCH_TO", QVariant.String),
+        #     QgsField("CATCH_FROM", QVariant.String)
+        # ]
 
-        with edit(river_copy):
-            for field in new_fields:
-                if river_copy.fields().indexFromName(field.name()) == -1:
-                    river_copy.addAttribute(field)
-            river_copy.updateFields()
+        # with edit(river_copy):
+        #     for field in new_fields:
+        #         if river_copy.fields().indexFromName(field.name()) == -1:
+        #             river_copy.addAttribute(field)
+        #     river_copy.updateFields()
 
-        # create a mapping of id_riv to id_catch
-        river_to_catch = {feature["id_riv"]: feature["id_catch"] for feature in river_copy.getFeatures()}
+        # # create a mapping of id_riv to id_catch
+        # river_to_catch = {feature["id_riv"]: feature["id_catch"] for feature in river_copy.getFeatures()}
 
-        # create a mapping of CATCH_ID to last CATCH_TO before transition
-        catch_to_mapping = {}
+        # # create a mapping of CATCH_ID to last CATCH_TO before transition
+        # catch_to_mapping = {}
 
-        # update the river layer
-        with edit(river_copy):
-            for river_feature in river_copy.getFeatures():
-                fid = river_feature.id()
-                net_id = river_feature["NET_ID"]
-                net_to = river_feature["NET_TO"]
-                id_catch = river_feature["id_catch"]
+        # # update the river layer
+        # with edit(river_copy):
+        #     for river_feature in river_copy.getFeatures():
+        #         fid = river_feature.id()
+        #         net_id = river_feature["NET_ID"]
+        #         net_to = river_feature["NET_TO"]
+        #         id_catch = river_feature["id_catch"]
 
-                # handle case where NET_TO is "Out"
-                if net_to == "Out":
-                    catch_to = "Out"
-                else:
-                    catch_to = river_to_catch.get(int(net_to), "Unknown") if net_to else "Unknown" #lookup id_catch of NET_TO
+        #         # handle case where NET_TO is "Out"
+        #         if net_to == "Out":
+        #             catch_to = "Out"
+        #         else:
+        #             catch_to = river_to_catch.get(int(net_to), "Unknown") if net_to else "Unknown" #lookup id_catch of NET_TO
 
-                # store the last valid CATCH_TO before transition
-                if id_catch != catch_to and catch_to != "Out":
-                    catch_to_mapping[id_catch] = catch_to
+        #         # store the last valid CATCH_TO before transition
+        #         if id_catch != catch_to and catch_to != "Out":
+        #             catch_to_mapping[id_catch] = catch_to
 
-                # assign values
-                catch_id = id_catch
-                catch_from = id_catch
+        #         # assign values
+        #         catch_id = id_catch
+        #         catch_from = id_catch
                 
-                # update attributes
-                river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_ID"), catch_id)
-                river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_TO"), catch_to)
-                river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_FROM"), catch_from)
+        #         # update attributes
+        #         river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_ID"), catch_id)
+        #         river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_TO"), catch_to)
+        #         river_copy.changeAttributeValue(fid, river_copy.fields().indexFromName("CATCH_FROM"), catch_from)
         
-        dissolve_output = processing.run("native:dissolve", {
-            'INPUT': river_copy,
-            'FIELD':['CATCH_ID'],
-            'SEPARATE_DISJOINT':False,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        # dissolve_output = processing.run("native:dissolve", {
+        #     'INPUT': river_copy,
+        #     'FIELD':['CATCH_ID'],
+        #     'SEPARATE_DISJOINT':False,
+        #     'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
         
-        # restore the correct CATCH_TO values after dissolving
-        with edit(dissolve_output):
-            for feature in dissolve_output.getFeatures():
-                catch_id = feature["CATCH_ID"]
-                feature.setAttribute("CATCH_TO", catch_to_mapping.get(int(catch_id), "Out"))
-                dissolve_output.updateFeature(feature)
+        # # restore the correct CATCH_TO values after dissolving
+        # with edit(dissolve_output):
+        #     for feature in dissolve_output.getFeatures():
+        #         catch_id = feature["CATCH_ID"]
+        #         feature.setAttribute("CATCH_TO", catch_to_mapping.get(int(catch_id), "Out"))
+        #         dissolve_output.updateFeature(feature)
 
-        # the output of this code is a polygon file containing the code of every ungauged subcatchment (gbk_lawa or another code),
-        # the estimated flow for each ungauged subcatchment (Mean Flow) and the geometry of the relative ungauged subcatchment.
+        # # the output of this code is a polygon file containing the code of every ungauged subcatchment (gbk_lawa or another code),
+        # # the estimated flow for each ungauged subcatchment (Mean Flow) and the geometry of the relative ungauged subcatchment.
         
-        # process to transfer the flow from a subcatchment level to a river level
-        join_output = processing.run("native:joinattributestable", 
-        {'INPUT':dissolve_output,
-        'FIELD':'id_catch',
-        'INPUT_2':final_output,
-        'FIELD_2':'id_catch',
-        'FIELDS_TO_COPY':['Mean_Flow', 'M_Low_Flow'],
-        'METHOD':1,
-        'DISCARD_NONMATCHING':False,
-        'PREFIX':'',
-        'OUTPUT':'TEMPORARY_OUTPUT'},
-        context=context, feedback=feedback)["OUTPUT"]
+        # # process to transfer the flow from a subcatchment level to a river level
+        # join_output = processing.run("native:joinattributestable", 
+        # {'INPUT':dissolve_output,
+        # 'FIELD':'id_catch',
+        # 'INPUT_2':final_output,
+        # 'FIELD_2':'id_catch',
+        # 'FIELDS_TO_COPY':['Mean_Flow', 'M_Low_Flow'],
+        # 'METHOD':1,
+        # 'DISCARD_NONMATCHING':False,
+        # 'PREFIX':'',
+        # 'OUTPUT':'TEMPORARY_OUTPUT'},
+        # context=context, feedback=feedback)["OUTPUT"]
 
-        # check if join output contains features
-        if join_output.featureCount() == 0:
-            feedback.pushWarning("Join resulted in an empty layer!")
-        else:
-            feedback.pushInfo("Join completed successfully.")
+        # # check if join output contains features
+        # if join_output.featureCount() == 0:
+        #     feedback.pushWarning("Join resulted in an empty layer!")
+        # else:
+        #     feedback.pushInfo("Join completed successfully.")
+
+        # QgsProject.instance().addMapLayer(river_layer)
 
         """
         Accumulate Mean Flow
@@ -659,12 +734,16 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
         '''loading the network'''
         #waternet = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
-        waternet = join_output
+        # waternet = join_output
+        waternet = river_layer
 
         '''names of fields for id,next segment, previous segment'''
-        id_field = "CATCH_ID"
-        next_field = "CATCH_TO"
-        prev_field = "CATCH_FROM"
+        # id_field = "CATCH_ID"
+        # next_field = "CATCH_TO"
+        # prev_field = "CATCH_FROM"
+        id_field = "NET_ID"
+        next_field = "NET_TO"
+        prev_field = "NET_FROM"
         calc_field = "Mean_Flow"
         
         '''field index for id,next segment, previous segment'''
@@ -877,17 +956,19 @@ class CalculateFlow(QgsProcessingAlgorithm):
         
         del nextFtsCalc, FlowPath, DataArr
         
-        # add "calc_Mean Flow" to the subcatchment file
-        final_output_acc = processing.run("native:joinattributestable", {
-            'INPUT': final_output,
-            'FIELD':'id_catch',
-            'INPUT_2':waternet,
-            'FIELD_2':'id_catch',
-            'FIELDS_TO_COPY':[MQ_field_name, MNQ_field_name],
-            'METHOD':1,
-            'DISCARD_NONMATCHING':False,
-            'PREFIX':'',
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        # # add "calc_Mean Flow" to the subcatchment file
+        # final_output_acc = processing.run("native:joinattributestable", {
+        #     'INPUT': final_output,
+        #     'FIELD':'id_catch',
+        #     'INPUT_2':waternet,
+        #     'FIELD_2':'id_catch',
+        #     'FIELDS_TO_COPY':[MQ_field_name, MNQ_field_name],
+        #     'METHOD':1,
+        #     'DISCARD_NONMATCHING':False,
+        #     'PREFIX':'',
+        #     'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
+        final_output_acc = final_output
 
         # create a new layer with Mean Flow and gbk_lawa + geometry from warnow_subcatch        
         (sink_catch, dest_id_catch) = self.parameterAsSink(parameters, self.OUTPUT_catch,
