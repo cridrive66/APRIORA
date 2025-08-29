@@ -58,6 +58,7 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsField,
                        QgsVectorLayer,
                        QgsSpatialIndex,
+                       QgsWkbTypes,
                        Qgis,
                        edit)
 
@@ -228,7 +229,22 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         
         # add a new column to the catchment layer in order to identify each subcatchment
         # create a new layer, copy of the subcatchment layer
-        subcatchments_layer = subcatchments_layer_original.clone()
+        # get CRS and geometry type
+        crs = subcatchments_layer_original.crs().authid()
+        geom_type = QgsWkbTypes.displayString(subcatchments_layer_original.wkbType())
+        # create memory layer
+        subcatchments_layer = QgsVectorLayer(f"{geom_type}?crs={crs}", "subcatchment_layer_copy", "memory")
+        provider = subcatchments_layer.dataProvider()
+        # copy all fields
+        provider.addAttributes(subcatchments_layer_original.fields())
+        subcatchments_layer.updateFields()
+        # copy all features
+        features = []
+        for feat in subcatchments_layer_original.getFeatures():
+            new_feat = QgsFeature(feat)
+            features.append(new_feat)
+        provider.addFeatures(features)
+        subcatchments_layer.updateExtents()
         
         with edit(subcatchments_layer):
             field_name = "id_catch"

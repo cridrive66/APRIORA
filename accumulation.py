@@ -91,7 +91,8 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.APIload,
                 self.tr('API Load'),
-                [QgsProcessing.TypeVectorPoint]
+                [QgsProcessing.TypeVectorPoint],
+                defaultValue = QgsProject.instance().mapLayersByName("Emission Loads")[0].id() if QgsProject.instance().mapLayersByName("Emission Loads") else None
             )
         )
 
@@ -101,7 +102,10 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.tr('Select APIs to accumulate'),
                 parentLayerParameterName = self.APIload,
                 allowMultiple = True,
-                type=QgsProcessingParameterField.Any
+                type=QgsProcessingParameterField.Any,
+                defaultValue=[
+                    f.name() for f in QgsProject.instance().mapLayersByName("Emission Loads")[0].fields() if f.name().endswith("[kg/a]")
+                ] if QgsProject.instance().mapLayersByName("Emission Loads") else []
             )
         )
 
@@ -109,7 +113,8 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('River network'),
-                [QgsProcessing.TypeVectorLine]
+                [QgsProcessing.TypeVectorLine],
+                defaultValue = QgsProject.instance().mapLayersByName("River level")[0].id() if QgsProject.instance().mapLayersByName("River level") else None
             )
         )
 
@@ -138,7 +143,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.meanFlow,
                 self.tr("Mean Flow"),
                 parentLayerParameterName = self.riverNetwork,
-                #defaultValue = '',
+                defaultValue = 'Mean_Flow',
                 type = QgsProcessingParameterField.Any,
             )
         )
@@ -148,7 +153,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.accmeanFlow,
                 self.tr("Acc. Mean Flow"),
                 parentLayerParameterName = self.riverNetwork,
-                #defaultValue = '',
+                defaultValue = 'calc_Mean_',
                 type = QgsProcessingParameterField.Any,
             )
         )
@@ -158,7 +163,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.MNQ,
                 self.tr("Mean Low Flow"),
                 parentLayerParameterName = self.riverNetwork,
-                #defaultValue = '',
+                defaultValue = 'M_Low_Flow',
                 type = QgsProcessingParameterField.Any,
             )
         )
@@ -168,7 +173,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.accMNQ,
                 self.tr("Acc. Mean Low Flow"),
                 parentLayerParameterName = self.riverNetwork,
-                #defaultValue = '',
+                defaultValue = 'calc_M_Low',
                 type = QgsProcessingParameterField.Any,
             )
         )
@@ -751,7 +756,7 @@ class Accumulation(QgsProcessingAlgorithm):
         Calculate concentration in each river section
         """
 
-        # conversion factor: from kg/year and m^3/s to mg/L
+        # conversion factor: from kg/year and m^3/s to ng/L
         # convert m^3/s in L/a
         conversion_flow = 1000*31_536_000 # L in 1 m^3/s and second in a year
         # convert kg/a in ng/a

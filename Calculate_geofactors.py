@@ -98,7 +98,8 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.ungaugedSubcatch,
                 self.tr('Ungauged subcatchments'),
-                [QgsProcessing.TypeVectorPolygon]
+                [QgsProcessing.TypeVectorPolygon],
+                defaultValue = QgsProject.instance().mapLayersByName("Ungauged subcatch")[0].id() if QgsProject.instance().mapLayersByName("Ungauged subcatch") else None
             )
         )
 
@@ -106,7 +107,8 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.gaugedSubcatch,
                 self.tr('Gauged subcatchments'),
-                [QgsProcessing.TypeVectorPolygon]
+                [QgsProcessing.TypeVectorPolygon],
+                defaultValue = QgsProject.instance().mapLayersByName("Gauged subcatch")[0].id() if QgsProject.instance().mapLayersByName("Gauged subcatch") else None
             )
         )
 
@@ -123,7 +125,8 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('River network'),
-                [QgsProcessing.TypeVectorLine]
+                [QgsProcessing.TypeVectorLine],
+                defaultValue = QgsProject.instance().mapLayersByName("Fixed river network")[0].id() if QgsProject.instance().mapLayersByName("Fixed river network") else None
             )
         )
         
@@ -344,18 +347,18 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         del JoinCatchmentsWaterAreaSummarize
 
         #Calculates statistics based on settlement area
-        JoinCatchmentsSetttlementAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SetttlementArea", "SettAr", parameters[self.settlementArea],0)
+        JoinCatchmentsSettlementAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SettlementArea", "SettAr", parameters[self.settlementArea],0)
         del JoinCatchmentsForestAreaSummarize
 
         #Calculates river network density (rnd), proportion of water area (pwa), forest share and settlemet share
         feedback.setProgressText("\nCalculate river network density (rnd) and proportion of water area (pwa)...")
-        provider = JoinCatchmentsSetttlementAreaSummarize.dataProvider()
+        provider = JoinCatchmentsSettlementAreaSummarize.dataProvider()
         rnd_field = QgsField("RivNetDens", QVariant.Double, 'double', 20, 3)
         pwa_field = QgsField("PropWatAr", QVariant.Double, 'double', 20, 3)
         fs_field = QgsField("Forest %", QVariant.Double, 'double', 20, 3)
         ss_field = QgsField("Settl %", QVariant.Double, 'double', 20, 3)
         provider.addAttributes([rnd_field, pwa_field, fs_field, ss_field])
-        JoinCatchmentsSetttlementAreaSummarize.updateFields() 
+        JoinCatchmentsSettlementAreaSummarize.updateFields() 
         idxRND = provider.fieldNameIndex('RivNetDens')
         idxPWA = provider.fieldNameIndex('PropWatAr')
         idxFS = provider.fieldNameIndex('Forest %')
@@ -364,7 +367,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         idxWA_Sum = provider.fieldNameIndex('WatAr_sum')
         idxFA_Sum = provider.fieldNameIndex('ForAr_sum')
         idxSA_Sum = provider.fieldNameIndex('SettAr_sum')
-        for feature in JoinCatchmentsSetttlementAreaSummarize.getFeatures():
+        for feature in JoinCatchmentsSettlementAreaSummarize.getFeatures():
             if feature["RivNe_sum"] != None:
                 calcRND = (feature["RivNe_sum"] / feature["AREA_SC"]) *100
                 RNsum = feature["RivNe_sum"]
@@ -390,10 +393,10 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 calcSS = 0
                 SAsum = 0
             attrs = {idxRND : calcRND, idxPWA : calcPWA, idxFS : calcFS, idxSS : calcSS, idxRN_Sum : RNsum, idxWA_Sum : WAsum, idxFA_Sum : FAsum, idxSA_Sum : SAsum}
-            JoinCatchmentsSetttlementAreaSummarize.dataProvider().changeAttributeValues({feature.id() : attrs})
+            JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id() : attrs})
 
-            if not JoinCatchmentsSetttlementAreaSummarize.isValid():
-                feedback.reportError("Error: JoinCatchmentsSetttlementAreaSummarize is not valid!", fatalError = True)
+            if not JoinCatchmentsSettlementAreaSummarize.isValid():
+                feedback.reportError("Error: JoinCatchmentsSettlementAreaSummarize is not valid!", fatalError = True)
             
         #Calculation of precipitation
         feedback.setProgressText("\nCalculate precipitation")
@@ -540,7 +543,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             feedback.reportError("Error: precipitationAugustLayer is not valid!", fatalError = True)
 
         # get CRS of the vector layer
-        # vector_crs = JoinCatchmentsSetttlementAreaSummarize.crs()
+        # vector_crs = JoinCatchmentsSettlementAreaSummarize.crs()
         # reproject raster to match vector layer  CRS
         # feedback.setProgressText("\nStart the reprojecting process")
         # precipitationYearlyLayer_reprojected = processing.run("gdal:warpreproject", {
@@ -566,21 +569,21 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
 
 
         # Remove "MEAN" from the column name if it exists
-        # if 'PreYearly_MEAN' in [field.name() for field in JoinCatchmentsSetttlementAreaSummarize.fields()]:
-        #     idx = JoinCatchmentsSetttlementAreaSummarize.fields().indexOf('PreYearly_MEAN')
-        #     JoinCatchmentsSetttlementAreaSummarize.renameAttribute(idx, 'PreYearly_')  # Rename column to "PreYearly_"
+        # if 'PreYearly_MEAN' in [field.name() for field in JoinCatchmentsSettlementAreaSummarize.fields()]:
+        #     idx = JoinCatchmentsSettlementAreaSummarize.fields().indexOf('PreYearly_MEAN')
+        #     JoinCatchmentsSettlementAreaSummarize.renameAttribute(idx, 'PreYearly_')  # Rename column to "PreYearly_"
      
      
         # Remove "MEAN" from the column name if it exists
-        # if 'PreYearly_MEAN' in [field.name() for field in JoinCatchmentsSetttlementAreaSummarize.fields()]:
-        #     idx = JoinCatchmentsSetttlementAreaSummarize.fields().indexOf('PreYearly_MEAN')
-        #     JoinCatchmentsSetttlementAreaSummarize.renameAttribute(idx, 'PreYearly_')  # Rename column to "PreYearly_"
+        # if 'PreYearly_MEAN' in [field.name() for field in JoinCatchmentsSettlementAreaSummarize.fields()]:
+        #     idx = JoinCatchmentsSettlementAreaSummarize.fields().indexOf('PreYearly_MEAN')
+        #     JoinCatchmentsSettlementAreaSummarize.renameAttribute(idx, 'PreYearly_')  # Rename column to "PreYearly_"
      
         feedback.setProgressText("\nStart the zonal statistic of yearly precipitation")
         precipitation_yearly_ungauged = processing.run("native:zonalstatisticsfb",
             {'INPUT_RASTER': precipitationYearlyLayer,
              'RASTER_BAND':1,
-             'INPUT': JoinCatchmentsSetttlementAreaSummarize,
+             'INPUT': JoinCatchmentsSettlementAreaSummarize,
              'COLUMN_PREFIX': "PrecYearly_",        
              'STATISTICS': [2], # mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
@@ -597,7 +600,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             context=context)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(finalLayer_ungauged) 
         
-        del JoinCatchmentsSetttlementAreaSummarize, precipitation_yearly_ungauged
+        del JoinCatchmentsSettlementAreaSummarize, precipitation_yearly_ungauged
 
         # Remove "MEAN" from the column name if it exists
         if 'PrecYearly_mean' in [field.name() for field in finalLayer_ungauged.fields()]:
@@ -704,18 +707,18 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         del JoinCatchmentsWaterAreaSummarize
 
         #Calculates statistics based on settlement area
-        JoinCatchmentsSetttlementAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SetttlementArea", "SettAr", parameters[self.settlementArea],0)
+        JoinCatchmentsSettlementAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SettlementArea", "SettAr", parameters[self.settlementArea],0)
         del JoinCatchmentsForestAreaSummarize
 
         #Calculates river network density (rnd), proportion of water area (pwa), forest share and settlemet share
         feedback.setProgressText("\nCalculate river network density (rnd) and proportion of water area (pwa)...")
-        provider = JoinCatchmentsSetttlementAreaSummarize.dataProvider()
+        provider = JoinCatchmentsSettlementAreaSummarize.dataProvider()
         rnd_field = QgsField("RivNetDens", QVariant.Double, 'double', 20, 3)
         pwa_field = QgsField("PropWatAr", QVariant.Double, 'double', 20, 3)
         fs_field = QgsField("Forest %", QVariant.Double, 'double', 20, 3)
         ss_field = QgsField("Settl %", QVariant.Double, 'double', 20, 3)
         provider.addAttributes([rnd_field, pwa_field, fs_field, ss_field])
-        JoinCatchmentsSetttlementAreaSummarize.updateFields() 
+        JoinCatchmentsSettlementAreaSummarize.updateFields() 
         idxRND = provider.fieldNameIndex('RivNetDens')
         idxPWA = provider.fieldNameIndex('PropWatAr')
         idxFS = provider.fieldNameIndex('Forest %')
@@ -724,7 +727,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         idxWA_Sum = provider.fieldNameIndex('WatAr_sum')
         idxFA_Sum = provider.fieldNameIndex('ForAr_sum')
         idxSA_Sum = provider.fieldNameIndex('SettAr_sum')
-        for feature in JoinCatchmentsSetttlementAreaSummarize.getFeatures():
+        for feature in JoinCatchmentsSettlementAreaSummarize.getFeatures():
             if feature["RivNe_sum"] != None:
                 calcRND = (feature["RivNe_sum"] / feature["AREA_SC"]) *100
                 RNsum = feature["RivNe_sum"]
@@ -750,10 +753,10 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 calcSS = 0
                 SAsum = 0
             attrs = {idxRND : calcRND, idxPWA : calcPWA, idxFS : calcFS, idxSS : calcSS, idxRN_Sum : RNsum, idxWA_Sum : WAsum, idxFA_Sum : FAsum, idxSA_Sum : SAsum}
-            JoinCatchmentsSetttlementAreaSummarize.dataProvider().changeAttributeValues({feature.id() : attrs})
+            JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id() : attrs})
             
-            if not JoinCatchmentsSetttlementAreaSummarize.isValid():
-                feedback.reportError("Error: JoinCatchmentsSetttlementAreaSummarize is not valid!", fatalError = True)
+            if not JoinCatchmentsSettlementAreaSummarize.isValid():
+                feedback.reportError("Error: JoinCatchmentsSettlementAreaSummarize is not valid!", fatalError = True)
             
         #Calculation of precipitation
         feedback.setProgressText("\nCalculate precipitation")
@@ -789,7 +792,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         precipitation_yearly_gauged = processing.run("native:zonalstatisticsfb",
             {'INPUT_RASTER': precipitationYearlyLayer,
              'RASTER_BAND':1,
-             'INPUT': JoinCatchmentsSetttlementAreaSummarize,
+             'INPUT': JoinCatchmentsSettlementAreaSummarize,
              'COLUMN_PREFIX': "PrecYearly_",         
              'STATISTICS': [2], #mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
@@ -806,7 +809,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             context=context)['OUTPUT']
         context.temporaryLayerStore().addMapLayer(finalLayer_gauged) 
         
-        del JoinCatchmentsSetttlementAreaSummarize, precipitation_yearly_gauged
+        del JoinCatchmentsSettlementAreaSummarize, precipitation_yearly_gauged
 
         # Remove "mean" from the column name if it exists
         if 'PrecYearly_mean' in [field.name() for field in finalLayer_gauged.fields()]:

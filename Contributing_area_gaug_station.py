@@ -68,7 +68,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('River network'),
-                [QgsProcessing.TypeVectorLine]
+                [QgsProcessing.TypeVectorLine],
+                defaultValue = QgsProject.instance().mapLayersByName("Fixed river network")[0].id() if QgsProject.instance().mapLayersByName("Fixed river network") else None
             )
         )
 
@@ -145,7 +146,22 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         Every river section needs to be associated with one subcatchment only and a subcatchment needs to be associated with one river section only.
         """
         # create a new layer, copy of the river network
-        river_copy = river_layer.clone()
+        # get CRS and geometry type
+        crs = river_layer.crs().authid()
+        geom_type = QgsWkbTypes.displayString(river_layer.wkbType())
+        # create memory layer
+        river_copy = QgsVectorLayer(f"{geom_type}?crs={crs}", "river_layer_copy", "memory")
+        provider = river_copy.dataProvider()
+        # copy all fields
+        provider.addAttributes(river_layer.fields())
+        river_copy.updateFields()
+        # copy all features
+        features = []
+        for feat in river_layer.getFeatures():
+            new_feat = QgsFeature(feat)
+            features.append(new_feat)
+        provider.addFeatures(features)
+        river_copy.updateExtents()
         
         # adding new fields in the river file
         # add a troubleshooting line to check if these fields already exist or not
