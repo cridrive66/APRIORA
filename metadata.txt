@@ -6,7 +6,7 @@
 name=APRIORA
 qgisMinimumVersion=3.0
 description=Estimation of flow and Active Pharmaceutical Ingredients (API) in a catchment. Requires the 'scikit-learn' Python library (install via OSGeo4W Shell).
-version=0.5.1
+version=0.6
 author=Cristiano Guidi
 email=cristiano.guidi2@uni-rostock.de
 
