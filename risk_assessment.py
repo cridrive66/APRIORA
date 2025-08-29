@@ -36,9 +36,11 @@ import pandas as pd
 import numpy as np
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
+from qgis.PyQt.QtGui import QColor
 from qgis.core import (NULL,
                        QgsProcessingAlgorithm,
                        QgsProcessing,
+                       QgsProcessingContext,
                        QgsProcessingException,
                        QgsFeature,
                        QgsField,
@@ -55,7 +57,9 @@ from qgis.core import (NULL,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterNumber,
                        QgsProcessingParameterVectorLayer,
-                       QgsField,
+                       QgsProcessingUtils,
+                       QgsRuleBasedRenderer,
+                       QgsSymbol,
                        QgsVectorLayer,
                        QgsVectorFileWriter,
                        edit)
@@ -71,6 +75,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
     k_param = 'kParam'
     x0_param = 'x0Param'
     OUTPUT = 'OUTPUT'
+    dest_id = None
 
     def shortHelpString(self):
         return self.tr(""" This tool performs the risk assessment of different APIs in a river network.
@@ -87,7 +92,8 @@ class RiskAssessment(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('River network'),
-                [QgsProcessing.TypeVectorLine]
+                [QgsProcessing.TypeVectorLine],
+                defaultValue = QgsProject.instance().mapLayersByName("River accumulation")[0].id() if QgsProject.instance().mapLayersByName("River accumulation") else None
             )
         )
 
@@ -97,7 +103,10 @@ class RiskAssessment(QgsProcessingAlgorithm):
                 self.tr('Select APIs for risk assessment'),
                 parentLayerParameterName = self.riverNetwork,
                 allowMultiple = True,
-                type=QgsProcessingParameterField.Any
+                type=QgsProcessingParameterField.Any,
+                defaultValue=[
+                    f.name() for f in QgsProject.instance().mapLayersByName("River accumulation")[0].fields() if f.name().startswith("conc_") or f.name().startswith("conL_")
+                ] if QgsProject.instance().mapLayersByName("River accumulation") else []
             )
         )
 
@@ -309,7 +318,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
         river_layer.commitChanges()
 
         '''sink definition'''
-        (sink, dest_id) = self.parameterAsSink(
+        (sink, self.dest_id) = self.parameterAsSink(
             parameters,
             self.OUTPUT,
             context,
@@ -322,7 +331,48 @@ class RiskAssessment(QgsProcessingAlgorithm):
         for feature in river_layer.getFeatures():
             sink.addFeature(feature)
 
-        return {self.OUTPUT: dest_id}
+        return {self.OUTPUT: self.dest_id}
+    
+    def postProcessAlgorithm(self, context, feedback):
+        feedback.setProgressText("\nApplying style to the output layer...")
+        sink_layer = QgsProcessingUtils.mapLayerFromString(self.dest_id, context)
+
+        # if sink_layer:
+        #     # define rules
+        #     rules = [
+        #         ('"cumul_RQ_L" < 0.3', "Blue (<0.3)", "blue"),
+        #         ('"cumul_RQ_L" >= 0.3 AND "cumul_RQ_L" < 0.4', "Green (0.3-0.4)", "green"),
+        #         ('"cumul_RQ_L" >= 0.4 AND "cumul_RQ_L" < 0.6', "Yellow (0.4-0.6)", "yellow"),
+        #         ('"cumul_RQ_L" >= 0.6 AND "cumul_RQ_L" < 0.75', "Orange (0.6-0.75)", "orange"),
+        #         ('"cumul_RQ_L" >= 0.75 AND "cumul_RQ_L" < 0.9', "Red (0.75-0.9)", "red"),
+        #         ('"cumul_RQ_L" >= 0.9', "Dark Red (>0.9)", "darkred")
+        #     ]
+            
+        #     # create root renderer
+        #     symbol = QgsSymbol.defaultSymbol(sink_layer.geometryType())
+        #     renderer = QgsRuleBasedRenderer(symbol)
+        #     root_rule = renderer.rootRule()
+
+        #     # add custom rules
+        #     for expression, label, color in rules:
+        #         rule_symbol = QgsSymbol.defaultSymbol(sink_layer.geometryType())
+        #         rule_symbol.setColor(QColor(color))
+        #         rule = QgsRuleBasedRenderer.Rule(rule_symbol, filterExp=expression, label=label)
+        #         root_rule.appendChild(rule)
+
+        #     # remove default rule and apply
+        #     root_rule.removeChild(root_rule.children()[0])
+
+        #     # apply renderer
+        #     sink_layer.setRenderer(renderer)
+        #     sink_layer.triggerRepaint()
+
+        if sink_layer:
+            style_path = os.path.join(os.path.dirname(__file__), 'styles/risk assessment.qml')
+            sink_layer.loadNamedStyle(style_path)
+            sink_layer.triggerRepaint()
+
+        return {self.OUTPUT: self.dest_id}
 
 
 
