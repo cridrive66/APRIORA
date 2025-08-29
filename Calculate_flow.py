@@ -31,6 +31,8 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 __revision__ = '$Format:%H$'
 
 import processing
+import os
+import joblib
 import pandas as pd
 import numpy as np
 from math import sqrt
@@ -116,7 +118,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.gaugedSubcatchments,
                 self.tr('Gauged subcatchments with geofactors'),
-                [QgsProcessing.TypeVectorPolygon]
+                [QgsProcessing.TypeVectorPolygon],
+                defaultValue = QgsProject.instance().mapLayersByName("Gauged subcatch geofactors")[0].id() if QgsProject.instance().mapLayersByName("Gauged subcatch geofactors") else None
             )
         )
         
@@ -124,7 +127,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.ungaugedSubcatchments,
                 self.tr('Ungauged subcatchments with geofactors'),
-                [QgsProcessing.TypeVectorPolygon]
+                [QgsProcessing.TypeVectorPolygon],
+                defaultValue = QgsProject.instance().mapLayersByName("Ungauged subcatch geofactors")[0].id() if QgsProject.instance().mapLayersByName("Ungauged subcatch geofactors") else None
             )
         )
 
@@ -132,7 +136,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('River network'),
-                [QgsProcessing.TypeVectorLine]
+                [QgsProcessing.TypeVectorLine],
+                defaultValue = QgsProject.instance().mapLayersByName("Fixed river network")[0].id() if QgsProject.instance().mapLayersByName("Fixed river network") else None
             )
         )
 
@@ -267,6 +272,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         selected_geofactors = [self.geofactor_mapping[name] for name in selected_display_names]     # convert display names to actual column names
         threshold_user = self.parameterAsDouble(parameters, self.threshold_user, context)
         river_layer_original = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        adjusted_par = self.parameterAsBoolean(parameters, self.adjusted, context)
         
         # add "id_catch" to the subcatchment shapefile        
         field_name = "id_catch"
@@ -283,46 +289,12 @@ class CalculateFlow(QgsProcessingAlgorithm):
             feedback.pushInfo(f"\nField '{field_name}' exists.") 
         
         def flow_estimation(flow, final_output):
-            ##### FIRST PART OF THE MODEL
-            # Selecting input (predictors) and output
-            # In this part of the code, we select the number of predictors that will be used in the model and drop
-            # the not necessaries columns. The predictors are the geofactors previously calculated. 
-            # We also select the output and like we said before, there are 2 outputs of this model: "Mean Low Flow" and "Mean Flow". 
-            # In this part of the code we select "Mean Flow" and in a second part we will estimate "Mean Low Flow". [not in this version of the script]
-
-            # Get the field names
-            field_names = [field.name() for field in gaug_stat.fields()]
-
-            # extract attribute data from the layer
-            features = gaug_stat.getFeatures()
-            data = []
-
-            for feature in features:
-                # collect the attribute values for each feature
-                data.append([feature[field] for field in field_names])
-                
-            # create dataframe
-            gaug_stat_df = pd.DataFrame(data, columns = field_names)
-
-        
-            # filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PrecYearly', 'PrecAugust']
-            # select number of features (predictors) and dependent variable
-            x = gaug_stat_df.filter(items=selected_geofactors)
-            feedback.setProgressText(f"\nDatabase columns: {x.columns} ")
             
-            # # try to normalise the flow for the subcatchment area
-            # y = gaug_stat_df["Mean Flow"]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
-            # feedback.setProgressText(f"\nFlow values normalised: {y} ")
-            # y = StandardScaler().fit_transform(y.values.reshape(-1,1))
-
-            y = gaug_stat_df[flow]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
-
-
             """
             Remove multicollinearity between variables by performing hierarchical clustering on the Spearman rank-order correlations, picking a threshold,
             and keeping a single feature from each cluster.
             """
-            def select_non_collinear_features(df, threshold):
+            def select_non_collinear_features(df, threshold):       # I don't think is necessary with Random Forest, we can remove it
                 feedback.setProgressText(f"Collinearity threshold: {threshold}")
                 # compute Spearman correlation matrix
                 corr = spearmanr(df).correlation
@@ -365,75 +337,139 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 # return new dataframe with selected features
                 return df[selected_features_names]
             
-            # remove multicollinearity features
-            x_nc = select_non_collinear_features(x, threshold = threshold_user)
+            if not adjusted_par:
+                ##### FIRST PART OF THE MODEL
+                # Selecting input (predictors) and output
+                # In this part of the code, we select the number of predictors that will be used in the model and drop
+                # the not necessaries columns. The predictors are the geofactors previously calculated. 
+                # We also select the output and like we said before, there are 2 outputs of this model: "Mean Low Flow" and "Mean Flow". 
+                # In this part of the code we select "Mean Flow" and in a second part we will estimate "Mean Low Flow". [not in this version of the script]
 
-            feedback.setProgressText(f"\nMulticollinearity features removed, this is the new database: {x_nc.columns} ")
+                # Get the field names
+                field_names = [field.name() for field in gaug_stat.fields()]
+
+                # extract attribute data from the layer
+                features = gaug_stat.getFeatures()
+                data = []
+
+                for feature in features:
+                    # collect the attribute values for each feature
+                    data.append([feature[field] for field in field_names])
+                    
+                # create dataframe
+                gaug_stat_df = pd.DataFrame(data, columns = field_names)
+
             
-            
-            ### Random Forest Regressor
-            ##### Split the data for calibration (train) and validation (test)
+                # filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PrecYearly', 'PrecAugust']
+                # select number of features (predictors) and dependent variable
+                x = gaug_stat_df.filter(items=selected_geofactors)
+                feedback.setProgressText(f"\nDatabase columns: {x.columns} ")
+                
+                # # try to normalise the flow for the subcatchment area
+                # y = gaug_stat_df["Mean Flow"]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
+                # feedback.setProgressText(f"\nFlow values normalised: {y} ")
+                # y = StandardScaler().fit_transform(y.values.reshape(-1,1))
 
-            # prepare the data: divide into train and test set
-            # scale the data
-            scaler = StandardScaler()
-            x_train, x_test, y_train, y_test = train_test_split(x_nc, y, test_size=0.2, random_state=42)
-            x_train = scaler.fit_transform(x_train) 
-            x_test = scaler.transform(x_test)
+                y = gaug_stat_df[flow]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
 
-            # Initialize the model
-            # model initialization
-            model = RandomForestRegressor()
+                # # remove multicollinearity features
+                # x_nc = select_non_collinear_features(x, threshold = threshold_user)
+                # feedback.setProgressText(f"\nMulticollinearity features removed, this is the new database: {x_nc.columns} ")
+                
+                x_nc = x
 
-            # model training
-            model.fit(x_train,y_train)
+                ### Random Forest Regressor
+                ##### Split the data for calibration (train) and validation (test)
 
-            ##### Calibration
-            # Here we work with the train dataset (x_train) to calibrate the model. 
-            # After, we print the performance of the model through two metrics like RMSE and R^2.
-            # I would like to print the metric of RMSE and Rsquared in the log messages panel of the plugin 
-            # in order to give an idea of the performance of the model. [The metric is not part of the output]
-            # If it is not possible, the "print" command can be deleted. 
+                # prepare the data: divide into train and test set
+                # scale the data
+                scaler = StandardScaler()
+                x_train, x_test, y_train, y_test = train_test_split(x_nc, y, test_size=0.2, random_state=42)
+                x_train = scaler.fit_transform(x_train) 
+                x_test = scaler.transform(x_test)
 
-            # performance of the trained model
-            y_train_pred = model.predict(x_train)
-            # get the matching areas for y_train by preserving index
-            train_idx = y_train.index
-            area_train = gaug_stat_df.loc[train_idx, "AREA_SC"]
-    
-            # convert normalized flows back to total flows
-            y_train_total = y_train * area_train
-            y_train_pred_total = y_train_pred * area_train
-    
-            # evaluation
-            mse = mean_squared_error(y_train_total, y_train_pred_total)
-            rmse = sqrt(mse)
-            r2 = r2_score(y_train_total, y_train_pred_total)
-            feedback.setProgressText(f"\nCalibration {flow} RMSE: {rmse}")
-            feedback.setProgressText(f"Calibration {flow} R-squared: {r2}")
-            # print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
-            # print("Calibration R-squared:", r2_score(y_train, y_train_pred))
+                # Initialize the model
+                # model initialization
+                model = RandomForestRegressor()
 
-            ##### Validation
-            # Now, we work with the test dataset (x_test) to validate the model and make estimation on new different data. 
-            # Like in the calibration, the performance of the model are evaluated by the metrics RMSE and R^2.
+                # model training
+                model.fit(x_train,y_train)
 
-            # prediction and evaluation
-            y_pred = model.predict(x_test)
-            # get the matching areas for y_train by preserving index
-            test_idx = y_test.index
-            area_test = gaug_stat_df.loc[test_idx, "AREA_SC"]
-    
-            # convert normalized flows back to total flows
-            y_test_total = y_test * area_test
-            y_pred_total = y_pred * area_test
-    
-            # evaluation
-            mse = mean_squared_error(y_test_total, y_pred_total)
-            rmse = sqrt(mse)
-            r2 = r2_score(y_test_total, y_pred_total)
-            feedback.setProgressText(f"\nValidation {flow} RMSE: {rmse}")
-            feedback.setProgressText(f"Validation {flow} R-squared: {r2}\n")
+                # # save trained model
+                # plugin_folder = os.path.dirname(__file__)
+                # save_dir = os.path.join(plugin_folder, "hydrological model parameters")
+                # os.makedirs(save_dir, exist_ok=True)
+                # # file name
+                # catchment_name = "Warnow"
+                # file = os.path.join(save_dir, f"{catchment_name}_{flow}.pkl")
+                # # file_mnq = os.path.join(save_dir, f"{catchment_name}_MNQ.pkl")
+                # # save
+                # joblib.dump({"model": model, "scaler": scaler}, file)
+                
+                ##### Calibration
+                # Here we work with the train dataset (x_train) to calibrate the model. 
+                # After, we print the performance of the model through two metrics like RMSE and R^2.
+                # I would like to print the metric of RMSE and Rsquared in the log messages panel of the plugin 
+                # in order to give an idea of the performance of the model. [The metric is not part of the output]
+                # If it is not possible, the "print" command can be deleted. 
+
+                # performance of the trained model
+                y_train_pred = model.predict(x_train)
+                # get the matching areas for y_train by preserving index
+                train_idx = y_train.index
+                area_train = gaug_stat_df.loc[train_idx, "AREA_SC"]
+        
+                # convert normalized flows back to total flows
+                y_train_total = y_train * area_train
+                y_train_pred_total = y_train_pred * area_train
+        
+                # evaluation
+                mse = mean_squared_error(y_train_total, y_train_pred_total)
+                rmse = sqrt(mse)
+                r2 = r2_score(y_train_total, y_train_pred_total)
+                feedback.setProgressText(f"\nCalibration {flow} RMSE: {rmse}")
+                feedback.setProgressText(f"Calibration {flow} R-squared: {r2}")
+                # print("Calibration RMSE:", mean_squared_error(y_train, y_train_pred, squared=False))
+                # print("Calibration R-squared:", r2_score(y_train, y_train_pred))
+
+                ##### Validation
+                # Now, we work with the test dataset (x_test) to validate the model and make estimation on new different data. 
+                # Like in the calibration, the performance of the model are evaluated by the metrics RMSE and R^2.
+
+                # prediction and evaluation
+                y_pred = model.predict(x_test)
+                # get the matching areas for y_train by preserving index
+                test_idx = y_test.index
+                area_test = gaug_stat_df.loc[test_idx, "AREA_SC"]
+        
+                # convert normalized flows back to total flows
+                y_test_total = y_test * area_test
+                y_pred_total = y_pred * area_test
+        
+                # evaluation
+                mse = mean_squared_error(y_test_total, y_pred_total)
+                rmse = sqrt(mse)
+                r2 = r2_score(y_test_total, y_pred_total)
+                feedback.setProgressText(f"\nValidation {flow} RMSE: {rmse}")
+                feedback.setProgressText(f"Validation {flow} R-squared: {r2}\n")
+
+            else:
+                catchment_name = "Warnow"
+                plugin_folder = os.path.dirname(__file__)
+                save_dir = os.path.join(plugin_folder, "hydrological model parameters")
+                os.makedirs(save_dir, exist_ok=True)
+
+                file_model = os.path.join(save_dir, f"{catchment_name}_{flow}.pkl")
+
+                if not os.path.exists(file_model):
+                    feedback.reportError(f"Pre-trained odel for {catchment_name}_{flow}.pkl not found.")
+                    return
+                
+                # load model + scaler
+                bundle = joblib.load(file_model)
+                model = bundle["model"]
+                scaler = bundle["scaler"]
+                feedback.setProgressText(f"Using pre-trained {flow} model for {catchment_name}")
 
             ##### SECOND PART OF THE MODEL
             ### Estimate flow in ungauged subcatchments
@@ -455,6 +491,13 @@ class CalculateFlow(QgsProcessingAlgorithm):
             # create dataframe
             warnow_subcatch_gf_df = pd.DataFrame(data, columns = field_names)
 
+            # select number of features (predictors) and dependent variable
+            x = warnow_subcatch_gf_df.filter(items=selected_geofactors)
+            feedback.setProgressText(f"\nDatabase columns: {x.columns} ")
+
+            # remove multicollinearity features
+            x_nc = x
+            
             # select number of features (predictors) and dependent variable
             x_catch = warnow_subcatch_gf_df[x_nc.columns] #filter geofactors
 
@@ -826,7 +869,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             feedback.setProgress((1-(len(calc_segm)/total2))*100)
 
         '''add new field'''
-        MQ_field_name = 'calc_'+calc_field
+        MQ_field_name = 'calc_Mean_'
         waternet.dataProvider().addAttributes([QgsField(MQ_field_name, QVariant.Double)])
         waternet.updateFields()
         features = waternet.getFeatures()
@@ -895,7 +938,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             feedback.setProgress((1-(len(calc_segm)/total2))*100)
 
         '''add new field'''
-        MNQ_field_name = 'calc_'+calc_field
+        MNQ_field_name = 'calc_M_Low'
         waternet.dataProvider().addAttributes([QgsField(MNQ_field_name, QVariant.Double)])
         waternet.updateFields()
         features = waternet.getFeatures()
