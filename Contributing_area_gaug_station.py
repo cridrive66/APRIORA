@@ -372,7 +372,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         for feature in waternet.getFeatures():
             fid = feature.id()
             river_map[fid] = feature
-            spatial_index.insertFeature(feature)
+            spatial_index.addFeature(feature)
 
 
         '''Find upstream network for each gauging station'''
