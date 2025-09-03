@@ -160,7 +160,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
         Here is where the processing itself takes place.
         """
         river_layer_original = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
-        selected_api_fields = self.parameterAsFields(parameters, self.selectedAPI, context)
+        selected_api_fields = self.parameterAsStrings(parameters, self.selectedAPI, context)
         custom_selection = self.parameterAsBoolean(parameters, self.custom, context)
         k = self.parameterAsDouble(parameters, self.k_param, context)
         x0 = self.parameterAsDouble(parameters, self.x0_param, context)
@@ -168,7 +168,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
         # load PNEC table
         if custom_selection:
             plugin_dir = os.path.dirname(__file__)
-            PNEC_file = os.path.join(plugin_dir, "custom_dataset", "PNEC_.csv")
+            PNEC_file = os.path.join(plugin_dir, "datasets/custom_dataset/PNEC_.csv")
             try:
                 df_PNEC = pd.read_csv(PNEC_file, sep=",")
             except Exception as e:
@@ -177,7 +177,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
             
         if not custom_selection:
             plugin_dir = os.path.dirname(__file__)
-            PNEC_file = os.path.join(plugin_dir, "PNEC ERA.csv")
+            PNEC_file = os.path.join(plugin_dir, "datasets/original_dataset/PNEC ERA.csv")
             try:
                 df_PNEC = pd.read_csv(PNEC_file, sep=",")
             except Exception as e:
@@ -187,18 +187,21 @@ class RiskAssessment(QgsProcessingAlgorithm):
         PNEC_dict = dict(zip(df_PNEC['API name'], df_PNEC['PNEC ng/l']))
 
         # short tag -> full API mapping
-        API_map = {
-            "Carb": "Carbamazepine",
-            "Clar": "Clarithromycin",
-            "Dicl": "Diclofenac",
-            "Fluc": "Fluconazole",
-            "Meto": "Metoprolol",
-            "Prim": "Primidone",
-            "Trim": "Trimethoprim",
-            "Sulf": "Sulfamethoxazole",
-            "Venl": "Venlafaxine",
-            "Estr": "Estrone"
-        }
+        user_selection = os.path.join(plugin_dir, "user_selection.txt")
+        API_map = {}
+
+        try:
+            with open(user_selection, "r", encoding="utf-8") as f:
+                for line in f:
+                    parts = line.strip().split(",")
+                    if not parts:
+                        continue
+                    api_full = parts[0].strip()
+                    short_tag = api_full[:4]    # take the first 4 letters
+                    API_map[short_tag] = api_full
+        except Exception as e:
+            feedback.reportError(f"Could not read user_selection.txt: {e}")
+            return{}
 
         # create an indipendent copy of the river layer
         crs = river_layer_original.crs().authid()
@@ -241,11 +244,13 @@ class RiskAssessment(QgsProcessingAlgorithm):
             # map short tag to full API name
             full_api_name = API_map.get(api_suffix)
             if full_api_name is None:
+                feedback.pushWarning(f"Skipping {api_suffix}: no mapping found in user_selection.txt")
                 continue  # skip if no mapping
 
             # get PNEC value
             pnec = PNEC_dict.get(full_api_name)
             if pnec is None or pnec == 0:
+                feedback.pushWarning(f"PNEC is 0 or no PNEC value found for {full_api_name}")
                 continue    # avoid division by zero
 
             # calculate ERA RA for all features in this column
@@ -293,7 +298,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
                             continue
                         era_values.append(float(rq_era_value))
                     
-                    feedback.pushInfo(f"{prefix} values for feature {feat.id()}: {era_values}\n")
+                    # feedback.pushInfo(f"{prefix} values for feature {feat.id()}: {era_values}\n")
 
                     # keep only RQ >= 1 (exceeding PNEC)
                     exceeding_era = [v for v in era_values if v >= 1]
@@ -304,7 +309,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
                     # apply logistic function
                     cumulative_index = logistic(x, k=k, x0=x0, s=1)
 
-                    feedback.pushInfo(f"Feature ID: {feat.id()}, cumulative index: {cumulative_index}, Type: {type(cumulative_index)}\n")
+                    # feedback.pushInfo(f"Feature ID: {feat.id()}, cumulative index: {cumulative_index}, Type: {type(cumulative_index)}\n")
 
                     # store it in a new field
                     feat[name] = float(cumulative_index)

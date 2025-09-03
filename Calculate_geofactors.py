@@ -35,6 +35,7 @@ import math
 import processing
 import numpy as np
 from osgeo import gdal
+gdal.UseExceptions()
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
 from qgis.core import (QgsProcessingAlgorithm,
