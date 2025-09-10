@@ -14,7 +14,6 @@ about=This plugin contains a series of tools divided into two subgroups: Flow Es
 
 tracker=http://bugs
 repository=http://repo
-documentation=https://hosting-apriora-manual.readthedocs.io/en/latest/
 # End of mandatory metadata
 
 # Recommended items:
@@ -26,7 +25,7 @@ hasProcessingProvider=yes
 # Tags are comma separated with spaces allowed
 tags=water, catchment, flow estimation, river, pollutants, risk assessment
 
-homepage=http://homepage
+homepage=https://hosting-apriora-manual.readthedocs.io/en/latest/
 category=Analysis
 icon=icon.png
 # experimental flag
