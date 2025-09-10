@@ -14,6 +14,7 @@ about=This plugin contains a series of tools divided into two subgroups: Flow Es
 
 tracker=http://bugs
 repository=http://repo
+documentation=https://hosting-apriora-manual.readthedocs.io/en/latest/
 # End of mandatory metadata
 
 # Recommended items:
