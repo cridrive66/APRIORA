@@ -265,10 +265,38 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         feedback.setProgressText(f"Number of features in subcatchments_layer: {subcatchments_layer.featureCount()}")
 
+        # before we start, let's preprocess the river layer and clean it from possible imperfections
+        feedback.setProgressText("\nPreprocessing river layer and clean it from possible imperfections...")
+        feedback.setProgressText("Simplify geometries...")
+        simplified = processing.run("native:simplifygeometries", {
+            'INPUT':river_layer,
+            'METHOD':0,
+            'TOLERANCE':0.5, #50 cm
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        feedback.setProgressText("Snap geometries...")
+        snapped = processing.run("native:snapgeometries", {
+            'INPUT':simplified,
+            'REFERENCE_LAYER':simplified,
+            'TOLERANCE':0.5,
+            'BEHAVIOR':7,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        feedback.setProgressText("Fix geometries...")
+        fixed_snapped = processing.run("native:fixgeometries", {
+            'INPUT':snapped,
+            'METHOD':0,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+        
+        feedback.setProgressText("Merging lines...")
+        merged_lines = processing.run("native:mergelines", {
+            'INPUT':fixed_snapped,
+            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+
         # extract start [0] and end [-1] vertices from the river network
         feedback.setProgressText("\nExtracting start and end vertices from river network...")
         vertices_river_result = processing.run("native:extractspecificvertices", {
-            'INPUT': river_layer,
+            'INPUT': merged_lines,
             'VERTICES':'0, -1',
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
@@ -306,7 +334,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         
         # split with the buffer
         split_with_errors = processing.run("native:splitwithlines", {
-            'INPUT':river_layer,
+            'INPUT':merged_lines,
             'LINES':buffer,
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
 
