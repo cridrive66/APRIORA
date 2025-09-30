@@ -39,9 +39,118 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
 
 
 class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
-    def load_csv_to_table(self, csv_path):
+    # def load_csv_to_table(self, csv_path):
+    #     try:
+    #         df = pd.read_csv(csv_path, sep=",")
+    #         self.df = df
+    #         model = QStandardItemModel()
+    #         model.setHorizontalHeaderLabels(df.columns.astype(str).tolist())
+
+    #         for row in df.itertuples(index=False):
+    #             items = []
+    #             for val in row:
+    #                 item = QStandardItem(str(val))
+    #                 #item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+    #                 items.append(item)
+    #             model.appendRow(items)
+            
+    #         self.excelTableView.setModel(model)
+
+    #         # remove temporary file if there are
+    #         # if self.temp_cons == True:
+    #         #     # os.remove(self.temp_consumption_path)
+    #         #     # set a flag
+    #         #     self.temp_cons = False
+    #         self.update_filters()
+
+    #     except Exception as e:
+    #         QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
+
+    # def load_RR_to_table(self, csv_path):
+    #     try:
+    #         df_RR = pd.read_csv(csv_path, sep=",")
+    #         model = QStandardItemModel()
+    #         model.setHorizontalHeaderLabels(df_RR.columns.astype(str).tolist())
+
+    #         for row in df_RR.itertuples(index=False):
+    #             items = []
+    #             for val in row:
+    #                 item = QStandardItem(str(val))
+    #                 #item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+    #                 items.append(item)
+    #             model.appendRow(items)
+            
+    #         self.RRTableView.setModel(model)
+
+    #         # remove temporary file if there are
+    #         # if self.temp_rr == True:
+    #         #     # os.remove(self.temp_rr_path)
+    #         #     # set a flag
+    #         #     self.temp_rr = False
+
+    #     except Exception as e:
+    #         QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
+    
+    # def load_PNEC_to_table(self, csv_path):
+    #     try:
+    #         df_PNEC = pd.read_csv(csv_path, sep=",")
+    #         model = QStandardItemModel()
+    #         model.setHorizontalHeaderLabels(df_PNEC.columns.astype(str).tolist())
+
+    #         for row in df_PNEC.itertuples(index=False):
+    #             items = []
+    #             for val in row:
+    #                 item = QStandardItem(str(val))
+    #                 #item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+    #                 items.append(item)
+    #             model.appendRow(items)
+            
+    #         self.PNECTableView.setModel(model)
+
+    #         # remove temporary file if there are
+    #         # if self.temp_pnec == True:
+    #         #     # os.remove(self.temp_pnec_path)
+    #         #     # set a flag
+    #         #     self.temp_pnec = False
+
+    #     except Exception as e:
+    #         QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
+
+    def get_dataset_path(self, original_filename, custom_filename):
+        """
+        Return the path to the dataset
+        If a custom file exists, return that.
+        Otherwise return the original file.
+        """
+        plugin_dir = os.path.dirname(__file__)
+        custom_path = os.path.join(plugin_dir, "datasets/custom_dataset", custom_filename)
+        original_path = os.path.join(plugin_dir, "datasets/original_dataset", original_filename)
+
+        if os.path.exists(custom_path):
+            return custom_path, True    # True = custom file is being used
+        else:
+            return original_path, False
+        
+    def load_selection_from_file(self):
+        plugin_dir = os.path.dirname(__file__)
+        file_path = os.path.join(plugin_dir, "user_selection.txt")
+
+        if os.path.exists(file_path):
+            with open(file_path, "r") as file:
+                for line in file:
+                    line = line.strip()
+                    if line:
+                        self.selectionListWidget.addItem(line)
+
+    def load_table(self, df, table_view, update_filters):
+        """
+        Load dataframe to specified table view
+        
+        csv_path: path to CSV file
+        table_view: Target QTableView object
+        update_filters: wheter call update_filters after loading
+        """
         try:
-            df = pd.read_csv(csv_path, sep=",")
             model = QStandardItemModel()
             model.setHorizontalHeaderLabels(df.columns.astype(str).tolist())
 
@@ -49,70 +158,18 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 items = []
                 for val in row:
                     item = QStandardItem(str(val))
-                    #item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     items.append(item)
                 model.appendRow(items)
             
-            self.excelTableView.setModel(model)
+            # set the table model
+            table_view.setModel(model)
 
-            # remove temporary file if there are
-            if self.temp_cons == True:
-                os.remove(self.temp_consumption_path)
-                # set a flag
-                self.temp_cons = False
-            self.update_filters()
+            # update filters if needed
+            if update_filters:
+                self.update_filters()
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
-
-    def load_RR_to_table(self, csv_path):
-        try:
-            df_RR = pd.read_csv(csv_path, sep=",")
-            model = QStandardItemModel()
-            model.setHorizontalHeaderLabels(df_RR.columns.astype(str).tolist())
-
-            for row in df_RR.itertuples(index=False):
-                items = []
-                for val in row:
-                    item = QStandardItem(str(val))
-                    #item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                    items.append(item)
-                model.appendRow(items)
-            
-            self.RRTableView.setModel(model)
-
-            # remove temporary file if there are
-            if self.temp_rr == True:
-                os.remove(self.temp_rr_path)
-                # set a flag
-                self.temp_rr = False
-
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
-    
-    def load_PNEC_to_table(self, csv_path):
-        try:
-            df_PNEC = pd.read_csv(csv_path, sep=",")
-            model = QStandardItemModel()
-            model.setHorizontalHeaderLabels(df_PNEC.columns.astype(str).tolist())
-
-            for row in df_PNEC.itertuples(index=False):
-                items = []
-                for val in row:
-                    item = QStandardItem(str(val))
-                    #item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                    items.append(item)
-                model.appendRow(items)
-            
-            self.PNECTableView.setModel(model)
-
-            # remove temporary file if there are
-            if self.temp_pnec == True:
-                os.remove(self.temp_pnec_path)
-                # set a flag
-                self.temp_pnec = False
-
-        except Exception as e:
+            #QMessageBox.critical(self, "Error", f"Could not load {csv_path} CSV data: {e}")
             QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
     
     
@@ -131,26 +188,36 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.saveButton_tab4.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
         # set a reload icon
         self.reloadButton_3.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        self.temp_cons = False
-        self.temp_rr = False
-        self.temp_pnec = False
+        # self.temp_cons = False
+        # self.temp_rr = False
+        # self.temp_pnec = False
         # set a flag for save pop-up
-        self.flag = False
+        self.flag = False   # check the utility of this flag
         # directory of the databases
-        plugin_dir = os.path.dirname(__file__)
-        csv_file = os.path.join(plugin_dir, "consumption_dataset.csv")
-        RR_file = os.path.join(plugin_dir, "removal_rates.csv")
-        PNEC_file = os.path.join(plugin_dir, "PNEC ERA.csv")
+        csv_file, self.temp_cons = self.get_dataset_path("consumption_dataset.csv", "consumption_.csv")
+        RR_file, self.temp_rr = self.get_dataset_path("removal_rates.csv", "removal_.csv")
+        PNEC_file, self.temp_pnec = self.get_dataset_path("PNEC ERA.csv", "PNEC_.csv")
+        # try:
+        #     # consumption data
+        #     self.df = pd.read_csv(csv_file, sep=",")
+        #     self.load_csv_to_table(csv_file)
+        #     # removal rate
+        #     self.df_RR = pd.read_csv(RR_file, sep=",")
+        #     self.load_RR_to_table(RR_file)
+        #     # PNEC values
+        #     self.df_PNEC = pd.read_csv(PNEC_file, sep=",")
+        #     self.load_PNEC_to_table(PNEC_file)
+
         try:
             # consumption data
             self.df = pd.read_csv(csv_file, sep=",")
-            self.load_csv_to_table(csv_file)
+            self.load_table(self.df, self.excelTableView, True)
             # removal rate
             self.df_RR = pd.read_csv(RR_file, sep=",")
-            self.load_RR_to_table(RR_file)
+            self.load_table(self.df_RR, self.RRTableView, False)
             # PNEC values
             self.df_PNEC = pd.read_csv(PNEC_file, sep=",")
-            self.load_PNEC_to_table(PNEC_file)
+            self.load_table(self.df_PNEC, self.PNECTableView, False)
 
 
         except Exception as e:
@@ -163,6 +230,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.yearComboBox.currentTextChanged.connect(self.update_filters)
         self.countryComboBox.currentTextChanged.connect(self.update_filters)
         self.regionComboBox.currentTextChanged.connect(self.update_filters)
+        self.load_selection_from_file()
         self.addSelectionButton.clicked.connect(self.add_selection)
         self.saveSelectionButton.clicked.connect(self.save_selection_to_file)
         self.removeSelectionButton.clicked.connect(self.remove_selected_item)
@@ -171,13 +239,21 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.update_filters()
         self.addButton_tab1.clicked.connect(lambda: self.add_row_to_table(self.excelTableView))
         self.removeButton_tab1.clicked.connect(lambda: self.remove_selected_row(self.excelTableView))
-        self.restoreButton_1.clicked.connect(lambda: self.load_csv_to_table(csv_file))
+        self.restoreButton_1.clicked.connect(
+            lambda: self.restore_original(
+                "consumption_dataset.csv", "consumption_.csv", self.load_table, self.excelTableView, True
+            )
+        )
         self.saveButton_1.clicked.connect(self.handle_save_consumption)
         
         # tab 2
         self.addButton_tab2.clicked.connect(lambda: self.add_row_to_table(self.RRTableView))
         self.removeButton_tab2.clicked.connect(lambda: self.remove_selected_row(self.RRTableView))
-        self.restoreButton_2.clicked.connect(lambda: self.load_RR_to_table(RR_file))
+        self.restoreButton_2.clicked.connect(
+            lambda: self.restore_original(
+                "removal_rates.csv", "removal_.csv", self.load_table, self.RRTableView, False
+            )
+        )
         self.saveButton_2.clicked.connect(self.handle_save_rr)
 
         # tab 3
@@ -191,7 +267,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # tab 4
         self.addButton_tab4.clicked.connect(lambda: self.add_row_to_table(self.PNECTableView))
         self.removeButton_tab4.clicked.connect(lambda: self.remove_selected_row(self.PNECTableView))
-        self.restoreButton_tab4.clicked.connect(lambda: self.load_PNEC_to_table(PNEC_file))
+        self.restoreButton_tab4.clicked.connect(
+            lambda: self.restore_original(
+                "PNEC ERA.csv", "PNEC_.csv", self.load_table, self.PNECTableView, False
+            )
+        )
         self.saveButton_tab4.clicked.connect(self.handle_save_pnec)
 
 
@@ -201,13 +281,14 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         current_country = self.countryComboBox.currentText()
         current_region = self.regionComboBox.currentText()
 
-        # load the original file or the custom one
-        if self.temp_cons:
-            df = pd.read_csv(self.temp_consumption_path)
-        else:
-            df = self.df
+        # # load the original file or the custom one
+        # if self.temp_cons:
+        #     df = pd.read_csv(self.temp_consumption_path)
+        # else:
+        #     df = self.df
 
         # create filtered versions of the dataframe for each combo box
+        df = self.df
         df_api = df.copy()
         if current_year:
             df_api = df_api[df_api['year'].astype(str) == current_year]
@@ -323,7 +404,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # create a temp file and store path
         plugin_dir = os.path.dirname(__file__)
-        custom_dir = os.path.join(plugin_dir, "custom_dataset")
+        custom_dir = os.path.join(plugin_dir, "datasets/custom_dataset")
         os.makedirs(custom_dir, exist_ok=True)
         
         temp_file = os.path.join(custom_dir, f"{name}.csv")
@@ -332,8 +413,41 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def handle_save_consumption(self):
         self.temp_consumption_path = self.save_temp_table(self.excelTableView, "consumption_")
-        self.temp_cons = True
+        self.df = pd.read_csv(self.temp_consumption_path, sep=",")
+        # self.temp_cons = True
         self.update_filters()
+        QMessageBox.information(self, "Success", "Consumption table saved.")
+
+
+    def restore_original(self, original_filename, custom_filename, loader_func, table_view, update_filters):
+        """
+        Delete custom dataset (if it exists) and reload the original.
+        """
+        # consider replacing this part with another function that you already defined before "get_path"
+        plugin_dir = os.path.dirname(__file__)
+        custom_path = os.path.join(plugin_dir, "datasets/custom_dataset", custom_filename)
+        original_path = os.path.join(plugin_dir, "datasets/original_dataset", original_filename)
+
+        # delete custom file if it exists
+        if os.path.exists(custom_path):
+            os.remove(custom_path)
+
+        # read dataframe
+        temp_df = pd.read_csv(original_path, sep=",")
+
+        # update the instance variable
+        if "consumption" in original_filename.lower():
+            self.df = temp_df
+        elif "removal" in original_filename.lower():
+            self.df_RR = temp_df
+        elif "pnec" in original_filename.lower():
+            self.df_PNEC = temp_df
+
+        # reload original
+        loader_func(temp_df, table_view, update_filters)
+
+        QMessageBox.information(self, "Success", "Table restored to its original values.")
+
 
     
     def save_selection_to_file(self):
@@ -361,7 +475,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             self.flag = False
 
 
-    
     def get_selected_filters(self):
         return {
             "API name": self.apiComboBox.currentText(),
@@ -375,7 +488,9 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     """
     def handle_save_rr(self):
         self.temp_rr_path = self.save_temp_table(self.RRTableView, "removal_")
-        self.temp_rr = True
+        self.df_RR = pd.read_csv(self.temp_rr_path, sep=",")
+        #self.temp_rr = True
+        QMessageBox.information(self, "Success", "Removal rate table saved.")
 
     
     """
@@ -405,15 +520,17 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.TCcomboBox.addItems(field_names)
 
     def load_wwtp_table(self):
-        # get the plugin's directory path
-        plugin_dir = os.path.dirname(__file__)
+        # # get the plugin's directory path
+        # plugin_dir = os.path.dirname(__file__)
         
-        if self.temp_rr == True:
-            removal_df = pd.read_csv(self.temp_rr_path)
-        else:
-            removal_file = os.path.join(plugin_dir, "removal_rates.csv")
-            removal_df = pd.read_csv(removal_file)
-            #QgsMessageLog.logMessage(f"Available columns: {removal_df.columns.tolist()}", level=Qgis.Info)
+        # if self.temp_rr == True:
+        #     removal_df = pd.read_csv(self.temp_rr_path)
+        # else:
+        #     removal_file = os.path.join(plugin_dir, "datasets/original_dataset/removal_rates.csv")
+        #     removal_df = pd.read_csv(removal_file)
+        #     #QgsMessageLog.logMessage(f"Available columns: {removal_df.columns.tolist()}", level=Qgis.Info)
+
+        removal_df = self.df_RR
 
         try:
             index = self.WWTPcomboBox.currentIndex()
@@ -463,7 +580,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 # add each API value based on match
                 #QgsMessageLog.logMessage(f"Flag is {self.temp_cons}")
                 for api_name, year, country, region in selections:
-                    df = pd.read_csv(self.temp_consumption_path) if self.temp_cons else self.df     #change the names, confusion can be made
+                    # df = pd.read_csv(self.temp_consumption_path) if self.temp_cons else self.df     #change the names, confusion can be made
+                    df = self.df
                     match = df[
                         (df["API name"] == api_name) &
                         (df["year"].astype(str) == year) &
@@ -473,7 +591,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
                     #QgsMessageLog.logMessage(f"Matching rows for {api_name}, {year}, {country}, {region}:\n{match}", level=Qgis.Info)
 
-                    val = match["API input (mg/inh.a)"].values[0] if not match.empty else ""
+                    val = match["API input (mg/inh./a)"].values[0] if not match.empty else ""
                     api_item = QStandardItem(str(val))
                     #api_item.setFlags(api_item.flags() & ~Qt.ItemIsEditable)
                     api_items.append(api_item)
@@ -522,7 +640,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             return
 
         plugin_dir = os.path.dirname(__file__)
-        save_path = os.path.join(plugin_dir, "wwtp_consumption_table.csv")
+        save_path = os.path.join(plugin_dir, "datasets/custom_dataset/wwtp_consumption_table.csv")
 
         try:
             # extract header
@@ -552,4 +670,5 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     """
     def handle_save_pnec(self):
         self.temp_pnec_path = self.save_temp_table(self.PNECTableView, "PNEC_")
-        self.temp_pnec = True
+        # self.temp_pnec = True
+        QMessageBox.information(self, "Success", "PNEC table saved.")
