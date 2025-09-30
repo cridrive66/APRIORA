@@ -35,11 +35,6 @@ import os
 import joblib
 import pandas as pd
 import numpy as np
-from math import sqrt
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
 from qgis.core import (QgsProcessingAlgorithm,
@@ -62,11 +57,6 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsVectorLayer,
                        edit)
 
-# libraries for hierarchical clustering
-from scipy.stats import spearmanr
-from scipy.cluster import hierarchy
-from scipy.spatial.distance import squareform
-from collections import defaultdict
 
 class CalculateFlow(QgsProcessingAlgorithm):
     """
@@ -246,6 +236,25 @@ class CalculateFlow(QgsProcessingAlgorithm):
         """
         Here is where the processing itself takes place.
         """
+        # import libraries for flow estimation model
+        try:
+            from math import sqrt
+            from sklearn.model_selection import train_test_split
+            from sklearn.preprocessing import StandardScaler
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.metrics import mean_squared_error, r2_score
+            # libraries for hierarchical clustering
+            from scipy.stats import spearmanr
+            from scipy.cluster import hierarchy
+            from scipy.spatial.distance import squareform
+            from collections import defaultdict
+        except ImportError:
+            feedback.reportError(
+                "scikit-learn is required for this tool."
+                "Please install it via OSGeo4W with the command 'python -m pip install scikit-learn'"
+            )
+            raise QgsProcessingException("Missing dependency: scikit-learn")
+
 
         # Retrieve the feature source and sink. The 'dest_id' variable is used
         # to uniquely identify the feature sink, and must be included in the
