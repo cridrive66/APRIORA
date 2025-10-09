@@ -298,7 +298,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
                 ]
 
                 if not match.empty:
-                    value = match.iloc[0]["API input (mg/inh.a)"]
+                    value = match.iloc[0]["API input (mg/inh./a)"]
                     value_float = float(value)
                     api_consumption_values[field_name] = value_float
 
