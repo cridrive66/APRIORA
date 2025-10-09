@@ -35,7 +35,8 @@ import string   # not sure if this library is in PyQgis
 import numpy as np
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
-from qgis.core import (QgsProcessingAlgorithm,
+from qgis.core import (Qgis,
+                       QgsProcessingAlgorithm,
                        QgsProcessing,
                        QgsProcessingException,
                        QgsFeature,
@@ -372,10 +373,22 @@ class Accumulation(QgsProcessingAlgorithm):
         feedback.pushInfo(f"Number of feature split_river_layer: {split_river_layer.featureCount()}")
 
         # the file has geometries that need to be fixed
-        feedback.setProgressText("\nFixing the geometries of the file...")
+        # with MAC, method [1] gives problem so we add method [0] as well
+        # check GEOS version and choose method
+        geos_version_str = Qgis.geosVersion()
+        version_parts = geos_version_str.split('.')[:2] # extract first two numbers, e.g., "3" and "10"
+        major = int(version_parts[0]) #e.g., "3"
+        minor = int(version_parts[1]) #e.g., "10"
+        if major > 3 or (major == 3 and minor >= 10):
+            method = 1
+        else:
+            method = 0
+        feedback.pushInfo(f"GEOS version: {geos_version_str}")
+        feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
+
         fixed_layer = processing.run("native:fixgeometries", {
             'INPUT':split_river_layer,
-            'METHOD':1, # not sure about which method use
+            'METHOD':method,
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
         
