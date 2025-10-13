@@ -195,7 +195,10 @@ class Accumulation(QgsProcessingAlgorithm):
         """
         Here is where the processing itself takes place.
         """
-        selected_api_fields = self.parameterAsStrings(parameters, self.selectedAPI, context)
+        try:
+            selected_api_fields = self.parameterAsStrings(parameters, self.selectedAPI, context)
+        except AttributeError:
+            selected_api_fields = self.parameterAsFields(parameters, self.selectedAPI, context)
         load_original = self.parameterAsVectorLayer(parameters, self.APIload, context)
         river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         id_field = self.parameterAsString(parameters, self.fieldID, context)
