@@ -160,7 +160,10 @@ class RiskAssessment(QgsProcessingAlgorithm):
         Here is where the processing itself takes place.
         """
         river_layer_original = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
-        selected_api_fields = self.parameterAsStrings(parameters, self.selectedAPI, context)
+        try:
+            selected_api_fields = self.parameterAsStrings(parameters, self.selectedAPI, context)
+        except AttributeError:
+            selected_api_fields = self.parameterAsFields(parameters, self.selectedAPI, context)
         custom_selection = self.parameterAsBoolean(parameters, self.custom, context)
         k = self.parameterAsDouble(parameters, self.k_param, context)
         x0 = self.parameterAsDouble(parameters, self.x0_param, context)
