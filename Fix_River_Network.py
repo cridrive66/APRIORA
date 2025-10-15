@@ -227,9 +227,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'TOLERANCE':0.01, # 1cm
             'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
         
-        # add a new column to the catchment layer in order to identify each subcatchment
-        # create a new layer, copy of the subcatchment layer
-        # get CRS and geometry type
         crs = subcatchments_layer_original.crs().authid()
         geom_type = QgsWkbTypes.displayString(subcatchments_layer_original.wkbType())
         # create memory layer
@@ -310,7 +307,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         # extract all the vertices from the subcatchments
         feedback.setProgressText("\nExtracting vertices from the subcatchments...")
         vertices_catch_result = processing.run("native:extractvertices", {
-            'INPUT':parameters[self.catchmentAreas],
+            'INPUT':subcatchments_layer,
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
         # remove duplicates
@@ -574,12 +571,18 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
         
+        subcatchments_layer_fixed = processing.run("native:fixgeometries", {
+            'INPUT':subcatchments_layer,
+            'METHOD':1,
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
+        
 
         # intersection with subcatchments
         feedback.setProgressText("\nCalculating intersection with the subcatchments...")
         intersection_layer = processing.run("native:intersection", {
             'INPUT': again_fixed_layer,
-            'OVERLAY': subcatchments_layer,
+            'OVERLAY': subcatchments_layer_fixed,
             'INPUT_FIELDS':[],
             'OVERLAY_FIELDS':[],
             'OVERLAY_FIELDS_PREFIX':'',

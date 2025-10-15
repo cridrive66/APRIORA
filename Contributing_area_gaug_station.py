@@ -253,8 +253,15 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
     
         # let's join the subcatchment and the river network so we transfer the IDs from the river network
         # to the subcatchments. This is useful for later when we are extracting the subcatchments containing specific IDs
+        # fix geometries
+        subcatchments_layer_fixed = processing.run("native:fixgeometries", {
+            'INPUT':subcatch,
+            'METHOD':1,
+            'OUTPUT':'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
+
         subcat_layer_with_duplicate = processing.run("native:joinattributesbylocation", {
-            'INPUT': subcatch,
+            'INPUT': subcatchments_layer_fixed,
             'PREDICATE':[0],
             'JOIN': waternet,
             'JOIN_FIELDS':['id_catch'],   # instead of "NET_ID", consider using a different id {changed to id_catch}
