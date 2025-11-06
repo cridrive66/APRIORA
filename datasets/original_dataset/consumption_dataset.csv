@@ -1,7 +1,7 @@
 API input (mg/inh./a),API name,CAS No.,year,country,region,data source,integrated excretion rate (%),ATC-Codes included
 26.28,Carbamazepine,298-46-4,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),5,N03AF01
 27.2,Clarithromycin,81103-11-9,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),34,more than 1
-11.38,Diclofenac,15307-86-5,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),1 (o); 94 (t),tbd
+369.65,Diclofenac,15307-86-5,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),1 (o); 94 (t),tbd
 n.d.,Estrone (E1),53-16-7,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),n.d.,tbd
 6.61,Fluconazole,86386-73-4,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),80,tbd
 100.22,Metoprolol,37350-58-6,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),10,tbd
