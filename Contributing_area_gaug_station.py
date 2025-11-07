@@ -254,9 +254,21 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         # let's join the subcatchment and the river network so we transfer the IDs from the river network
         # to the subcatchments. This is useful for later when we are extracting the subcatchments containing specific IDs
         # fix geometries
+        # with MAC, method [1] gives problem so we add method [0] as well
+        # check GEOS version and choose method
+        geos_version_str = Qgis.geosVersion()
+        version_parts = geos_version_str.split('.')[:2] # extract first two numbers, e.g., "3" and "10"
+        major = int(version_parts[0]) #e.g., "3"
+        minor = int(version_parts[1]) #e.g., "10"
+        if major > 3 or (major == 3 and minor >= 10):
+            method = 1
+        else:
+            method = 0
+        feedback.pushInfo(f"GEOS version: {geos_version_str}")
+        feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
         subcatchments_layer_fixed = processing.run("native:fixgeometries", {
             'INPUT':subcatch,
-            'METHOD':1,
+            'METHOD':method,
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
 
