@@ -107,7 +107,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterField(
                 self.connInh,
-                description=self.tr('Select Inhabitants Connected field'),
+                description=self.tr('Select Connected Inhabitants field'),
                 parentLayerParameterName=self.emissionPoints,
                 type=QgsProcessingParameterField.Any
             )
