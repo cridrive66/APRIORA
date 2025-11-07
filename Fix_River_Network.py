@@ -389,10 +389,21 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         feedback.setProgressText(f"Number of features in split_river_layer: {split_river_layer.featureCount()}")
 
         # the file has geometries that need to be fixed
-        feedback.setProgressText("\nFixing the geometries of the file...")
+        # with MAC, method [1] gives problem so we add method [0] as well
+        # check GEOS version and choose method
+        geos_version_str = Qgis.geosVersion()
+        version_parts = geos_version_str.split('.')[:2] # extract first two numbers, e.g., "3" and "10"
+        major = int(version_parts[0]) #e.g., "3"
+        minor = int(version_parts[1]) #e.g., "10"
+        if major > 3 or (major == 3 and minor >= 10):
+            method = 1
+        else:
+            method = 0
+        feedback.pushInfo(f"GEOS version: {geos_version_str}")
+        feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
         fixed_result = processing.run("native:fixgeometries", {
             'INPUT':split_river_layer,
-            'METHOD':1, # not sure about which method use
+            'METHOD':method, 
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)
         fixed_layer = fixed_result["OUTPUT"]
@@ -564,16 +575,27 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         
         # fix geometries from the layer
-        feedback.setProgressText("\nFixing geometries...")
+        # with MAC, method [1] gives problem so we add method [0] as well
+        # check GEOS version and choose method
+        geos_version_str = Qgis.geosVersion()
+        version_parts = geos_version_str.split('.')[:2] # extract first two numbers, e.g., "3" and "10"
+        major = int(version_parts[0]) #e.g., "3"
+        minor = int(version_parts[1]) #e.g., "10"
+        if major > 3 or (major == 3 and minor >= 10):
+            method = 1
+        else:
+            method = 0
+        feedback.pushInfo(f"GEOS version: {geos_version_str}")
+        feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
         again_fixed_layer = processing.run("native:fixgeometries", {
             'INPUT':non_null_geom_layer,
-            'METHOD':1,
+            'METHOD':method,
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
         
         subcatchments_layer_fixed = processing.run("native:fixgeometries", {
             'INPUT':subcatchments_layer,
-            'METHOD':1,
+            'METHOD':method,
             'OUTPUT':'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
         
