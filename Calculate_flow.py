@@ -471,7 +471,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 file_model = os.path.join(save_dir, f"{catchment_name}_{flow}.pkl")
 
                 if not os.path.exists(file_model):
-                    feedback.reportError(f"Pre-trained odel for {catchment_name}_{flow}.pkl not found.")
+                    feedback.reportError(f"Pre-trained model for {catchment_name}_{flow}.pkl not found.")
                     return
                 
                 # load model + scaler
