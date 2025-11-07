@@ -210,7 +210,8 @@ class Accumulation(QgsProcessingAlgorithm):
 
 
         # snapping function that connects the emission load points to the river section
-        tolerance = 100 # 100m
+        tolerance = 500 # 500m
+        feedback.pushInfo(f"\nSnapping the emission point to the closest river section within {tolerance} m.")
         load = processing.run("native:snapgeometries", {
             'INPUT':load_original,
             'REFERENCE_LAYER':river_layer,
@@ -221,10 +222,19 @@ class Accumulation(QgsProcessingAlgorithm):
         # find the closest river section for each emission point
         # create a spatial index for river sections
         river_index = QgsSpatialIndex(river_layer.getFeatures())
+        river_feat_dict = {}
+
+        for feat in river_layer.getFeatures():
+            river_index.addFeature(feat)
+            river_feat_dict[feat.id()] = feat
 
         # dictionary to store
         section_to_points = {}
-
+        # list to store not connected points
+        too_far_points = []
+        
+        feedback.pushInfo("\nChecking if snapping was successfull for all emission points.")
+        
         # go through each emission point
         for point_feat in load.getFeatures():
             point_geom = point_feat.geometry()
@@ -239,14 +249,6 @@ class Accumulation(QgsProcessingAlgorithm):
 
             # # debug: print the actual distance for troubleshooting
             # feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {river_feat[id_field]}")
-
-            # alternative method to find closest river section
-            river_index = QgsSpatialIndex()
-            river_feat_dict = {}
-
-            for feat in river_layer.getFeatures():
-                river_index.addFeature(feat)
-                river_feat_dict[feat.id()] = feat
 
             # create bounding box
             search_rect = point_geom.boundingBox().buffered(tolerance)
@@ -268,22 +270,34 @@ class Accumulation(QgsProcessingAlgorithm):
             
             # check if a river is found
             if not nearest_river:
+                too_far_points.append(point_feat[0])
+                feedback.pushWarning(f"Warning: no river section found within {tolerance}m for point ID {point_feat[0]}")
                 continue
 
             river_geom = nearest_river.geometry()
-            feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {nearest_river[id_field]}")
+            feedback.pushInfo("\nChecking if the snapping process was successfull and each emission point is assigned to the closest river section.")
+            feedback.pushInfo(f"DEBUG: point ID {point_feat[0]} is at a distance {river_geom.distance(point_geom): .6f} from river section {nearest_river[id_field]}")
 
             # double check intersection or proximity
             if river_geom.intersects(point_geom) or river_geom.distance(point_geom) < 1e-6:
                 section_id = nearest_river[id_field]
                 section_to_points.setdefault(section_id, []).append((point_feat, river_geom))
             else:
-               
                 # raise error if point too far after the snapping
                 raise QgsProcessingException(
-                    f"Emission point with id {point_feat.id()} is too far from the closest river section.\n"
+                    f"Emission point with id {point_feat[0]} is too far from the closest river section.\n"
                     f"Please edit the emission point to be within a distance of {tolerance} m."
                 )
+        
+        # report unconnected points
+        if too_far_points:
+            error_message = f"The following emission points are too far from the closest river section: \n"
+            for point_id in too_far_points:
+                error_message += f"- Point {point_id}\n"
+            error_message += f"Please edit the emission point to be within a distance of {tolerance} m."
+
+            raise QgsProcessingException(error_message)
+            
 
         # simple version to print
         for section_id, features in section_to_points.items():
@@ -723,13 +737,41 @@ class Accumulation(QgsProcessingAlgorithm):
             calc_column = np.copy(DataArr[:, 3]).astype(float)
             DataArr[:, 3] = 0.0
 
-            calc_segm = np.where(calc_column > 0)[0].tolist()
+            calc_segm = np.where(calc_column != 0)[0].tolist()
             calc_segm = [i for i in calc_segm if (DataArr[i, 1] != 'unconnected' and DataArr[i,2] != 'unconnected')]
 
             total2 = len(calc_segm)
-            while len(calc_segm) > 0:
+            feedback.pushInfo("Checkpoint A")
+
+            ####
+            # adding some trouble shooting line here
+            ####
+            iteration = 0
+            max_iterations = 10000 #safety limit
+            max_iterations_flag = False
+            last_segments = [] #track recent segments to detect stuck loops
+
+            while len(calc_segm) > 0 and iteration < max_iterations:
+                iteration += 1
                 if feedback.isCanceled():
                     break
+
+                # detection if it is stuck, if it is processing the same segment repeatedly
+                if len(last_segments) > 100:    # keep last 100 segments
+                    last_segments.pop(0)
+                last_segments.append(calc_segm[0] if calc_segm else None)
+
+                # check if it stuck on the same segment
+                if len(set(last_segments)) < 10 and len(last_segments) == 100:
+                    feedback.reportError(f"Stuck loop detected! Repeated segments: {set(last_segments)}")
+                    # convert feature IDs to NET_IDs for selection
+                    net_ids_debug = []
+                    for feature_id in set(last_segments):
+                        net_id_debug = DataArr[feature_id, 0]
+                        net_ids_debug.append(net_id_debug)
+                    feedback.reportError(f"Corresponding NET_IDs to select: {net_ids_debug}")
+                    break
+
                 StartRow = calc_segm[0]
                 amount = calc_column[StartRow] # amount to add to flow path
                 calc_column[StartRow] = 0 #"delete" calculated amount from list (set 0)
@@ -741,6 +783,10 @@ class Accumulation(QgsProcessingAlgorithm):
                 calc_segm = list(set(calc_segm)) #delete duplicate values
                 feedback.setProgress((1-(len(calc_segm)/total2))*100)
 
+            if iteration >= max_iterations:
+                max_iterations_flag = True
+
+            feedback.pushInfo("Checkpoint B")
             # add output field
             # get API name for renaming the field
             api_short = calc_field[:4]
@@ -754,6 +800,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 feedback.reportError(f"Error: field {new_field_name} not found in waternet")
                 continue
 
+            feedback.pushInfo("Checkpoint C")
             waternet.startEditing()
             for i, feature in enumerate(waternet.getFeatures()):
                 # Stop the algorithm if cancel button has been clicked
@@ -767,6 +814,26 @@ class Accumulation(QgsProcessingAlgorithm):
             waternet.commitChanges()
             feedback.setProgressText(self.tr(f"{new_field_name} written successfully"))
 
+        if max_iterations_flag:
+            feedback.reportError(f"Emergency break: exceeded {max_iterations} iterations")
+
+            # check for duplicate NET_ID values that might be causing the loop
+            feedback.reportError(f"Checking for duplicate {id_field} that might cause infinite loops...")
+
+            # collect all NET_ID values
+            values = {}
+            for f in waternet.getFeatures():
+                cid = f[id_field]
+                if cid in values:
+                    values[cid].append(f.id())
+                else:
+                    values[cid] = [f.id()]
+            
+            # report duplicates
+            for cid, fids in values.items():
+                if len(fids) > 1:
+                    feedback.reportError(f"Duplicate NET_ID {cid} found in features {fids}")
+                    
 
         """
         Calculate concentration in each river section
@@ -774,7 +841,7 @@ class Accumulation(QgsProcessingAlgorithm):
 
         # conversion factor: from kg/year and m^3/s to ng/L
         # convert m^3/s in L/a
-        conversion_flow = 1000*31_536_000 # L in 1 m^3/s and second in a year
+        conversion_flow = 1000*31_536_000 # L in 1 m^3 and second in a year
         # convert kg/a in ng/a
         conversion_load = 1_000_000_000_000
         # total conversion
@@ -809,7 +876,7 @@ class Accumulation(QgsProcessingAlgorithm):
             flow_mean = feature[idx_mean_flow]
             flow_low = feature[idx_low_flow]
 
-            if not flow_mean or flow_mean == 0 or not flow_low or flow_low == 0:
+            if flow_mean == 0 or flow_low == 0:
                 continue # skip to avoid division by zero
 
             for api_field in selected_api_fields:
