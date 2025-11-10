@@ -32,7 +32,6 @@ __revision__ = '$Format:%H$'
 
 import processing
 import os
-import joblib
 import pandas as pd
 import numpy as np
 from PyQt5.QtCore import QVariant
@@ -243,6 +242,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             from sklearn.preprocessing import StandardScaler
             from sklearn.ensemble import RandomForestRegressor
             from sklearn.metrics import mean_squared_error, r2_score
+            import joblib
             # libraries for hierarchical clustering
             from scipy.stats import spearmanr
             from scipy.cluster import hierarchy
