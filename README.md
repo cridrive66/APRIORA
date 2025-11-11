@@ -21,4 +21,5 @@ The purpose of this set of tools is to estimate mean flow and mean low flow at a
 
 ## Development / Funding
 If you have any suggestions for improvements feel free to write an issue or create a fork.
-The plugin is being developed under the project [APRIORA](https://interreg-baltic.eu/project/apriora/), funded by Interreg + European Union, grant number (*cannot find it*).
+The plugin is being developed under the project [APRIORA](https://interreg-baltic.eu/project/apriora/). This project is funded by the Interreg Baltic Sea Region
+Programme. Co-founded by the European Union (ERDF), this #MadeWithInterreg project helps to remove pollutants from our waters.
