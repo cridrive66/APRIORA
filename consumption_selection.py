@@ -61,7 +61,7 @@ class ConsumptionSelection:
 
         # Declare instance attributes
         self.actions = []
-        self.menu = self.tr(u'&Consumption Selection')
+        self.menu = self.tr(u'&5 - API parameter selection')
 
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
@@ -167,12 +167,12 @@ class ConsumptionSelection:
         icon_path = os.path.join(plugin_dir, 'icon.png')
         
         # create a custom toolbar
-        self.toolbar = self.iface.addToolBar('Consumption Selection')
-        self.toolbar.setObjectName('ConsumptionSelectionToolbar')
+        self.toolbar = self.iface.addToolBar('5 - API parameter selection')
+        self.toolbar.setObjectName('APIParametersToolbar')
 
         action = self.add_action(
             icon_path,
-            text=self.tr(u'Consumption Selection'),
+            text=self.tr(u'5 - API parameter selection'),
             callback=self.run,
             parent=self.iface.mainWindow(),
             add_to_toolbar=False
@@ -188,7 +188,7 @@ class ConsumptionSelection:
         """Removes the plugin menu item and icon from QGIS GUI."""
         for action in self.actions:
             self.iface.removePluginMenu(
-                self.tr(u'&Consumption Selection'),
+                self.tr(u'&5 - API parameter selection'),
                 action)
             if self.toolbar is not None:
                 self.iface.removeToolBarIcon(action)

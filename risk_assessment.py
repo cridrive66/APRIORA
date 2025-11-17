@@ -78,8 +78,21 @@ class RiskAssessment(QgsProcessingAlgorithm):
     dest_id = None
 
     def shortHelpString(self):
-        return self.tr(""" This tool performs the risk assessment of different APIs in a river network.
-        """)
+        return self.tr(
+            """ 
+            This tool calculates the final risk of different APIs for each river section. In addition to individual \
+            PNEC calculations, a cumulative Risk Quotient (RQ) coefficient is calculated to provide an overall assessment \
+            when multiple APIs are selected. This single value summarizes the combined risk from all tested substances in \
+            each river section, giving the user a quick, comprehensive view of the situation.
+            Workflow:
+            1. Choose river_accumulation.shp as input for River accumulation
+            2. Select the fields containing the concentration of APIs for the risk assessment. This selection should \
+                include only columns containing concentrations in ng/L.
+            3. If you added custom PNEC values from the '5 - API parameter selection' tool, flag the next box, otherwise leave it empty
+            4. Click on Run
+
+                       
+            """)
     
     #Init tool
     def initAlgorithm(self, config):
@@ -91,7 +104,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
-                self.tr('River network'),
+                self.tr('River accumulation'),
                 [QgsProcessing.TypeVectorLine],
                 defaultValue = QgsProject.instance().mapLayersByName("River accumulation")[0].id() if QgsProject.instance().mapLayersByName("River accumulation") else None
             )
@@ -113,7 +126,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.custom,
-                self.tr('Use the custom PNEC values from "Consumption Selection" tool'),
+                self.tr('Use the custom PNEC values from "5 - API parameter selection" tool'),
                 defaultValue=False
             )
         )
@@ -376,7 +389,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
         #     sink_layer.triggerRepaint()
 
         if sink_layer:
-            style_path = os.path.join(os.path.dirname(__file__), 'styles/risk assessment.qml')
+            style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_v2.qml')
             sink_layer.loadNamedStyle(style_path)
             sink_layer.triggerRepaint()
 
@@ -392,7 +405,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return '7 - Risk Assessment'
+        return '8 - Risk Assessment'
 
     def displayName(self):
         """
@@ -417,6 +430,10 @@ class RiskAssessment(QgsProcessingAlgorithm):
         formatting characters.
         """
         return 'API emission'
+    
+    def helpUrl(self):
+        # Return a URL or local file path to your documentation
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/Risk_assessment.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

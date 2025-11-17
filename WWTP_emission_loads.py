@@ -65,7 +65,15 @@ class EmissionLoads(QgsProcessingAlgorithm):
     OUTPUT = 'OUTPUT'
 
     def shortHelpString(self):
-        return self.tr(""" This tool calculates the emission load of certain APIs (Active Pharmaceutical Ingredients) at the WWTP (WasteWater Treatment Plant) emission points.
+        return self.tr(""" 
+            This tool calculates the load of previously selected APIs (Active Pharmaceutical Ingredients) from '5 - API parameter selection' at each WWTP \
+            (Waste Water Treatment Plant) within a catchment. The plugin retrieves the technical class assigned to each WWTP and identifies the \
+            corresponding removal rate for each API from the data pool. 
+            Workflow:
+            1. Under 'Emission Points of WWTP' select the point shapefile containing the WWTPs. 
+            2. Then, select the correct field for 'ID', 'Name', 'Connected Inhabitants' and 'Technology Class'.
+            3. If you created a custom table from the '5 - API parameter selection' tool, flag the next box, otherwise leave it empty.
+            4. Click on 'Run'.
         """)
 
     #Init tool
@@ -126,7 +134,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.custom,
-                self.tr('Use the custom table from "Consumption Selection" tool'),
+                self.tr('Use the custom table from "5 - API parameter selection" tool'),
                 defaultValue=False
             )
         )
@@ -376,7 +384,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return '5 - Emission Loads'
+        return '6 - Emission Loads'
 
     def displayName(self):
         """
@@ -401,6 +409,10 @@ class EmissionLoads(QgsProcessingAlgorithm):
         formatting characters.
         """
         return 'API emission'
+    
+    def helpUrl(self):
+        # Return a URL or local file path to your documentation
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/Emission_Load.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

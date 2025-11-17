@@ -79,8 +79,24 @@ class Accumulation(QgsProcessingAlgorithm):
     OUTPUT = 'OUTPUT'
 
     def shortHelpString(self):
-        return self.tr(""" This tool calculates the concentration of certain APIs (Active Pharmaceutical Ingredients) at the emission points and how they accumulate in a river network.
-        """)
+        return self.tr(
+            """ 
+            This tool combines the output of '4 - Flow Estimation' with the output of '6 - Emission Loads'. In this part, the load of the \
+            selected APIs is transferred to the river network and the concentration for mean flow and mean low flow condition is calculated.
+            Workflow:
+            1. Choose 'emission_loads.shp' as input for 'API load'
+            2. Select the fields contanining APIs to accumulate. This selection should include only columns containing load of APIs in kg/a.
+            3. Choose 'river_level.shp' as input for 'River network'.
+            4. Select the correct field of 'river_level.shp'. In case is the output of '4 - Flow Estimation', fill as follow:
+                - ID Field -> NET_ID
+                - Next Field -> NET_TO
+                - Mean Flow -> Mean_Flow
+                - Acc. Mean Flow -> calc_Mean_
+                - Mean Low Flow -> M_Low_Flow
+                - Acc. Mean Low Flow -> calc_M_Low
+            5. Click on 'Run'
+            
+            """)
 
     #Init tool
     def initAlgorithm(self, config):
@@ -925,7 +941,7 @@ class Accumulation(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return '6 - Accumulation'
+        return '7 - Accumulation'
 
     def displayName(self):
         """
@@ -950,6 +966,10 @@ class Accumulation(QgsProcessingAlgorithm):
         formatting characters.
         """
         return 'API emission'
+    
+    def helpUrl(self):
+        # Return a URL or local file path to your documentation
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/Accumulation.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

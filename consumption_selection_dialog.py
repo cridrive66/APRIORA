@@ -30,8 +30,8 @@ from qgis.core import QgsProject, QgsMapLayer, QgsWkbTypes, QgsMessageLog, Qgis 
 from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets
 from PyQt5.QtWidgets import QMessageBox, QStyle # add all the import here instead of using the previous line
-from PyQt5.QtGui import QStandardItemModel, QStandardItem
-from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QStandardItemModel, QStandardItem, QDesktopServices
+from PyQt5.QtCore import Qt, QUrl
 
 # This loads your .ui file so that PyQt can populate your plugin with the elements from Qt Designer
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -245,6 +245,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             )
         )
         self.saveButton_1.clicked.connect(self.handle_save_consumption)
+        self.help_tab1.clicked.connect(
+            lambda: QDesktopServices.openUrl(
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#consumption-data")
+                )
+            )
         
         # tab 2
         self.addButton_tab2.clicked.connect(lambda: self.add_row_to_table(self.RRTableView))
@@ -255,6 +260,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             )
         )
         self.saveButton_2.clicked.connect(self.handle_save_rr)
+        self.help_tab2.clicked.connect(
+            lambda: QDesktopServices.openUrl(
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#removal-rate")
+                )
+            )
 
         # tab 3
         self.WWTPcomboBox.currentIndexChanged.connect(self.update_field_combos)
@@ -263,6 +273,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.reloadButton_3.clicked.connect(self.populate_layer_combo)
         self.restoreButton_3.clicked.connect(self.load_wwtp_table)
         self.saveButton.clicked.connect(self.save_wwtp_table_to_csv)
+        self.help_tab3.clicked.connect(
+            lambda: QDesktopServices.openUrl(
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#custom-table")
+                )
+            )
 
         # tab 4
         self.addButton_tab4.clicked.connect(lambda: self.add_row_to_table(self.PNECTableView))
@@ -273,6 +288,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             )
         )
         self.saveButton_tab4.clicked.connect(self.handle_save_pnec)
+        self.help_tab4.clicked.connect(
+            lambda: QDesktopServices.openUrl(
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#pnec-values")
+                )
+            )
 
 
     def update_filters(self):
