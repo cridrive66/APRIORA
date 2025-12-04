@@ -12,8 +12,8 @@ email=cristiano.guidi2@uni-rostock.de
 
 about=This plugin contains a series of tools divided into two subgroups: Flow Estimation and API emission. Flow estimation -> useful to estimate annual mean flow and annual mean low flow in ungauged subcatchments. API emission -> calculate the load of API from waste water treatment plants and their concentration in the river network.
 
-tracker=http://bugs
-repository=http://repo
+tracker=https://github.com/cridrive66/APRIORA/issues
+repository=https://github.com/cridrive66/APRIORA
 # End of mandatory metadata
 
 # Recommended items:
