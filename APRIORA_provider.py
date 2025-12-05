@@ -30,7 +30,9 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 
 __revision__ = '$Format:%H$'
 
+import os
 from qgis.core import QgsProcessingProvider
+from PyQt5.QtGui import QIcon 
 from .Calculate_geofactors import CalculateGeofactors
 from .Calculate_flow import CalculateFlow
 from .Fix_River_Network import FixRiverNetwork
@@ -92,7 +94,9 @@ class APRIORAProvider(QgsProcessingProvider):
         Should return a QIcon which is used for your provider inside
         the Processing toolbox.
         """
-        return QgsProcessingProvider.icon(self)
+        plugin_dir = os.path.dirname(__file__)
+        icon_path = os.path.join(plugin_dir, 'icon.png')
+        return QIcon(icon_path)
 
     def longName(self):
         """
