@@ -562,15 +562,15 @@ class Accumulation(QgsProcessingAlgorithm):
         original_flows = {}
 
         for feat in non_null_geom_layer.getFeatures():
-            net_id = feat[id_field]
-            base_id = ''.join(filter(str.isdigit, str(net_id)))
+            net_id = str(feat[id_field])
+            base_id = ''.join(filter(str.isdigit, net_id))
 
             if base_id not in split_groups:
                 split_groups[base_id] = []
 
             geom = feat.geometry()
             length = geom.length()
-            split_groups[base_id].append((feat.id(), length))
+            split_groups[base_id].append((feat.id(), length, net_id))
 
             # save the original flow
             if base_id not in original_flows:
@@ -589,14 +589,18 @@ class Accumulation(QgsProcessingAlgorithm):
         
         # update flow using proportional length
         for base_id, parts in split_groups.items():
-            parts = sorted(parts, key=lambda x: x[1])
+            # skip if not split
+            if len(parts) == 1:
+                continue
+            
+            # sort by NET_ID
+            parts = sorted(parts, key=lambda x: x[2])
 
-            total_length = sum(length for _, length in parts)
+            total_length = sum(length for _, length, _ in parts)
             if total_length == 0:
                 continue
 
             # get mean flow values from first feature
-            base_features = [non_null_geom_layer.getFeature(fid) for fid, _ in parts]
             acc_end = original_flows[base_id]['acc_mean_flow']
             mean_total = original_flows[base_id]['mean_flow']
             acc_start = acc_end - mean_total
@@ -609,7 +613,7 @@ class Accumulation(QgsProcessingAlgorithm):
             # cumulative length to distribute flow
             cumulative = 0
             cumulative_low = 0
-            for feat_id, part_length in parts:
+            for feat_id, part_length, net_id in parts:
                 feat = non_null_geom_layer.getFeature(feat_id)
                 cumulative += part_length
                 ratio = cumulative/total_length
