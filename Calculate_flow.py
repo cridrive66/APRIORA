@@ -393,7 +393,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 # prepare the data: divide into train and test set
                 # scale the data
                 scaler = StandardScaler()
-                x_train, x_test, y_train, y_test = train_test_split(x_nc, y, test_size=0.2, random_state=42)
+                x_train, x_test, y_train, y_test = train_test_split(x_nc, y, test_size=0.4, random_state=42)
                 x_train = scaler.fit_transform(x_train) 
                 x_test = scaler.transform(x_test)
 
