@@ -76,6 +76,7 @@ class Accumulation(QgsProcessingAlgorithm):
     MNQ = "MNQ"
     accmeanFlow = "AccMeanFlow"
     accMNQ = "AccMNQ"
+    monPoint = "MonPoint"
     OUTPUT = 'OUTPUT'
 
     def shortHelpString(self):
@@ -195,6 +196,15 @@ class Accumulation(QgsProcessingAlgorithm):
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.monPoint,
+                self.tr('Monitoring Point'),
+                [QgsProcessing.TypeVectorPoint],
+                optional=True
+            )
+        )
+
 
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
@@ -223,6 +233,7 @@ class Accumulation(QgsProcessingAlgorithm):
         acc_MQ_field = self.parameterAsString(parameters, self.accmeanFlow, context)
         MNQ_field = self.parameterAsString(parameters, self.MNQ, context)
         acc_MNQ_field = self.parameterAsString(parameters, self.accMNQ, context)
+        mon_point = self.parameterAsVectorLayer(parameters, self.monPoint, context)
 
 
         # snapping function that connects the emission load points to the river section
