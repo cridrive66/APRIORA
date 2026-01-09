@@ -78,6 +78,7 @@ class Accumulation(QgsProcessingAlgorithm):
     accMNQ = "AccMNQ"
     monPoint = "MonPoint"
     OUTPUT = 'OUTPUT'
+    OUTPUT_mon = 'OUTPUT_mon'
 
     def shortHelpString(self):
         return self.tr(
@@ -217,6 +218,16 @@ class Accumulation(QgsProcessingAlgorithm):
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterFeatureSink(
+                self.OUTPUT_mon,
+                self.tr('Monitoring station with modelled values'),
+                QgsProcessing.TypeVectorPoint,
+                optional=True,
+                createByDefault=False
+            )
+        )
+
     def processAlgorithm(self, parameters, context, feedback):
         """
         Here is where the processing itself takes place.
@@ -236,11 +247,31 @@ class Accumulation(QgsProcessingAlgorithm):
         mon_point = self.parameterAsVectorLayer(parameters, self.monPoint, context)
 
 
+        # check if there are monitoring station points
+        # if there are, they are merged with emission load points and snapped together to the river section
+        mon_field_names = []  # store monitoring-specific field names for later identification
+        if mon_point is not None and mon_point.featureCount() > 0:  # be sure layer exist and is not null
+            # get the CRS from load_original layer
+            load_crs = load_original.crs()
+            # capture monitoring field names (those unique to monitoring layer)
+            load_field_names = set(f.name() for f in load_original.fields())
+            mon_field_names = [f.name() for f in mon_point.fields() if f.name() not in load_field_names]
+            # merge the shapefiles
+            load_file = processing.run("native:mergevectorlayers", {
+                'LAYERS':[load_original, mon_point],
+                'CRS':load_crs,
+                'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
+            
+        else:
+            load_file = load_original
+            if mon_point is not None: # layer exists but is empty
+                feedback.pushWarning("Monitoring point layer provided but has no features, ignoring it...")
+        
         # snapping function that connects the emission load points to the river section
         tolerance = 500 # 500m
         feedback.pushInfo(f"\nSnapping the emission point to the closest river section within {tolerance} m.")
         load = processing.run("native:snapgeometries", {
-            'INPUT':load_original,
+            'INPUT':load_file,
             'REFERENCE_LAYER':river_layer,
             'TOLERANCE':tolerance,
             'BEHAVIOR':1,
@@ -297,8 +328,16 @@ class Accumulation(QgsProcessingAlgorithm):
             
             # check if a river is found
             if not nearest_river:
-                too_far_points.append(point_feat[0])
-                feedback.pushWarning(f"Warning: no river section found within {tolerance}m for point ID {point_feat[0]}")
+                # try to identify if it's a monitoring point by checking first non-NULL monitoring field
+                point_id = point_feat[0]
+                if mon_field_names:
+                    for field_name in mon_field_names:
+                        val = point_feat[field_name]
+                        if val is not None and str(val).strip():
+                            point_id = f"{field_name}: {val}"
+                            break
+                too_far_points.append(point_id)
+                feedback.pushWarning(f"Warning: no river section found within {tolerance}m for point {point_id}")
                 continue
 
             river_geom = nearest_river.geometry()
@@ -311,9 +350,17 @@ class Accumulation(QgsProcessingAlgorithm):
                 section_to_points.setdefault(section_id, []).append((point_feat, river_geom))
             else:
                 # raise error if point too far after the snapping
+                # try to identify if it's a monitoring point
+                point_id = point_feat[0]
+                if mon_field_names:
+                    for field_name in mon_field_names:
+                        val = point_feat[field_name]
+                        if val is not None and str(val).strip():
+                            point_id = f"{field_name}: {val}"
+                            break
                 raise QgsProcessingException(
-                    f"Emission point with id {point_feat[0]} is too far from the closest river section.\n"
-                    f"Please edit the emission point to be within a distance of {tolerance} m."
+                    f"Point {point_id} is too far from the closest river section.\n"
+                    f"Please edit this point to be within a distance of {tolerance} m."
                 )
         
         # report unconnected points
@@ -943,6 +990,177 @@ class Accumulation(QgsProcessingAlgorithm):
         # add to the sink
         for feature in waternet.getFeatures():
             sink.addFeature(feature)
+
+
+        if mon_point is not None and mon_point.featureCount() > 0:  # be sure layer exist and is not null
+            # get the CRS from load_original layer
+            load_crs = load_original.crs()
+            # create a new layer, copy of the monitoring station points
+            
+            if mon_point.crs().authid() != load_crs.authid:
+                mon_point_copy = processing.run("native:reprojectlayer", {
+                    'INPUT':mon_point,
+                    'TARGET_CRS':load_crs,
+                    'CONVERT_CURVED_GEOMETRIES':False,
+                    'OPERATION':'+proj=noop',
+                    'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
+                
+            else:
+                # get CRS and geometry type
+                crs = mon_point.crs().authid()
+                geom_type = QgsWkbTypes.displayString(mon_point.wkbType())
+                # create memory layer
+                mon_point_copy = QgsVectorLayer(f"{geom_type}?crs={crs}", "mon_point_copy", "memory")
+                provider = mon_point_copy.dataProvider()
+                # copy all fields
+                provider.addAttributes(mon_point.fields())
+                mon_point_copy.updateFields()
+                # copy all features
+                features = []
+                for feat in mon_point.getFeatures():
+                    new_feat = QgsFeature(feat)
+                    features.append(new_feat)
+                provider.addFeatures(features)
+                mon_point_copy.updateExtents()
+
+            # --- Copy concentration values from nearest waternet segments ---
+            # Ensure the monitoring layer has concentration fields
+            mon_provider = mon_point_copy.dataProvider()
+            existing_mon_fields = [f.name() for f in mon_point_copy.fields()]
+            new_mon_fields = []
+            for api_field in selected_api_fields:
+                api_short = api_field[:4]
+                conc_mean = f"conc_{api_short}"
+                conc_low = f"conL_{api_short}"
+                if conc_mean not in existing_mon_fields:
+                    new_mon_fields.append(QgsField(conc_mean, QVariant.Double))
+                if conc_low not in existing_mon_fields:
+                    new_mon_fields.append(QgsField(conc_low, QVariant.Double))
+            if new_mon_fields:
+                mon_provider.addAttributes(new_mon_fields)
+                mon_point_copy.updateFields()
+
+            # Build spatial index on the (final) river network with concentrations
+            tolerance = 500  # meters
+            water_index = QgsSpatialIndex(waternet.getFeatures())
+
+            mon_point_copy.startEditing()
+            for mon_feat in mon_point_copy.getFeatures():
+                if mon_feat.geometry() is None:
+                    continue
+                mon_geom = mon_feat.geometry()
+
+                # Search candidates within buffered bbox first
+                search_rect = mon_geom.boundingBox().buffered(tolerance)
+                candidate_ids = water_index.intersects(search_rect)
+
+                # If not enough candidates, ask for nearest neighbors (max 2)
+                if len(candidate_ids) < 2:
+                    try:
+                        pt = mon_geom.asPoint()
+                        nn = water_index.nearestNeighbor(pt, 2)
+                    except Exception:
+                        nn = []
+                    # keep order but avoid duplicates
+                    for x in nn:
+                        if x not in candidate_ids:
+                            candidate_ids.append(x)
+
+                # compute distances and pick the closest two (if present)
+                candidates = []
+                for fid in candidate_ids:
+                    try:
+                        wfeat = waternet.getFeature(fid)
+                    except Exception:
+                        wfeat = None
+                    if wfeat is None:
+                        continue
+                    try:
+                        dist = wfeat.geometry().distance(mon_geom)
+                    except Exception:
+                        dist = float('inf')
+                    candidates.append((fid, dist))
+
+                if not candidates:
+                    continue
+
+                candidates = sorted(candidates, key=lambda x: x[1])
+
+                # Choose the correct river section:
+                # - if only one candidate -> pick it
+                # - if two and they share the same numeric base NET_ID -> pick the one with the smaller suffix letter
+                # - otherwise pick the closest
+                chosen_fid = None
+                if len(candidates) == 1:
+                    chosen_fid = candidates[0][0]
+                else:
+                    fid1 = candidates[0][0]
+                    fid2 = candidates[1][0]
+                    f1 = waternet.getFeature(fid1)
+                    f2 = waternet.getFeature(fid2)
+                    id1 = str(f1[id_field])
+                    id2 = str(f2[id_field])
+                    base1 = ''.join(filter(str.isdigit, id1))
+                    base2 = ''.join(filter(str.isdigit, id2))
+                    if base1 == base2:
+                        suf1 = id1.replace(base1, "")
+                        suf2 = id2.replace(base2, "")
+                        # lexicographic compare (empty suffix sorts before letters)
+                        if suf1 <= suf2:
+                            chosen_fid = fid1
+                        else:
+                            chosen_fid = fid2
+                    else:
+                        chosen_fid = candidates[0][0]
+
+                if chosen_fid is None:
+                    continue
+
+                chosen_feat = waternet.getFeature(chosen_fid)
+
+                # Copy concentration attributes for each selected API
+                for api_field in selected_api_fields:
+                    api_short = api_field[:4]
+                    conc_mean = f"conc_{api_short}"
+                    conc_low = f"conL_{api_short}"
+
+                    # only set if both source and dest fields exist
+                    if conc_mean in [f.name() for f in waternet.fields()] and conc_mean in [f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_mean), chosen_feat[conc_mean])
+                    if conc_low in [f.name() for f in waternet.fields()] and conc_low in [f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_low), chosen_feat[conc_low])
+
+                mon_point_copy.updateFeature(mon_feat)
+            mon_point_copy.commitChanges()
+
+            # prepare the output sink for monitoring points
+            (mon_sink, mon_dest_id) = self.parameterAsSink(
+                parameters,
+                self.OUTPUT_mon,
+                context,
+                mon_point_copy.fields(),
+                mon_point_copy.wkbType(),
+                mon_point_copy.sourceCrs()
+            )
+
+            # add to the sink if a sink was created; otherwise warn the user
+            if mon_sink is None:
+                feedback.pushWarning(
+                    "\nMonitoring output is set to 'Skip output'. Monitoring point results will not be saved. "
+                    "Choose 'Save to temporary layer' or provide a file to store monitoring results.\n"
+                )
+                # return only the river output
+                return {self.OUTPUT: dest_id}
+            else:
+                for feature in mon_point_copy.getFeatures():
+                    mon_sink.addFeature(feature)
+
+                return {self.OUTPUT_mon: mon_dest_id,
+                        self.OUTPUT: dest_id}
+            
+        else:
+            if mon_point is not None: # layer exists but is empty
+                feedback.pushWarning("\nMonitoring point layer provided but has no features, ignoring it...\n")
 
         return {self.OUTPUT: dest_id}
 
