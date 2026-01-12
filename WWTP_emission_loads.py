@@ -180,8 +180,6 @@ class EmissionLoads(QgsProcessingAlgorithm):
         plugin_dir = os.path.dirname(__file__)
         selection_file = os.path.join(plugin_dir, "user_selection.txt")
         #excel_file = os.path.join(plugin_dir, "B2_input.xlsx")
-        cons_file = os.path.join(plugin_dir, "datasets/original_dataset/consumption_dataset.csv")
-        removal_file = os.path.join(plugin_dir, "datasets/original_dataset/removal_rates.csv")
         custom_table = os.path.join(plugin_dir, "datasets/custom_dataset/wwtp_consumption_table.csv")
 
         # read and show content
@@ -282,6 +280,19 @@ class EmissionLoads(QgsProcessingAlgorithm):
 
 
         if not custom_selection:
+            # Prefer custom CSVs in datasets/custom_dataset if they exist,
+            # otherwise fall back to the original_dataset files.
+            orig_cons = os.path.join(plugin_dir, "datasets/original_dataset/consumption_dataset.csv")
+            orig_removal = os.path.join(plugin_dir, "datasets/original_dataset/removal_rates.csv")
+            custom_cons = os.path.join(plugin_dir, "datasets/custom_dataset/consumption_.csv")
+            custom_removal = os.path.join(plugin_dir, "datasets/custom_dataset/removal_.csv")
+
+            cons_file = custom_cons if os.path.exists(custom_cons) else orig_cons
+            removal_file = custom_removal if os.path.exists(custom_removal) else orig_removal
+
+            feedback.pushInfo(f"Using consumption file: {cons_file}")
+            feedback.pushInfo(f"Using removal file: {removal_file}")
+
             # retrieve the consumption data and removal rate from our database
             try:
                 df = pd.read_csv(cons_file, sep=",")
