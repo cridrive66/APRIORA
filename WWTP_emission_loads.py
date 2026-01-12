@@ -61,6 +61,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
     nameWwtp = "name_wwtp"
     connInh = "conn_inh"
     techClass = "tech_class"
+    # outflow = "outflow"
     custom = "custom"
     OUTPUT = 'OUTPUT'
 
@@ -130,6 +131,18 @@ class EmissionLoads(QgsProcessingAlgorithm):
                 type=QgsProcessingParameterField.Any
             )
         )
+
+        # # WWTP flow needed to calculate dilution rate
+        # self.addParameter(
+        #     QgsProcessingParameterField(
+        #         self.outflow,
+        #         description=self.tr('Select outflow in [m^3/s] field'),
+        #         parentLayerParameterName=self.emissionPoints,
+        #         type=QgsProcessingParameterField.Any,
+        #         optional=True
+        #     )
+        # )
+
 
         self.addParameter(
             QgsProcessingParameterBoolean(
