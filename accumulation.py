@@ -973,9 +973,6 @@ class Accumulation(QgsProcessingAlgorithm):
             flow_mean = feature[idx_mean_flow]
             flow_low = feature[idx_low_flow]
 
-            if flow_mean == 0 or flow_low == 0:
-                continue # skip to avoid division by zero
-
             for api_field in selected_api_fields:
                 api_short = api_field[:4]
                 acc_field = f"acc_{api_short}"
@@ -987,11 +984,15 @@ class Accumulation(QgsProcessingAlgorithm):
                 conc_field_mean = f"conc_{api_short}"
                 conc_field_low = f"conL_{api_short}"
 
-                conc_mean = (acc_value * conversion_factor)/flow_mean
-                conc_low = (acc_value * conversion_factor)/flow_low
-
-                feature.setAttribute(conc_field_mean, conc_mean)
-                feature.setAttribute(conc_field_low, conc_low)
+                # Calculate mean concentration only if flow_mean is non-zero
+                if flow_mean != 0:
+                    conc_mean = (acc_value * conversion_factor)/flow_mean
+                    feature.setAttribute(conc_field_mean, conc_mean)
+                
+                # Calculate low concentration only if flow_low is non-zero
+                if flow_low != 0:
+                    conc_low = (acc_value * conversion_factor)/flow_low
+                    feature.setAttribute(conc_field_low, conc_low)
 
             waternet.updateFeature(feature)
         waternet.commitChanges()
