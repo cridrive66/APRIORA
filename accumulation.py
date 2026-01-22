@@ -157,15 +157,7 @@ class Accumulation(QgsProcessingAlgorithm):
             )
         )
 
-        self.addParameter(
-            QgsProcessingParameterField(
-                self.meanFlow,
-                self.tr("Mean Flow"),
-                parentLayerParameterName = self.riverNetwork,
-                defaultValue = 'Mean_Flow',
-                type = QgsProcessingParameterField.Any,
-            )
-        )
+        # Note: `Mean Flow` input removed. Using accumulated mean flow to compute section mean flow.
 
         self.addParameter(
             QgsProcessingParameterField(
@@ -177,16 +169,7 @@ class Accumulation(QgsProcessingAlgorithm):
             )
         )
 
-        self.addParameter(
-            QgsProcessingParameterField(
-                self.MNQ,
-                self.tr("Mean Low Flow"),
-                parentLayerParameterName = self.riverNetwork,
-                defaultValue = 'M_Low_Flow',
-                type = QgsProcessingParameterField.Any,
-            )
-        )
-
+        # Note: `Mean Low Flow` input removed. Using accumulated low flow to compute section low flow.
         self.addParameter(
             QgsProcessingParameterField(
                 self.accMNQ,
@@ -240,9 +223,7 @@ class Accumulation(QgsProcessingAlgorithm):
         river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         id_field = self.parameterAsString(parameters, self.fieldID, context)
         to_field = self.parameterAsString(parameters, self.fieldNext, context)
-        MQ_field = self.parameterAsString(parameters, self.meanFlow, context)
         acc_MQ_field = self.parameterAsString(parameters, self.accmeanFlow, context)
-        MNQ_field = self.parameterAsString(parameters, self.MNQ, context)
         acc_MNQ_field = self.parameterAsString(parameters, self.accMNQ, context)
         mon_point = self.parameterAsVectorLayer(parameters, self.monPoint, context)
 
@@ -615,7 +596,45 @@ class Accumulation(QgsProcessingAlgorithm):
 
         # 5. after building the correct river section relationships, we need to update the flow estimation and scale it
         # based on the section_length/total_section_length
+        # Compute per-section (non-accumulated) mean and low flows from accumulated fields.
+        # For a section: mean_flow = acc_mean_flow(section) - sum(acc_mean_flow(children whose NET_TO == section))
+        # This avoids requiring the user to provide single-section flow values.
+
+        # Build mapping NET_TO -> list of feature objects for fast lookup
+        children_map = {}
+        for f in non_null_geom_layer.getFeatures():
+            to_val = str(f[to_field]) if f[to_field] is not None else ''
+            children_map.setdefault(to_val, []).append(f)
+
+        # compute per-feature mean (non-accumulated) flows
+        computed_mean = {}
+        computed_low = {}
+        for f in non_null_geom_layer.getFeatures():
+            net_id_val = str(f[id_field])
+            acc_mean_val = f[acc_MQ_field] if f[acc_MQ_field] is not None else 0.0
+            acc_low_val = f[acc_MNQ_field] if f[acc_MNQ_field] is not None else 0.0
+            upstream_children = children_map.get(net_id_val, [])
+            sum_up_acc = sum([c[acc_MQ_field] if c[acc_MQ_field] is not None else 0.0 for c in upstream_children])
+            sum_up_low = sum([c[acc_MNQ_field] if c[acc_MNQ_field] is not None else 0.0 for c in upstream_children])
+            # computed mean for this exact NET_ID string
+            computed_mean[net_id_val] = acc_mean_val - sum_up_acc
+            computed_low[net_id_val] = acc_low_val - sum_up_low
         # group split features by base section ID
+        # define per-section (non-accumulated) field names and ensure they exist
+        MQ_field = 'Mean_Flow'
+        MNQ_field = 'M_Low_Flow'
+
+        provider = non_null_geom_layer.dataProvider()
+        existing_field_names = [f.name() for f in non_null_geom_layer.fields()]
+        fields_to_add = []
+        if MQ_field not in existing_field_names:
+            fields_to_add.append(QgsField(MQ_field, QVariant.Double))
+        if MNQ_field not in existing_field_names:
+            fields_to_add.append(QgsField(MNQ_field, QVariant.Double))
+        if fields_to_add:
+            provider.addAttributes(fields_to_add)
+            non_null_geom_layer.updateFields()
+
         split_groups = {}       # it is collecting ALL the features instead of only the ones that have been split, change it
         original_flows = {}
 
@@ -630,19 +649,19 @@ class Accumulation(QgsProcessingAlgorithm):
             length = geom.length()
             split_groups[base_id].append((feat.id(), length, net_id))
 
-            # save the original flow
+            # save the original (computed) flow values using accumulated inputs
             if base_id not in original_flows:
+                # prefer computed per-NET_ID values; fallback to feature attribute if missing
+                # QgsFeature doesn't have .get(); use item access which returns attribute by name
+                mean_fallback = feat[acc_MQ_field] if feat[acc_MQ_field] is not None else 0.0
+                low_fallback = feat[acc_MNQ_field] if feat[acc_MNQ_field] is not None else 0.0
+                mean_val = computed_mean.get(net_id, mean_fallback)
+                low_val = computed_low.get(net_id, low_fallback)
                 original_flows[base_id] = {
-                    'mean_flow': feat[MQ_field],
-                    'acc_mean_flow': feat[acc_MQ_field],
-                    'mean_low_flow': feat[MNQ_field],
-                    'acc_mean_low_flow': feat[acc_MNQ_field]
-                    # 'mean_flow': feat["Mean_Flow"],
-                    # 'acc_mean_flow': feat["calc_Mean_"],
-                    # 'mean_low_flow': feat["M_Low_Flow"],
-                    # 'acc_mean_low_flow': feat["calc_M_Low"]
-
-
+                    'mean_flow': mean_val,
+                    'acc_mean_flow': feat[acc_MQ_field] if feat[acc_MQ_field] is not None else 0.0,
+                    'mean_low_flow': low_val,
+                    'acc_mean_low_flow': feat[acc_MNQ_field] if feat[acc_MNQ_field] is not None else 0.0
                 }
         
         # update flow using proportional length
@@ -954,9 +973,6 @@ class Accumulation(QgsProcessingAlgorithm):
             flow_mean = feature[idx_mean_flow]
             flow_low = feature[idx_low_flow]
 
-            if flow_mean == 0 or flow_low == 0:
-                continue # skip to avoid division by zero
-
             for api_field in selected_api_fields:
                 api_short = api_field[:4]
                 acc_field = f"acc_{api_short}"
@@ -968,28 +984,48 @@ class Accumulation(QgsProcessingAlgorithm):
                 conc_field_mean = f"conc_{api_short}"
                 conc_field_low = f"conL_{api_short}"
 
-                conc_mean = (acc_value * conversion_factor)/flow_mean
-                conc_low = (acc_value * conversion_factor)/flow_low
-
-                feature.setAttribute(conc_field_mean, conc_mean)
-                feature.setAttribute(conc_field_low, conc_low)
+                # Calculate mean concentration only if flow_mean is non-zero
+                if flow_mean != 0:
+                    conc_mean = (acc_value * conversion_factor)/flow_mean
+                    feature.setAttribute(conc_field_mean, conc_mean)
+                
+                # Calculate low concentration only if flow_low is non-zero
+                if flow_low != 0:
+                    conc_low = (acc_value * conversion_factor)/flow_low
+                    feature.setAttribute(conc_field_low, conc_low)
 
             waternet.updateFeature(feature)
         waternet.commitChanges()
 
         # prepare the output sink
+        # exclude internal per-section fields (MQ_field, MNQ_field) from final output
+        export_field_names = [f.name() for f in waternet.fields() if f.name() not in (MQ_field, MNQ_field)]
+        export_fields = QgsFields()
+        for f in waternet.fields():
+            if f.name() in export_field_names:
+                export_fields.append(f)
+
         (sink, dest_id) = self.parameterAsSink(
             parameters,
             self.OUTPUT,
             context,
-            waternet.fields(),
+            export_fields,
             waternet.wkbType(),
             waternet.sourceCrs()
         )
 
-        # add to the sink
+        # add to the sink: copy only export fields
         for feature in waternet.getFeatures():
-            sink.addFeature(feature)
+            out_feat = QgsFeature()
+            out_feat.setGeometry(feature.geometry())
+            out_feat.setFields(export_fields)
+            for fname in export_field_names:
+                # get value from original feature
+                src_idx = waternet.fields().indexFromName(fname)
+                dst_idx = export_fields.indexFromName(fname)
+                if src_idx != -1 and dst_idx != -1:
+                    out_feat.setAttribute(dst_idx, feature[src_idx])
+            sink.addFeature(out_feat)
 
 
         if mon_point is not None and mon_point.featureCount() > 0:  # be sure layer exist and is not null
