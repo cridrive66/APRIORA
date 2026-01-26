@@ -236,24 +236,35 @@ class CalculateFlow(QgsProcessingAlgorithm):
         Here is where the processing itself takes place.
         """
         # import libraries for flow estimation model
+        # Standard library imports (always available)
+        from math import sqrt
+        from collections import defaultdict
+        
+        # scikit-learn imports
         try:
-            from math import sqrt
             from sklearn.model_selection import train_test_split
             from sklearn.preprocessing import StandardScaler
             from sklearn.ensemble import RandomForestRegressor
             from sklearn.metrics import mean_squared_error, r2_score
             import joblib
-            # libraries for hierarchical clustering
-            from scipy.stats import spearmanr
-            from scipy.cluster import hierarchy
-            from scipy.spatial.distance import squareform
-            from collections import defaultdict
         except ImportError:
             feedback.reportError(
-                "scikit-learn is required for this tool."
+                "scikit-learn is required for this tool. "
                 "Please install it via OSGeo4W with the command 'python -m pip install scikit-learn'"
             )
             raise QgsProcessingException("Missing dependency: scikit-learn")
+        
+        # scipy imports (hierarchical clustering)
+        try:
+            from scipy.stats import spearmanr
+            from scipy.cluster import hierarchy
+            from scipy.spatial.distance import squareform
+        except ImportError:
+            feedback.reportError(
+                "scipy is required for this tool. It should be installed with scikit-learn, "
+                "but you can install it separately with: 'python -m pip install scipy'"
+            )
+            raise QgsProcessingException("Missing dependency: scipy")
 
 
         # Retrieve the feature source and sink. The 'dest_id' variable is used
