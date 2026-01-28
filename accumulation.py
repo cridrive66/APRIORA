@@ -1060,7 +1060,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 mon_point_copy.updateExtents()
 
             # --- Copy concentration values from nearest waternet segments ---
-            # Ensure the monitoring layer has concentration fields
+            # Ensure the monitoring layer has concentration and accumulated load fields
             mon_provider = mon_point_copy.dataProvider()
             existing_mon_fields = [f.name() for f in mon_point_copy.fields()]
             new_mon_fields = []
@@ -1068,10 +1068,13 @@ class Accumulation(QgsProcessingAlgorithm):
                 api_short = api_field[:4]
                 conc_mean = f"conc_{api_short}"
                 conc_low = f"conL_{api_short}"
+                acc_load = f"acc_{api_short}"
                 if conc_mean not in existing_mon_fields:
                     new_mon_fields.append(QgsField(conc_mean, QVariant.Double))
                 if conc_low not in existing_mon_fields:
                     new_mon_fields.append(QgsField(conc_low, QVariant.Double))
+                if acc_load not in existing_mon_fields:
+                    new_mon_fields.append(QgsField(acc_load, QVariant.Double))
             if new_mon_fields:
                 mon_provider.addAttributes(new_mon_fields)
                 mon_point_copy.updateFields()
@@ -1154,17 +1157,20 @@ class Accumulation(QgsProcessingAlgorithm):
 
                 chosen_feat = waternet.getFeature(chosen_fid)
 
-                # Copy concentration attributes for each selected API
+                # Copy concentration and accumulated load attributes for each selected API
                 for api_field in selected_api_fields:
                     api_short = api_field[:4]
                     conc_mean = f"conc_{api_short}"
                     conc_low = f"conL_{api_short}"
+                    acc_load = f"acc_{api_short}"
 
                     # only set if both source and dest fields exist
                     if conc_mean in [f.name() for f in waternet.fields()] and conc_mean in [f.name() for f in mon_point_copy.fields()]:
                         mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_mean), chosen_feat[conc_mean])
                     if conc_low in [f.name() for f in waternet.fields()] and conc_low in [f.name() for f in mon_point_copy.fields()]:
                         mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_low), chosen_feat[conc_low])
+                    if acc_load in [f.name() for f in waternet.fields()] and acc_load in [f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(acc_load), chosen_feat[acc_load])
 
                 mon_point_copy.updateFeature(mon_feat)
             mon_point_copy.commitChanges()
