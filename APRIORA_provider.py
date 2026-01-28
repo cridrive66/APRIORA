@@ -33,6 +33,7 @@ __revision__ = '$Format:%H$'
 import os
 from qgis.core import QgsProcessingProvider
 from PyQt5.QtGui import QIcon 
+from .api_parameter_selection import APIParameterSelectionAlgorithm
 from .Calculate_geofactors import CalculateGeofactors
 from .Calculate_flow import CalculateFlow
 from .Fix_River_Network import FixRiverNetwork
@@ -62,6 +63,7 @@ class APRIORAProvider(QgsProcessingProvider):
         """
         Loads all algorithms belonging to this provider.
         """
+        self.addAlgorithm(APIParameterSelectionAlgorithm())
         self.addAlgorithm(CalculateGeofactors())
         self.addAlgorithm(CalculateFlow())
         self.addAlgorithm(FixRiverNetwork())
