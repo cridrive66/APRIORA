@@ -32,7 +32,9 @@ __revision__ = '$Format:%H$'
 
 import pandas as pd
 import os
-from qgis.PyQt.QtCore import (QCoreApplication, QVariant)
+from qgis.PyQt.QtCore import (QCoreApplication, QVariant, Qt, QUrl)
+from qgis.PyQt.QtWidgets import QPushButton, QVBoxLayout, QWidget
+from qgis.PyQt.QtGui import QDesktopServices
 from qgis.core import ( QgsFeature,
                         QgsFeatureSink,
                         QgsFields,
@@ -67,14 +69,20 @@ class EmissionLoads(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return self.tr(""" 
-            This tool calculates the load of previously selected APIs (Active Pharmaceutical Ingredients) from '5 - API parameter selection' at each WWTP \
+            This tool calculates the load of previously selected APIs (Active Pharmaceutical Ingredients) from the '5 - API parameter selection' tool at each WWTP \
             (Waste Water Treatment Plant) within a catchment. The plugin retrieves the technical class assigned to each WWTP and identifies the \
-            corresponding removal rate for each API from the data pool. 
+            corresponding removal rate for each API from the data pool.
+            
+            IMPORTANT: Before using this tool, you MUST first run the '5 - API parameter selection' tool to configure your API parameters, consumption data, and removal rates.
+            
             Workflow:
-            1. Under 'Emission Points of WWTP' select the point shapefile containing the WWTPs. 
-            2. Then, select the correct field for 'ID', 'Name', 'Connected Inhabitants' and 'Technology Class'.
-            3. If you created a custom table from the '5 - API parameter selection' tool, flag the next box, otherwise leave it empty.
-            4. Click on 'Run'.
+            1. First, open and configure the '5 - API parameter selection' tool to select your APIs and parameters.
+            2. Under 'Emission Points of WWTP' select the point shapefile containing the WWTPs. 
+            3. Then, select the correct field for 'ID', 'Name', 'Connected Inhabitants' and 'Technology Class'.
+            4. If you created a custom table from the '5 - API parameter selection' tool, check the next option, otherwise leave it unchecked.
+            5. Click on 'Run'.
+            
+            For more information, see the documentation at the Help button below.
         """)
 
     #Init tool
