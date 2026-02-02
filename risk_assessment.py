@@ -224,6 +224,11 @@ class RiskAssessment(QgsProcessingAlgorithm):
         river_layer = QgsVectorLayer("LineString?crs={}".format(crs), "river_layer_copy", "memory")
         provider = river_layer.dataProvider()
 
+        # add the NET_ID field
+        net_id_field = river_layer_original.fields().field("NET_ID")
+        if net_id_field:
+            provider.addAttributes([net_id_field])
+        
         # add the selected concentration fields
         for field_name in selected_api_fields:
             orig_field = river_layer_original.fields().field(field_name)
@@ -234,6 +239,9 @@ class RiskAssessment(QgsProcessingAlgorithm):
         for feat in river_layer_original.getFeatures():
             new_feat = QgsFeature(river_layer.fields())
             new_feat.setGeometry(feat.geometry())
+            # copy NET_ID if it exists
+            if net_id_field:
+                new_feat["NET_ID"] = feat["NET_ID"]
             for field in selected_api_fields:
                 new_feat[field] = feat[field]
             provider.addFeature(new_feat)
