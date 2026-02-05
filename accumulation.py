@@ -261,17 +261,33 @@ class Accumulation(QgsProcessingAlgorithm):
         No splitting of polygons, simplified point-to-polygon connection.
         """
         tolerance = 500  # 500m distance limit
+        river_crs = river_layer.crs()
+        
+        # Reproject emission load layer if CRS doesn't match river network
+        if load_original.crs().authid() != river_crs.authid():
+            feedback.pushInfo(f"Reprojecting emission load layer from {load_original.crs().authid()} to {river_crs.authid()}...")
+            load_original = processing.run("native:reprojectlayer", {
+                'INPUT': load_original,
+                'TARGET_CRS': river_crs,
+                'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
         
         # check if there are monitoring station points
         mon_field_names = []
         if mon_point is not None and mon_point.featureCount() > 0:
-            load_crs = load_original.crs()
+            # Reproject monitoring points if CRS doesn't match
+            if mon_point.crs().authid() != river_crs.authid():
+                feedback.pushInfo(f"Reprojecting monitoring point layer from {mon_point.crs().authid()} to {river_crs.authid()}...")
+                mon_point = processing.run("native:reprojectlayer", {
+                    'INPUT': mon_point,
+                    'TARGET_CRS': river_crs,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+            
             load_field_names = set(f.name() for f in load_original.fields())
             mon_field_names = [f.name() for f in mon_point.fields() if f.name() not in load_field_names]
             load_file = processing.run("native:mergevectorlayers", {
                 'LAYERS': [load_original, mon_point],
-                'CRS': load_crs,
-                'OUTPUT': 'TEMPORARY_OUTPUT'})['OUTPUT']
+                'CRS': river_crs,
+                'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
         else:
             load_file = load_original
             if mon_point is not None:
@@ -279,21 +295,15 @@ class Accumulation(QgsProcessingAlgorithm):
 
         # Create a working copy of the river layer (polygon network)
         feedback.pushInfo("Creating working copy of polygon network...")
-        crs = river_layer.crs().authid()
-        geom_type = QgsWkbTypes.displayString(river_layer.wkbType())
-        waternet = QgsVectorLayer(f"{geom_type}?crs={crs}", "polygon_network", "memory")
-        provider = waternet.dataProvider()
-        provider.addAttributes(river_layer.fields())
-        waternet.updateFields()
-        features = []
-        for feat in river_layer.getFeatures():
-            new_feat = QgsFeature(feat)
-            features.append(new_feat)
-        provider.addFeatures(features)
-        waternet.updateExtents()
+        waternet = processing.run("native:reprojectlayer", {
+            'INPUT': river_layer,
+            'TARGET_CRS': river_crs,
+            'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
 
         # Build spatial index for polygon network
         feedback.pushInfo(f"\nConnecting emission points to the closest polygon within {tolerance} m...")
+        feedback.pushInfo(f"Emission points CRS: {load_file.crs().authid()}")
+        feedback.pushInfo(f"Polygon network CRS: {waternet.crs().authid()}")
         polygon_index = QgsSpatialIndex(waternet.getFeatures())
         polygon_feat_dict = {feat.id(): feat for feat in waternet.getFeatures()}
 
@@ -355,8 +365,12 @@ class Accumulation(QgsProcessingAlgorithm):
                         if val is not None and str(val).strip():
                             point_id = f"{field_name}: {val}"
                             break
+                # Add debug information about the actual distance found
+                if nearest_polygon is not None:
+                    feedback.pushWarning(f"Warning: Point {point_id} is {min_distance:.2f}m from nearest polygon (limit: {tolerance}m)")
+                else:
+                    feedback.pushWarning(f"Warning: no polygon found for point {point_id}")
                 too_far_points.append(point_id)
-                feedback.pushWarning(f"Warning: no polygon found within {tolerance}m for point {point_id}")
                 continue
 
             # Store the connection
@@ -749,22 +763,36 @@ class Accumulation(QgsProcessingAlgorithm):
         """
         Original processing logic for line-based river networks.
         """
-
+        river_crs = river_layer.crs()
+        
+        # Reproject emission load layer if CRS doesn't match river network
+        if load_original.crs().authid() != river_crs.authid():
+            feedback.pushInfo(f"Reprojecting emission load layer from {load_original.crs().authid()} to {river_crs.authid()}...")
+            load_original = processing.run("native:reprojectlayer", {
+                'INPUT': load_original,
+                'TARGET_CRS': river_crs,
+                'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
 
         # check if there are monitoring station points
         # if there are, they are merged with emission load points and snapped together to the river section
         mon_field_names = []  # store monitoring-specific field names for later identification
         if mon_point is not None and mon_point.featureCount() > 0:  # be sure layer exist and is not null
-            # get the CRS from load_original layer
-            load_crs = load_original.crs()
+            # Reproject monitoring points if CRS doesn't match
+            if mon_point.crs().authid() != river_crs.authid():
+                feedback.pushInfo(f"Reprojecting monitoring point layer from {mon_point.crs().authid()} to {river_crs.authid()}...")
+                mon_point = processing.run("native:reprojectlayer", {
+                    'INPUT': mon_point,
+                    'TARGET_CRS': river_crs,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+            
             # capture monitoring field names (those unique to monitoring layer)
             load_field_names = set(f.name() for f in load_original.fields())
             mon_field_names = [f.name() for f in mon_point.fields() if f.name() not in load_field_names]
             # merge the shapefiles
             load_file = processing.run("native:mergevectorlayers", {
                 'LAYERS':[load_original, mon_point],
-                'CRS':load_crs,
-                'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
+                'CRS':river_crs,
+                'OUTPUT':'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
             
         else:
             load_file = load_original
