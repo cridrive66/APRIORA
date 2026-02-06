@@ -85,18 +85,23 @@ class Accumulation(QgsProcessingAlgorithm):
             """ 
             This tool combines the output of '4 - Flow Estimation' with the output of '6 - Emission Loads'. In this part, the load of the \
             selected APIs is transferred to the river network and the concentration for mean flow and mean low flow condition is calculated.
+            
+            The tool supports two types of river network inputs:
+            - **Line geometry**: Standard river network (e.g., output of '4 - Flow Estimation'). The tool will split river sections at emission points and create sub-sections.
+            - **Polygon geometry**: Subcatchment-based flow data (e.g., Finnish hydrological model output). Emission points are connected to the closest polygon without splitting. Points can be inside or near polygons (within 500m).
+            
             Workflow:
             1. Choose 'emission_loads.shp' as input for 'API load'
             2. Select the fields contanining APIs to accumulate. This selection should include only columns containing load of APIs in kg/a.
-            3. Choose 'river_level.shp' as input for 'River network'.
-            4. Select the correct field of 'river_level.shp'. In case is the output of '4 - Flow Estimation', fill as follow:
+            3. Choose 'river_level.shp' (lines) or polygon-based flow data as input for 'River network'.
+            4. Select the correct field of the river network. In case is the output of '4 - Flow Estimation', fill as follow:
                 - ID Field -> NET_ID
                 - Next Field -> NET_TO
-                - Mean Flow -> Mean_Flow
                 - Acc. Mean Flow -> calc_Mean_
-                - Mean Low Flow -> M_Low_Flow
                 - Acc. Mean Low Flow -> calc_M_Low
             5. Click on 'Run'
+            
+            Note for polygon networks: The polygon layer must have NET_ID and NET_TO fields defining the connectivity between subcatchments.
             
             """)
 
@@ -132,7 +137,7 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('River network'),
-                [QgsProcessing.TypeVectorLine],
+                [QgsProcessing.TypeVectorLine, QgsProcessing.TypeVectorPolygon],
                 defaultValue = QgsProject.instance().mapLayersByName("River level")[0].id() if QgsProject.instance().mapLayersByName("River level") else None
             )
         )
@@ -197,7 +202,7 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
                 self.tr('River accumulation'),
-                QgsProcessing.TypeVectorLine
+                QgsProcessing.TypeVectorAnyGeometry
             )
         )
 
@@ -227,21 +232,567 @@ class Accumulation(QgsProcessingAlgorithm):
         acc_MNQ_field = self.parameterAsString(parameters, self.accMNQ, context)
         mon_point = self.parameterAsVectorLayer(parameters, self.monPoint, context)
 
+        # Detect geometry type of river network
+        river_geom_type = river_layer.geometryType()
+        is_polygon_network = (river_geom_type == QgsWkbTypes.PolygonGeometry)
+        
+        if is_polygon_network:
+            feedback.pushInfo("\n=== POLYGON RIVER NETWORK DETECTED ===")
+            feedback.pushInfo("Using simplified polygon-based accumulation workflow.\n")
+            return self.processPolygonNetwork(
+                parameters, context, feedback,
+                selected_api_fields, load_original, river_layer,
+                id_field, to_field, acc_MQ_field, acc_MNQ_field, mon_point
+            )
+        else:
+            feedback.pushInfo("\n=== LINE RIVER NETWORK DETECTED ===")
+            feedback.pushInfo("Using standard line-based accumulation workflow.\n")
+            return self.processLineNetwork(
+                parameters, context, feedback,
+                selected_api_fields, load_original, river_layer,
+                id_field, to_field, acc_MQ_field, acc_MNQ_field, mon_point
+            )
+
+    def processPolygonNetwork(self, parameters, context, feedback,
+                               selected_api_fields, load_original, river_layer,
+                               id_field, to_field, acc_MQ_field, acc_MNQ_field, mon_point):
+        """
+        Process accumulation for polygon-based river networks (e.g., Finnish subcatchments).
+        No splitting of polygons, simplified point-to-polygon connection.
+        """
+        tolerance = 500  # 500m distance limit
+        river_crs = river_layer.crs()
+        
+        # Reproject emission load layer if CRS doesn't match river network
+        if load_original.crs().authid() != river_crs.authid():
+            feedback.pushInfo(f"Reprojecting emission load layer from {load_original.crs().authid()} to {river_crs.authid()}...")
+            load_original = processing.run("native:reprojectlayer", {
+                'INPUT': load_original,
+                'TARGET_CRS': river_crs,
+                'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+        
+        # check if there are monitoring station points
+        mon_field_names = []
+        if mon_point is not None and mon_point.featureCount() > 0:
+            # Reproject monitoring points if CRS doesn't match
+            if mon_point.crs().authid() != river_crs.authid():
+                feedback.pushInfo(f"Reprojecting monitoring point layer from {mon_point.crs().authid()} to {river_crs.authid()}...")
+                mon_point = processing.run("native:reprojectlayer", {
+                    'INPUT': mon_point,
+                    'TARGET_CRS': river_crs,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+            
+            load_field_names = set(f.name() for f in load_original.fields())
+            mon_field_names = [f.name() for f in mon_point.fields() if f.name() not in load_field_names]
+            load_file = processing.run("native:mergevectorlayers", {
+                'LAYERS': [load_original, mon_point],
+                'CRS': river_crs,
+                'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+        else:
+            load_file = load_original
+            if mon_point is not None:
+                feedback.pushWarning("Monitoring point layer provided but has no features, ignoring it...")
+
+        # Create a working copy of the river layer (polygon network)
+        feedback.pushInfo("Creating working copy of polygon network...")
+        waternet = processing.run("native:reprojectlayer", {
+            'INPUT': river_layer,
+            'TARGET_CRS': river_crs,
+            'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+
+        # Build spatial index for polygon network
+        feedback.pushInfo(f"\nConnecting emission points to the closest polygon within {tolerance} m...")
+        feedback.pushInfo(f"Emission points CRS: {load_file.crs().authid()}")
+        feedback.pushInfo(f"Polygon network CRS: {waternet.crs().authid()}")
+        polygon_index = QgsSpatialIndex(waternet.getFeatures())
+        polygon_feat_dict = {feat.id(): feat for feat in waternet.getFeatures()}
+
+        # Dictionary to store which polygons receive which loads
+        polygon_to_loads = {}  # polygon NET_ID -> list of (point_feat, api_values)
+        too_far_points = []
+
+        # Connect each emission point to the closest polygon
+        for point_feat in load_file.getFeatures():
+            point_geom = point_feat.geometry()
+            if point_geom is None:
+                continue
+
+            # First check if point is inside any polygon
+            search_rect = point_geom.boundingBox().buffered(tolerance)
+            candidate_ids = polygon_index.intersects(search_rect)
+
+            nearest_polygon = None
+            min_distance = float('inf')
+            is_inside = False
+
+            for fid in candidate_ids:
+                polygon_feat = polygon_feat_dict[fid]
+                polygon_geom = polygon_feat.geometry()
+                
+                # Check if point is inside the polygon
+                if polygon_geom.contains(point_geom):
+                    nearest_polygon = polygon_feat
+                    min_distance = 0
+                    is_inside = True
+                    break
+                
+                # Otherwise calculate distance
+                dist = polygon_geom.distance(point_geom)
+                if dist < min_distance:
+                    min_distance = dist
+                    nearest_polygon = polygon_feat
+
+            # If no candidates from bounding box, try nearest neighbor
+            if nearest_polygon is None:
+                try:
+                    nn_ids = polygon_index.nearestNeighbor(point_geom.asPoint(), 1)
+                    if nn_ids:
+                        polygon_feat = polygon_feat_dict.get(nn_ids[0])
+                        if polygon_feat:
+                            dist = polygon_feat.geometry().distance(point_geom)
+                            if dist <= tolerance:
+                                nearest_polygon = polygon_feat
+                                min_distance = dist
+                except Exception:
+                    pass
+
+            # Validate distance
+            if nearest_polygon is None or (min_distance > tolerance and not is_inside):
+                point_id = point_feat[0]
+                if mon_field_names:
+                    for field_name in mon_field_names:
+                        val = point_feat[field_name]
+                        if val is not None and str(val).strip():
+                            point_id = f"{field_name}: {val}"
+                            break
+                # Add debug information about the actual distance found
+                if nearest_polygon is not None:
+                    feedback.pushWarning(f"Warning: Point {point_id} is {min_distance:.2f}m from nearest polygon (limit: {tolerance}m)")
+                else:
+                    feedback.pushWarning(f"Warning: no polygon found for point {point_id}")
+                too_far_points.append(point_id)
+                continue
+
+            # Store the connection
+            polygon_net_id = nearest_polygon[id_field]
+            if is_inside:
+                feedback.pushInfo(f"Point {point_feat[0]} is INSIDE polygon {polygon_net_id}")
+            else:
+                feedback.pushInfo(f"Point {point_feat[0]} is {min_distance:.2f}m from polygon {polygon_net_id}")
+
+            if polygon_net_id not in polygon_to_loads:
+                polygon_to_loads[polygon_net_id] = []
+            polygon_to_loads[polygon_net_id].append(point_feat)
+
+        # Report unconnected points
+        if too_far_points:
+            error_message = f"The following emission points are too far from the closest polygon: \n"
+            for point_id in too_far_points:
+                error_message += f"- Point {point_id}\n"
+            error_message += f"Please edit the emission point to be within a distance of {tolerance} m."
+            raise QgsProcessingException(error_message)
+
+        # Add API load fields to the polygon layer
+        feedback.pushInfo("\nAdding API load fields to polygon layer...")
+        existing_fields = [field.name() for field in waternet.fields()]
+        fields_to_add = []
+        for field_name in selected_api_fields:
+            if field_name not in existing_fields:
+                fields_to_add.append(QgsField(field_name, QVariant.Double))
+        if fields_to_add:
+            waternet.dataProvider().addAttributes(fields_to_add)
+            waternet.updateFields()
+
+        # Transfer API loads to polygons (sum if multiple points connect to same polygon)
+        feedback.pushInfo("\nTransferring API loads to polygons...")
+        waternet.startEditing()
+        for feat in waternet.getFeatures():
+            net_id = feat[id_field]
+            if net_id in polygon_to_loads:
+                # Sum up all loads for this polygon
+                for field_name in selected_api_fields:
+                    total_load = 0
+                    for point_feat in polygon_to_loads[net_id]:
+                        val = point_feat[field_name]
+                        if val is not None:
+                            total_load += val
+                    if total_load > 0:
+                        feat.setAttribute(field_name, total_load)
+                waternet.updateFeature(feat)
+        waternet.commitChanges()
+
+        """POLYGON ACCUMULATION FUNCTION"""
+        feedback.setProgressText("\n=== Starting Polygon Accumulation ===\n")
+        
+        # Load network data
+        idxId = waternet.fields().indexFromName(id_field)
+        idxNext = waternet.fields().indexFromName(to_field)
+
+        # Build data structure for accumulation
+        # For polygons, we rely solely on NET_ID -> NET_TO relationships
+        feedback.setProgressText("Loading polygon network data...\n")
+        Data = [[
+            str(f.attribute(idxId)),
+            str(f.attribute(idxId)),  # prev_field = id_field for polygons
+            str(f.attribute(idxNext)),
+            f.id()
+        ] for f in waternet.getFeatures()]
+        DataArr_static = np.array(Data, dtype='object')
+        feedback.setProgressText("Data loaded. Calculating flow paths...\n")
+
+        # Function to find next features (downstream) in the network
+        def nextFtsCalcPolygon(marker):
+            """Find downstream features: those whose NET_TO matches the marker's NET_TO target"""
+            vtx_to = DataArr[np.where(DataArr[:, 0] == marker)[0].tolist(), 2][0]  # NET_TO of actual segment
+            rows_to = np.where(DataArr[:, 0] == vtx_to)[0].tolist()  # Find rows where NET_ID matches vtx_to
+            return rows_to
+
+        # Flow path function for polygons
+        def FlowPathPolygon(start_row, fp_amount):
+            """Calculate flow path for polygon network"""
+            marker = DataArr[start_row, 0]
+            weg = [start_row]
+            i = 0
+            while i != len(DataArr):
+                next_rows = nextFtsCalcPolygon(marker)
+                if len(next_rows) > 1:  # Dividing flow path
+                    calc_column[start_row] = 0
+                    calc_column[next_rows] = calc_column[next_rows] + fp_amount / len(next_rows)
+                    out = [weg, next_rows]
+                    break
+                if len(next_rows) == 1:  # Continuing flow path
+                    weg = weg + next_rows
+                    marker = DataArr[next_rows[0], 0]
+                if len(next_rows) == 0:  # End point (outlet)
+                    out = [weg]
+                    break
+                i = i + 1
+            return out
+
+        # Loop through all selected substances
+        for calc_field in selected_api_fields:
+            idxCalc = waternet.fields().indexFromName(calc_field)
+            if idxCalc == -1:
+                feedback.reportError(f"Field {calc_field} not found")
+                continue
+
+            feedback.setProgressText(f"\nProcessing {calc_field}...")
+
+            # Create working copy of DataArr and add load values
+            DataArr = np.insert(DataArr_static.copy(), 3, 0.0, axis=1)
+            for f in waternet.getFeatures():
+                val = f.attribute(idxCalc)
+                if val is not None:
+                    fid = f.id()
+                    row_idx = np.where(DataArr[:, 4] == fid)[0]
+                    if row_idx.size > 0:
+                        DataArr[row_idx[0], 3] = val
+            DataArr[np.where(DataArr[:, 3] == None), 3] = 0
+            calc_column = np.copy(DataArr[:, 3]).astype(float)
+            DataArr[:, 3] = 0.0
+
+            calc_segm = np.where(calc_column != 0)[0].tolist()
+
+            total2 = len(calc_segm)
+            feedback.pushInfo(f"Found {total2} polygons with load for {calc_field}")
+
+            iteration = 0
+            max_iterations = 10000
+            max_iterations_flag = False
+            last_segments = []
+
+            while len(calc_segm) > 0 and iteration < max_iterations:
+                iteration += 1
+                if feedback.isCanceled():
+                    break
+
+                if len(last_segments) > 100:
+                    last_segments.pop(0)
+                last_segments.append(calc_segm[0] if calc_segm else None)
+
+                if len(set(last_segments)) < 10 and len(last_segments) == 100:
+                    feedback.reportError(f"Stuck loop detected! Repeated segments: {set(last_segments)}")
+                    net_ids_debug = []
+                    for feature_id in set(last_segments):
+                        net_id_debug = DataArr[feature_id, 0]
+                        net_ids_debug.append(net_id_debug)
+                    feedback.reportError(f"Corresponding NET_IDs: {net_ids_debug}")
+                    break
+
+                StartRow = calc_segm[0]
+                amount = calc_column[StartRow]
+                calc_column[StartRow] = 0
+                Fl_pth = FlowPathPolygon(StartRow, amount)
+                if len(Fl_pth) == 2:
+                    calc_segm = calc_segm + Fl_pth[1]
+                DataArr[Fl_pth[0], 3] = DataArr[Fl_pth[0], 3] + amount
+                calc_segm = calc_segm[1:]
+                calc_segm = list(set(calc_segm))
+                feedback.setProgress((1 - (len(calc_segm) / max(total2, 1))) * 100)
+
+            if iteration >= max_iterations:
+                max_iterations_flag = True
+
+            # Add accumulated field
+            api_short = calc_field[:4]
+            new_field_name = f'acc_{api_short}'
+            if new_field_name not in [f.name() for f in waternet.fields()]:
+                waternet.dataProvider().addAttributes([QgsField(new_field_name, QVariant.Double)])
+                waternet.updateFields()
+
+            field_idx = waternet.fields().indexOf(new_field_name)
+            if field_idx == -1:
+                feedback.reportError(f"Error: field {new_field_name} not found")
+                continue
+
+            waternet.startEditing()
+            for i, feature in enumerate(waternet.getFeatures()):
+                if feedback.isCanceled():
+                    break
+                value_to_set = float(DataArr[i, 3])
+                feature.setAttribute(field_idx, value_to_set)
+                waternet.updateFeature(feature)
+            waternet.commitChanges()
+            feedback.setProgressText(f"{new_field_name} written successfully")
+
+        if max_iterations_flag:
+            feedback.reportError(f"Emergency break: exceeded {max_iterations} iterations")
+
+        """Calculate concentration in each polygon"""
+        feedback.setProgressText("\n=== Calculating Concentrations ===\n")
+
+        conversion_flow = 1000 * 31_536_000
+        conversion_load = 1_000_000_000_000
+        conversion_factor = conversion_load / conversion_flow
+
+        idx_mean_flow = waternet.fields().indexOf(acc_MQ_field)
+        idx_low_flow = waternet.fields().indexOf(acc_MNQ_field)
+
+        new_fields = []
+        for api_field in selected_api_fields:
+            api_short = api_field[:4]
+            conc_field_mean = f"conc_{api_short}"
+            conc_field_low = f"conL_{api_short}"
+            if conc_field_mean not in waternet.fields().names():
+                new_fields.append(QgsField(conc_field_mean, QVariant.Double))
+            if conc_field_low not in waternet.fields().names():
+                new_fields.append(QgsField(conc_field_low, QVariant.Double))
+
+        if new_fields:
+            waternet.dataProvider().addAttributes(new_fields)
+            waternet.updateFields()
+
+        waternet.startEditing()
+        for feature in waternet.getFeatures():
+            flow_mean = feature[idx_mean_flow] if idx_mean_flow != -1 else None
+            flow_low = feature[idx_low_flow] if idx_low_flow != -1 else None
+
+            for api_field in selected_api_fields:
+                api_short = api_field[:4]
+                acc_field = f"acc_{api_short}"
+                acc_value = feature[acc_field]
+
+                if acc_value is None:
+                    continue
+
+                conc_field_mean = f"conc_{api_short}"
+                conc_field_low = f"conL_{api_short}"
+
+                if flow_mean is not None and flow_mean != 0:
+                    conc_mean = (acc_value * conversion_factor) / flow_mean
+                    feature.setAttribute(conc_field_mean, conc_mean)
+
+                if flow_low is not None and flow_low != 0:
+                    conc_low = (acc_value * conversion_factor) / flow_low
+                    feature.setAttribute(conc_field_low, conc_low)
+
+            waternet.updateFeature(feature)
+        waternet.commitChanges()
+
+        # Prepare output sink for polygons
+        (sink, dest_id) = self.parameterAsSink(
+            parameters,
+            self.OUTPUT,
+            context,
+            waternet.fields(),
+            waternet.wkbType(),
+            waternet.sourceCrs()
+        )
+
+        for feature in waternet.getFeatures():
+            sink.addFeature(feature)
+
+        # Handle monitoring points for polygon network
+        if mon_point is not None and mon_point.featureCount() > 0:
+            feedback.pushInfo("\n=== Processing Monitoring Points (Polygon Network) ===\n")
+            load_crs = load_original.crs()
+
+            if mon_point.crs().authid() != load_crs.authid():
+                mon_point_copy = processing.run("native:reprojectlayer", {
+                    'INPUT': mon_point,
+                    'TARGET_CRS': load_crs,
+                    'CONVERT_CURVED_GEOMETRIES': False,
+                    'OPERATION': '+proj=noop',
+                    'OUTPUT': 'TEMPORARY_OUTPUT'})['OUTPUT']
+            else:
+                crs = mon_point.crs().authid()
+                geom_type = QgsWkbTypes.displayString(mon_point.wkbType())
+                mon_point_copy = QgsVectorLayer(f"{geom_type}?crs={crs}", "mon_point_copy", "memory")
+                mon_provider = mon_point_copy.dataProvider()
+                mon_provider.addAttributes(mon_point.fields())
+                mon_point_copy.updateFields()
+                features = []
+                for feat in mon_point.getFeatures():
+                    new_feat = QgsFeature(feat)
+                    features.append(new_feat)
+                mon_provider.addFeatures(features)
+                mon_point_copy.updateExtents()
+
+            # Add concentration and accumulated load fields
+            mon_provider = mon_point_copy.dataProvider()
+            existing_mon_fields = [f.name() for f in mon_point_copy.fields()]
+            new_mon_fields = []
+            for api_field in selected_api_fields:
+                api_short = api_field[:4]
+                conc_mean = f"conc_{api_short}"
+                conc_low = f"conL_{api_short}"
+                acc_load = f"acc_{api_short}"
+                if conc_mean not in existing_mon_fields:
+                    new_mon_fields.append(QgsField(conc_mean, QVariant.Double))
+                if conc_low not in existing_mon_fields:
+                    new_mon_fields.append(QgsField(conc_low, QVariant.Double))
+                if acc_load not in existing_mon_fields:
+                    new_mon_fields.append(QgsField(acc_load, QVariant.Double))
+            if new_mon_fields:
+                mon_provider.addAttributes(new_mon_fields)
+                mon_point_copy.updateFields()
+
+            # Build spatial index on polygon network
+            water_index = QgsSpatialIndex(waternet.getFeatures())
+            waternet_feat_dict = {feat.id(): feat for feat in waternet.getFeatures()}
+
+            mon_point_copy.startEditing()
+            for mon_feat in mon_point_copy.getFeatures():
+                if mon_feat.geometry() is None:
+                    continue
+                mon_geom = mon_feat.geometry()
+
+                # Find closest polygon (including if point is inside)
+                search_rect = mon_geom.boundingBox().buffered(tolerance)
+                candidate_ids = water_index.intersects(search_rect)
+
+                chosen_feat = None
+                min_distance = float('inf')
+
+                for fid in candidate_ids:
+                    wfeat = waternet_feat_dict.get(fid)
+                    if wfeat is None:
+                        continue
+                    wgeom = wfeat.geometry()
+                    
+                    # Check if inside polygon
+                    if wgeom.contains(mon_geom):
+                        chosen_feat = wfeat
+                        min_distance = 0
+                        break
+                    
+                    dist = wgeom.distance(mon_geom)
+                    if dist < min_distance and dist <= tolerance:
+                        min_distance = dist
+                        chosen_feat = wfeat
+
+                # Try nearest neighbor if no candidates
+                if chosen_feat is None:
+                    try:
+                        nn_ids = water_index.nearestNeighbor(mon_geom.asPoint(), 1)
+                        if nn_ids:
+                            wfeat = waternet_feat_dict.get(nn_ids[0])
+                            if wfeat:
+                                dist = wfeat.geometry().distance(mon_geom)
+                                if dist <= tolerance:
+                                    chosen_feat = wfeat
+                    except Exception:
+                        pass
+
+                if chosen_feat is None:
+                    feedback.pushWarning(f"No polygon found within {tolerance}m for monitoring point")
+                    continue
+
+                # Copy concentration and accumulated load values
+                for api_field in selected_api_fields:
+                    api_short = api_field[:4]
+                    conc_mean = f"conc_{api_short}"
+                    conc_low = f"conL_{api_short}"
+                    acc_load = f"acc_{api_short}"
+
+                    if conc_mean in [f.name() for f in waternet.fields()] and conc_mean in [f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_mean), chosen_feat[conc_mean])
+                    if conc_low in [f.name() for f in waternet.fields()] and conc_low in [f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_low), chosen_feat[conc_low])
+                    if acc_load in [f.name() for f in waternet.fields()] and acc_load in [f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(acc_load), chosen_feat[acc_load])
+
+                mon_point_copy.updateFeature(mon_feat)
+            mon_point_copy.commitChanges()
+
+            # Output monitoring points
+            (mon_sink, mon_dest_id) = self.parameterAsSink(
+                parameters,
+                self.OUTPUT_mon,
+                context,
+                mon_point_copy.fields(),
+                mon_point_copy.wkbType(),
+                mon_point_copy.sourceCrs()
+            )
+
+            if mon_sink is None:
+                feedback.pushWarning(
+                    "\nMonitoring output is set to 'Skip output'. Monitoring point results will not be saved.\n"
+                )
+                return {self.OUTPUT: dest_id}
+            else:
+                for feature in mon_point_copy.getFeatures():
+                    mon_sink.addFeature(feature)
+                return {self.OUTPUT_mon: mon_dest_id, self.OUTPUT: dest_id}
+
+        return {self.OUTPUT: dest_id}
+
+    def processLineNetwork(self, parameters, context, feedback,
+                            selected_api_fields, load_original, river_layer,
+                            id_field, to_field, acc_MQ_field, acc_MNQ_field, mon_point):
+        """
+        Original processing logic for line-based river networks.
+        """
+        river_crs = river_layer.crs()
+        
+        # Reproject emission load layer if CRS doesn't match river network
+        if load_original.crs().authid() != river_crs.authid():
+            feedback.pushInfo(f"Reprojecting emission load layer from {load_original.crs().authid()} to {river_crs.authid()}...")
+            load_original = processing.run("native:reprojectlayer", {
+                'INPUT': load_original,
+                'TARGET_CRS': river_crs,
+                'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
 
         # check if there are monitoring station points
         # if there are, they are merged with emission load points and snapped together to the river section
         mon_field_names = []  # store monitoring-specific field names for later identification
         if mon_point is not None and mon_point.featureCount() > 0:  # be sure layer exist and is not null
-            # get the CRS from load_original layer
-            load_crs = load_original.crs()
+            # Reproject monitoring points if CRS doesn't match
+            if mon_point.crs().authid() != river_crs.authid():
+                feedback.pushInfo(f"Reprojecting monitoring point layer from {mon_point.crs().authid()} to {river_crs.authid()}...")
+                mon_point = processing.run("native:reprojectlayer", {
+                    'INPUT': mon_point,
+                    'TARGET_CRS': river_crs,
+                    'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+            
             # capture monitoring field names (those unique to monitoring layer)
             load_field_names = set(f.name() for f in load_original.fields())
             mon_field_names = [f.name() for f in mon_point.fields() if f.name() not in load_field_names]
             # merge the shapefiles
             load_file = processing.run("native:mergevectorlayers", {
                 'LAYERS':[load_original, mon_point],
-                'CRS':load_crs,
-                'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
+                'CRS':river_crs,
+                'OUTPUT':'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
             
         else:
             load_file = load_original
