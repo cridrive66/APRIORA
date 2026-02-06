@@ -71,6 +71,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
 
     riverNetwork = 'RiverNetwork'
     selectedAPI = 'selectedAPI'
+    fieldID = "fieldID"
     custom = "custom"
     k_param = 'kParam'
     x0_param = 'x0Param'
@@ -84,8 +85,11 @@ class RiskAssessment(QgsProcessingAlgorithm):
             PNEC calculations, a cumulative Risk Quotient (RQ) coefficient is calculated to provide an overall assessment \
             when multiple APIs are selected. This single value summarizes the combined risk from all tested substances in \
             each river section, giving the user a quick, comprehensive view of the situation.
+            
+            The tool supports both line-based river networks and polygon-based subcatchment networks (e.g., Finnish hydrological model output).
+            
             Workflow:
-            1. Choose river_accumulation.shp as input for River accumulation
+            1. Choose river_accumulation.shp (or polygon accumulation output) as input for River accumulation
             2. Select the fields containing the concentration of APIs for the risk assessment. This selection should \
                 include only columns containing concentrations in ng/L.
             3. If you added custom PNEC values from the '5 - API parameter selection' tool, flag the next box, otherwise leave it empty
@@ -105,7 +109,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('River accumulation'),
-                [QgsProcessing.TypeVectorLine],
+                [QgsProcessing.TypeVectorLine, QgsProcessing.TypeVectorPolygon],
                 defaultValue = QgsProject.instance().mapLayersByName("River accumulation")[0].id() if QgsProject.instance().mapLayersByName("River accumulation") else None
             )
         )
@@ -120,6 +124,16 @@ class RiskAssessment(QgsProcessingAlgorithm):
                 defaultValue=[
                     f.name() for f in QgsProject.instance().mapLayersByName("River accumulation")[0].fields() if f.name().startswith("conc_") or f.name().startswith("conL_")
                 ] if QgsProject.instance().mapLayersByName("River accumulation") else []
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.fieldID,
+                self.tr("ID Field"),
+                parentLayerParameterName = self.riverNetwork,
+                defaultValue = 'NET_ID',   
+                type = QgsProcessingParameterField.Any,
             )
         )
 
@@ -164,7 +178,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
                 self.tr('Risk assessment'),
-                QgsProcessing.TypeVectorLine
+                QgsProcessing.TypeVectorAnyGeometry
             )
         )
 
@@ -177,6 +191,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
             selected_api_fields = self.parameterAsStrings(parameters, self.selectedAPI, context)
         except AttributeError:
             selected_api_fields = self.parameterAsFields(parameters, self.selectedAPI, context)
+        id_field = self.parameterAsString(parameters, self.fieldID, context)
         custom_selection = self.parameterAsBoolean(parameters, self.custom, context)
         k = self.parameterAsDouble(parameters, self.k_param, context)
         x0 = self.parameterAsDouble(parameters, self.x0_param, context)
@@ -201,6 +216,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
                 return {}
             
         PNEC_dict = dict(zip(df_PNEC['API name'], df_PNEC['PNEC ng/l']))
+        feedback.pushInfo(f"Loaded PNEC values for {len(PNEC_dict)} APIs.")
 
         # short tag -> full API mapping
         user_selection = os.path.join(plugin_dir, "user_selection.txt")
@@ -219,13 +235,17 @@ class RiskAssessment(QgsProcessingAlgorithm):
             feedback.reportError(f"Could not read user_selection.txt: {e}")
             return{}
 
-        # create an indipendent copy of the river layer
+        # create an independent copy of the river layer (supports both line and polygon)
+        from qgis.core import QgsWkbTypes
         crs = river_layer_original.crs().authid()
-        river_layer = QgsVectorLayer("LineString?crs={}".format(crs), "river_layer_copy", "memory")
+        geom_type = QgsWkbTypes.displayString(river_layer_original.wkbType())
+        feedback.pushInfo(f"\nInput layer geometry type: {geom_type}")
+        feedback.pushInfo(f"Creating working copy of input layer...")
+        river_layer = QgsVectorLayer(f"{geom_type}?crs={crs}", "river_layer_copy", "memory")
         provider = river_layer.dataProvider()
 
         # add the NET_ID field
-        net_id_field = river_layer_original.fields().field("NET_ID")
+        net_id_field = river_layer_original.fields().field(id_field)
         if net_id_field:
             provider.addAttributes([net_id_field])
         
@@ -239,12 +259,14 @@ class RiskAssessment(QgsProcessingAlgorithm):
         for feat in river_layer_original.getFeatures():
             new_feat = QgsFeature(river_layer.fields())
             new_feat.setGeometry(feat.geometry())
-            # copy NET_ID if it exists
+            # copy the ID field if it exists
             if net_id_field:
-                new_feat["NET_ID"] = feat["NET_ID"]
+                new_feat[id_field] = feat[id_field]
             for field in selected_api_fields:
                 new_feat[field] = feat[field]
             provider.addFeature(new_feat)
+        
+        feedback.pushInfo(f"Copied {river_layer.featureCount()} features with {len(selected_api_fields)} concentration fields.")
 
         # add new fields for RQ
         era_field_names = []
@@ -260,6 +282,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
             era_field_names.append((conc_field, era_field, api_suffix))
         river_layer.updateFields()
 
+        feedback.pushInfo(f"\nCalculating Risk Quotient (RQ = PEC/PNEC) for {len(era_field_names)} API concentration fields...")
 
         # calculate RQ = PEC/PNEC
         river_layer.startEditing()      #not sure if it is necessary
@@ -288,12 +311,13 @@ class RiskAssessment(QgsProcessingAlgorithm):
 
         # commit changes
         river_layer.commitChanges()
+        feedback.pushInfo("Risk Quotient calculation completed.")
 
         """
         Logistic function code by Wojtek Artichowicz
         """
 
-        feedback.pushInfo("Starting calculating the logistic function...\n")
+        feedback.pushInfo("\nCalculating cumulative risk index using logistic function...")
 
         def logistic(x, k, x0, s):
             if x is None:
@@ -345,8 +369,10 @@ class RiskAssessment(QgsProcessingAlgorithm):
         cumulative_function(prefix="eraL_", name="cumul_RQ_L")
         # commit changes
         river_layer.commitChanges()
+        feedback.pushInfo("Cumulative risk index calculation completed.")
 
         '''sink definition'''
+        feedback.pushInfo("\nPreparing output layer...")
         (sink, self.dest_id) = self.parameterAsSink(
             parameters,
             self.OUTPUT,
@@ -397,7 +423,12 @@ class RiskAssessment(QgsProcessingAlgorithm):
         #     sink_layer.triggerRepaint()
 
         if sink_layer:
-            style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_v2.qml')
+            # Choose style based on geometry type
+            from qgis.core import QgsWkbTypes
+            if sink_layer.geometryType() == QgsWkbTypes.PolygonGeometry:
+                style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_polygon.qml')
+            else:
+                style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_v2.qml')
             sink_layer.loadNamedStyle(style_path)
             sink_layer.triggerRepaint()
 
