@@ -954,87 +954,69 @@ class Accumulation(QgsProcessingAlgorithm):
                 feedback.pushInfo(f"Emission {emission_id} -> {distance:.2f} meters")
 
 
-        # splitting river network at lines by creating buffer at vertices
-        buffer = processing.run("native:buffer", {
-            'INPUT': load,
-            'DISTANCE':0.02,    # buffer of 2 cm
-            'SEGMENTS':5,
-            'END_CAP_STYLE':0,
-            'JOIN_STYLE':0,
-            'MITER_LIMIT':2,
-            'DISSOLVE':False,
-            'SEPARATE_DISJOINT':False,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
-        feedback.pushInfo(f"Number of feature buffer: {buffer.featureCount()}")
+        # Split river sections at emission point locations using curveSubstring
+        # This directly extracts line substrings at the known distances, avoiding
+        # the splitwithlines vertex explosion problem
+        feedback.setProgressText("\nSplitting river sections at emission point locations...")
 
-        # split with the buffer
-        split_with_errors = processing.run("native:splitwithlines", {
-            'INPUT':river_layer,
-            'LINES':buffer,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
-        feedback.pushInfo(f"Number of feature split_with_errors: {split_with_errors.featureCount()}")
+        split_fields = river_layer.fields()
+        geom_type_str = QgsWkbTypes.displayString(river_layer.wkbType())
+        non_null_geom_layer = QgsVectorLayer(
+            f"{geom_type_str}?crs={river_layer.crs().authid()}",
+            "split_river", "memory"
+        )
+        split_provider = non_null_geom_layer.dataProvider()
+        split_provider.addAttributes(split_fields)
+        non_null_geom_layer.updateFields()
 
-        # remove the segments within the buffer from the river layer
-        difference = processing.run("native:difference", {
-            'INPUT':split_with_errors,
-            'OVERLAY':buffer,
-            'OUTPUT':'TEMPORARY_OUTPUT',
-            'GRID_SIZE':None})["OUTPUT"]
-        
-        feedback.pushInfo(f"Number of feature difference: {difference.featureCount()}")
+        new_features = []
+        for feat in river_layer.getFeatures():
+            section_id = feat[id_field]
+            geom = feat.geometry()
 
-        # snap the river line back together
-        split_river_layer = processing.run("native:snapgeometries", {
-            'INPUT': difference,
-            'REFERENCE_LAYER': load,
-            'TOLERANCE':0.05,   # snapping within 5cm
-            'BEHAVIOR':0,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
-        feedback.pushInfo(f"Number of feature split_river_layer: {split_river_layer.featureCount()}")
+            if section_id not in sorted_distances or not sorted_distances[section_id]:
+                # No emission points on this section, keep as-is
+                new_feat = QgsFeature(non_null_geom_layer.fields())
+                new_feat.setGeometry(QgsGeometry(geom))
+                new_feat.setAttributes(feat.attributes())
+                new_features.append(new_feat)
+                continue
 
-        # the file has geometries that need to be fixed
-        # with MAC, method [1] gives problem so we add method [0] as well
-        # check GEOS version and choose method
-        geos_version_str = Qgis.geosVersion()
-        version_parts = geos_version_str.split('.')[:2] # extract first two numbers, e.g., "3" and "10"
-        major = int(version_parts[0]) #e.g., "3"
-        minor = int(version_parts[1]) #e.g., "10"
-        if major > 3 or (major == 3 and minor >= 10):
-            method = 1
-        else:
-            method = 0
-        feedback.pushInfo(f"GEOS version: {geos_version_str}")
-        feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
+            # Get the underlying line geometry for curveSubstring
+            abstract_geom = geom.constGet()
+            if QgsWkbTypes.isMultiType(geom.wkbType()):
+                line_geom = abstract_geom.geometryN(0)
+            else:
+                line_geom = abstract_geom
 
-        fixed_layer = processing.run("native:fixgeometries", {
-            'INPUT':split_river_layer,
-            'METHOD':method,
-            'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)["OUTPUT"]
-        
-        feedback.pushInfo(f"Number of feature fixed_layer: {fixed_layer.featureCount()}")
+            total_length = geom.length()
 
-        # remove null geometries from the layer
-        feedback.setProgressText("\nRemoving the null geometries...")
-        non_null_geom_layer = processing.run("native:removenullgeometries", {
-            'INPUT':fixed_layer,
-            'REMOVE_EMPTY':True,
-            'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)["OUTPUT"]
-        
-        feedback.pushInfo(f"Number of feature non_null_geom_layer: {non_null_geom_layer.featureCount()}")
+            # Get split distances (already sorted by distance along line)
+            distances = [d for _, d in sorted_distances[section_id]]
 
-        # # dissolving the layer because after "split with lines" some features are separated
-        # non_null_geom_layer = processing.run("native:dissolve", {
-        #     'INPUT': non_null_geom_layer_no_dissolved,
-        #     'FIELD':['CATCH_ID'],
-        #     'SEPARATE_DISJOINT':False,
-        #     'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
-        # feedback.pushInfo(f"Number of feature non_null_geom_layer: {non_null_geom_layer.featureCount()}")
+            # Create sub-segments: [0→d1], [d1→d2], ..., [dn→total_length]
+            boundaries = [0.0] + distances + [total_length]
+
+            for i in range(len(boundaries) - 1):
+                start_dist = boundaries[i]
+                end_dist = boundaries[i + 1]
+
+                if end_dist - start_dist < 0.001:  # Skip tiny segments
+                    continue
+
+                sub_geom = line_geom.curveSubstring(start_dist, end_dist)
+                if sub_geom is None or sub_geom.isEmpty():
+                    continue
+
+                new_feat = QgsFeature(non_null_geom_layer.fields())
+                new_feat.setGeometry(QgsGeometry(sub_geom.clone()))
+                new_feat.setAttributes(feat.attributes())
+                new_features.append(new_feat)
+
+        split_provider.addFeatures(new_features)
+        non_null_geom_layer.updateExtents()
+
+        feedback.pushInfo(f"Number of features after splitting: {non_null_geom_layer.featureCount()}")
         
         # We create new river sections at each emission point. We need to update the name of the section (NET_ID) and 
         # the relationship with the other river sections (NET_TO). We create a new naming system where if section 1001
