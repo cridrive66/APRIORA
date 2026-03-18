@@ -73,10 +73,18 @@ class RiskAssessment(QgsProcessingAlgorithm):
     selectedAPI = 'selectedAPI'
     fieldID = "fieldID"
     custom = "custom"
+    raTypes = 'raTypes'
     k_param = 'kParam'
     x0_param = 'x0Param'
     OUTPUT = 'OUTPUT'
     dest_id = None
+
+    # Risk assessment types and their corresponding PNEC column names and field prefixes
+    RA_TYPE_CONFIG = [
+        ('ERA',    'ERA [ng/l]',    'era',  'eraL'),
+        ('HHRA',   'HHRA [ng/l]',   'hhra', 'hhraL'),
+        ('AMR-RA', 'AMR-RA [ng/l]', 'amr',  'amrL'),
+    ]
 
     def shortHelpString(self):
         return self.tr(
@@ -145,6 +153,16 @@ class RiskAssessment(QgsProcessingAlgorithm):
             )
         )
 
+        self.addParameter(
+            QgsProcessingParameterEnum(
+                self.raTypes,
+                self.tr('Select risk assessment type(s)'),
+                options=['ERA (Environmental)', 'HHRA (Human Health)', 'AMR-RA (Antimicrobial Resistance)'],
+                allowMultiple=True,
+                defaultValue=[0]
+            )
+        )
+
         k_option = QgsProcessingParameterNumber(
             self.k_param,
             self.tr("Scale factor k"),
@@ -193,30 +211,45 @@ class RiskAssessment(QgsProcessingAlgorithm):
             selected_api_fields = self.parameterAsFields(parameters, self.selectedAPI, context)
         id_field = self.parameterAsString(parameters, self.fieldID, context)
         custom_selection = self.parameterAsBoolean(parameters, self.custom, context)
+        selected_ra_indices = self.parameterAsEnums(parameters, self.raTypes, context)
         k = self.parameterAsDouble(parameters, self.k_param, context)
         x0 = self.parameterAsDouble(parameters, self.x0_param, context)
 
+        # Determine which RA types are selected
+        selected_ra_types = [self.RA_TYPE_CONFIG[i] for i in selected_ra_indices]
+        feedback.pushInfo(f"Selected risk assessment types: {[ra[0] for ra in selected_ra_types]}")
+
         # load PNEC table
+        plugin_dir = os.path.dirname(__file__)
         if custom_selection:
-            plugin_dir = os.path.dirname(__file__)
             PNEC_file = os.path.join(plugin_dir, "datasets/custom_dataset/PNEC_.csv")
-            try:
-                df_PNEC = pd.read_csv(PNEC_file, sep=",")
-            except Exception as e:
-                feedback.reportError(f"Could not read CSV file: {e}")
-                return {}
-            
-        if not custom_selection:
-            plugin_dir = os.path.dirname(__file__)
+        else:
             PNEC_file = os.path.join(plugin_dir, "datasets/original_dataset/PNEC ERA.csv")
-            try:
-                df_PNEC = pd.read_csv(PNEC_file, sep=",")
-            except Exception as e:
-                feedback.reportError(f"Could not read CSV file: {e}")
+
+        try:
+            df_PNEC = pd.read_csv(PNEC_file, sep=",")
+        except Exception as e:
+            feedback.reportError(f"Could not read PNEC file: {e}")
+            return {}
+
+        # Build a PNEC dict per RA type: { 'ERA': {api_name: pnec_value, ...}, ... }
+        PNEC_dicts = {}
+        for ra_label, pnec_col, _, _ in selected_ra_types:
+            if pnec_col not in df_PNEC.columns:
+                feedback.reportError(f"Column '{pnec_col}' not found in PNEC table. Available columns: {list(df_PNEC.columns)}")
                 return {}
-            
-        PNEC_dict = dict(zip(df_PNEC['API name'], df_PNEC['PNEC ng/l']))
-        feedback.pushInfo(f"Loaded PNEC values for {len(PNEC_dict)} APIs.")
+            ra_dict = {}
+            for _, row in df_PNEC.iterrows():
+                val = row[pnec_col]
+                # skip missing / non-numeric values (na, -, empty)
+                try:
+                    numeric_val = float(val)
+                    if numeric_val > 0:
+                        ra_dict[row['API name']] = numeric_val
+                except (ValueError, TypeError):
+                    pass
+            PNEC_dicts[ra_label] = ra_dict
+            feedback.pushInfo(f"Loaded {len(ra_dict)} PNEC values for {ra_label}.")
 
         # short tag -> full API mapping
         user_selection = os.path.join(plugin_dir, "user_selection.txt")
@@ -268,45 +301,47 @@ class RiskAssessment(QgsProcessingAlgorithm):
         
         feedback.pushInfo(f"Copied {river_layer.featureCount()} features with {len(selected_api_fields)} concentration fields.")
 
-        # add new fields for RQ
-        era_field_names = []
+        # add new fields for RQ - one per RA type per concentration field
+        rq_field_entries = []  # list of (conc_field, rq_field_name, api_suffix, ra_label, pnec_col)
         for conc_field in selected_api_fields:
-            api_suffix = conc_field[-4:] # last 4 letters (e.g., Carb)
-            if conc_field.startswith("conc_"):
-                era_field = f"era_{api_suffix}"
-            elif conc_field.startswith("conL_"):
-                era_field = f"eraL_{api_suffix}"
-            else:
-                continue    # consider change it and add an error
-            provider.addAttributes([QgsField(era_field, QVariant.Double)])
-            era_field_names.append((conc_field, era_field, api_suffix))
+            api_suffix = conc_field[-4:]  # last 4 letters (e.g., Carb)
+            is_low_flow = conc_field.startswith("conL_")
+            is_normal = conc_field.startswith("conc_")
+            if not is_normal and not is_low_flow:
+                continue
+
+            for ra_label, pnec_col, prefix_normal, prefix_low in selected_ra_types:
+                prefix = prefix_low if is_low_flow else prefix_normal
+                rq_field_name = f"{prefix}_{api_suffix}"
+                provider.addAttributes([QgsField(rq_field_name, QVariant.Double)])
+                rq_field_entries.append((conc_field, rq_field_name, api_suffix, ra_label, pnec_col))
         river_layer.updateFields()
 
-        feedback.pushInfo(f"\nCalculating Risk Quotient (RQ = PEC/PNEC) for {len(era_field_names)} API concentration fields...")
+        feedback.pushInfo(f"\nCalculating Risk Quotient (RQ = PEC/PNEC) for {len(rq_field_entries)} fields across {len(selected_ra_types)} RA type(s)...")
 
-        # calculate RQ = PEC/PNEC
-        river_layer.startEditing()      #not sure if it is necessary
+        # calculate RQ = PEC/PNEC for each RA type
+        river_layer.startEditing()
 
-        for conc_field, era_field, api_suffix in era_field_names:
+        for conc_field, rq_field_name, api_suffix, ra_label, pnec_col in rq_field_entries:
             # map short tag to full API name
             full_api_name = API_map.get(api_suffix)
             if full_api_name is None:
                 feedback.pushWarning(f"Skipping {api_suffix}: no mapping found in user_selection.txt")
-                continue  # skip if no mapping
+                continue
 
-            # get PNEC value
-            pnec = PNEC_dict.get(full_api_name)
+            # get PNEC value for this RA type
+            pnec = PNEC_dicts[ra_label].get(full_api_name)
             if pnec is None or pnec == 0:
-                feedback.pushWarning(f"PNEC is 0 or no PNEC value found for {full_api_name}")
-                continue    # avoid division by zero
+                feedback.pushWarning(f"No valid {ra_label} PNEC value for {full_api_name} - skipping")
+                continue
 
-            # calculate ERA RA for all features in this column
+            # calculate RQ for all features
             for feat in river_layer.getFeatures():
                 pec = feat[conc_field]
                 if pec is None or pec == NULL:
-                    continue    # skip if no value
-                rq_era = float(pec) / pnec
-                feat[era_field] = rq_era
+                    continue
+                rq_value = float(pec) / pnec
+                feat[rq_field_name] = rq_value
                 river_layer.updateFeature(feat)
 
         # commit changes
@@ -364,9 +399,11 @@ class RiskAssessment(QgsProcessingAlgorithm):
                     river_layer.updateFeature(feat)
 
         # start editing
-        river_layer.startEditing()  
-        cumulative_function(prefix="era_", name= "cumul_RQ")
-        cumulative_function(prefix="eraL_", name="cumul_RQ_L")
+        river_layer.startEditing()
+        # Calculate cumulative RQ for each selected RA type (normal + low flow)
+        for ra_label, _, prefix_normal, prefix_low in selected_ra_types:
+            cumulative_function(prefix=f"{prefix_normal}_", name=f"cumul_{prefix_normal}")
+            cumulative_function(prefix=f"{prefix_low}_", name=f"cumul_{prefix_low}")
         # commit changes
         river_layer.commitChanges()
         feedback.pushInfo("Cumulative risk index calculation completed.")
