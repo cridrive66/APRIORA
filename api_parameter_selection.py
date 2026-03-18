@@ -209,6 +209,10 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.reloadButton_3.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         # set a flag for save pop-up
         self.flag = False   # check the utility of this flag
+        # Modification tracking flags for each table
+        self.consumption_modified = False
+        self.removal_modified = False
+        self.pnec_modified = False
         # directory of the databases
         csv_file, self.temp_cons = self.get_dataset_path("consumption_dataset.csv", "consumption_.csv")
         RR_file, self.temp_rr = self.get_dataset_path("removal_rates.csv", "removal_.csv")
@@ -401,12 +405,26 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             for item in new_items:
                 item.setFlags(item.flags() | Qt.ItemIsEditable)
             model.appendRow(new_items)
+            # Set modification flag based on which table was modified
+            if table_view == self.excelTableView:
+                self.consumption_modified = True
+            elif table_view == self.RRTableView:
+                self.removal_modified = True
+            elif table_view == self.PNECTableView:
+                self.pnec_modified = True
 
     def remove_selected_row(self, table_view):
         model = table_view.model()
         selection = table_view.selectionModel().selectedRows()
         for index in sorted(selection, reverse = True):
             model.removeRow(index.row())
+        # Set modification flag based on which table was modified
+        if table_view == self.excelTableView:
+            self.consumption_modified = True
+        elif table_view == self.RRTableView:
+            self.removal_modified = True
+        elif table_view == self.PNECTableView:
+            self.pnec_modified = True
 
     def save_temp_table(self, table_view, name):
         model = table_view.model()
@@ -430,11 +448,113 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         df.to_csv(temp_file, index=False)
         return temp_file
 
+    def propagate_substances_from_consumption(self):
+        """
+        Auto-propagate substances from consumption table to removal rates and PNEC tables.
+        When a substance is added to consumption table:
+        - Add it to removal rates table with all TC columns (empty values)
+        - Add it to PNEC table with default empty structure
+        When a substance is removed from consumption table:
+        - Remove it from both removal rates and PNEC tables
+        This ensures all three tables stay synchronized.
+        """
+        try:
+            # Extract current API names from consumption table (from self.df)
+            consumption_apis = set(self.df["API name"].unique())
+            
+            # Get API names from removal rates table
+            removal_apis = set(self.df_RR["API name"].unique())
+            
+            # Get API names from PNEC table
+            pnec_apis = set(self.df_PNEC["API name"].unique())
+            
+            # APIs to add (in consumption but not in removal/PNEC)
+            apis_to_add = consumption_apis - removal_apis
+            
+            # APIs to remove (in removal/PNEC but not in consumption)
+            apis_to_remove_removal = removal_apis - consumption_apis
+            apis_to_remove_pnec = pnec_apis - consumption_apis
+            
+            # Add missing APIs to removal rates table
+            if apis_to_add:
+                for api_name in apis_to_add:
+                    # Create new row with all TC columns (TC1, TC2, TC3, ...)
+                    new_row = {"API name": api_name}
+                    # Add all TC columns from existing rows
+                    if not self.df_RR.empty:
+                        tc_columns = [col for col in self.df_RR.columns if col.startswith("TC") and "removal rate" in col]
+                        for col in tc_columns:
+                            new_row[col] = ""
+                    # Add other columns that might exist
+                    for col in self.df_RR.columns:
+                        if col not in new_row:
+                            new_row[col] = ""
+                    # Append to dataframe
+                    self.df_RR = pd.concat([self.df_RR, pd.DataFrame([new_row])], ignore_index=True)
+            
+            # Remove APIs from removal rates table
+            if apis_to_remove_removal:
+                self.df_RR = self.df_RR[~self.df_RR["API name"].isin(apis_to_remove_removal)].reset_index(drop=True)
+            
+            # Add missing APIs to PNEC table
+            if apis_to_add:
+                for api_name in apis_to_add:
+                    new_row = {"API name": api_name}
+                    # Add other columns that might exist
+                    for col in self.df_PNEC.columns:
+                        if col not in new_row:
+                            new_row[col] = ""
+                    # Append to dataframe
+                    self.df_PNEC = pd.concat([self.df_PNEC, pd.DataFrame([new_row])], ignore_index=True)
+            
+            # Remove APIs from PNEC table
+            if apis_to_remove_pnec:
+                self.df_PNEC = self.df_PNEC[~self.df_PNEC["API name"].isin(apis_to_remove_pnec)].reset_index(drop=True)
+            
+            # Reload tables and persist propagated changes to CSV
+            if apis_to_add or apis_to_remove_removal:
+                self.load_table(self.df_RR, self.RRTableView, False)
+                self.save_temp_table(self.RRTableView, "removal_")
+            if apis_to_add or apis_to_remove_pnec:
+                self.load_table(self.df_PNEC, self.PNECTableView, False)
+                self.save_temp_table(self.PNECTableView, "PNEC_")
+                
+        except Exception as e:
+            QMessageBox.warning(self, "Warning", f"Could not automatically propagate substances: {e}\nYou may need to manually add substances to Removal Rates and PNEC tables.")
+    
     def handle_save_consumption(self):
+        # Validate mandatory fields before saving
+        model = self.excelTableView.model()
+        if model is None:
+            return
+        headers = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+        mandatory_fields = ["API name", "year", "country", "region", "API input (mg/inh./a)"]
+        mandatory_indices = []
+        for field in mandatory_fields:
+            if field in headers:
+                mandatory_indices.append((headers.index(field), field))
+
+        for row in range(model.rowCount()):
+            for col_idx, field_name in mandatory_indices:
+                value = model.index(row, col_idx).data()
+                if not value or str(value).strip() == "" or str(value).strip().lower() == "nan":
+                    QMessageBox.warning(
+                        self, "Missing Data",
+                        f"Row {row + 1}: '{field_name}' is empty.\n\n"
+                        f"Please fill in all mandatory fields\n"
+                        f"(API name, year, country, region, API input)\n"
+                        f"before saving."
+                    )
+                    return
+
         self.temp_consumption_path = self.save_temp_table(self.excelTableView, "consumption_")
         self.df = pd.read_csv(self.temp_consumption_path, sep=",")
         self.update_filters()
-        QMessageBox.information(self, "Success", "Consumption table saved.")
+        # Auto-propagate new substances to other tables
+        self.propagate_substances_from_consumption()
+        # Reset modification flag
+        self.consumption_modified = False
+        QMessageBox.information(self, "Success", "Consumption table saved.\nNew substances have been automatically added to Removal Rates and PNEC tables.")
 
 
     def restore_original(self, original_filename, custom_filename, loader_func, table_view, update_filters):
@@ -505,6 +625,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     def handle_save_rr(self):
         self.temp_rr_path = self.save_temp_table(self.RRTableView, "removal_")
         self.df_RR = pd.read_csv(self.temp_rr_path, sep=",")
+        # Reset modification flag
+        self.removal_modified = False
         QMessageBox.information(self, "Success", "Removal rate table saved.")
 
     
@@ -657,5 +779,57 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     """
     def handle_save_pnec(self):
         self.temp_pnec_path = self.save_temp_table(self.PNECTableView, "PNEC_")
+        # Reset modification flag
+        self.pnec_modified = False
         QMessageBox.information(self, "Success", "PNEC table saved.")
+
+    def closeEvent(self, event):
+        """
+        Override close event to prompt user to save unsaved changes before closing.
+        This prevents users from accidentally losing their modifications.
+        """
+        modified_tabs = []
+        
+        # Check which tabs have unsaved changes
+        if self.consumption_modified:
+            modified_tabs.append(("Consumption Data (Tab 1)", self.handle_save_consumption))
+        if self.removal_modified:
+            modified_tabs.append(("Removal Rates (Tab 2)", self.handle_save_rr))
+        if self.pnec_modified:
+            modified_tabs.append(("PNEC Values (Tab 4)", self.handle_save_pnec))
+        
+        # If there are unsaved changes, prompt user for each tab
+        if modified_tabs:
+            tabs_list = "\n".join([f"  \u2022 {tab[0]}" for tab in modified_tabs])
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("Unsaved Changes")
+            msg_box.setText("You have unsaved changes. Do you want to save before closing?")
+            msg_box.setInformativeText(tabs_list)
+            msg_box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+            msg_box.setDefaultButton(QMessageBox.Save)
+            reply = msg_box.exec_()
+            
+            if reply == QMessageBox.Cancel:
+                # Cancel close event
+                event.ignore()
+                return
+            elif reply == QMessageBox.Save:
+                # Save all modified tabs
+                for tab_name, save_func in modified_tabs:
+                    try:
+                        save_func()
+                    except Exception as e:
+                        error_reply = QMessageBox.critical(
+                            self,
+                            "Save Error",
+                            f"Failed to save {tab_name}:\n{e}\n\nDo you want to close anyway?",
+                            QMessageBox.Yes | QMessageBox.No
+                        )
+                        if error_reply == QMessageBox.No:
+                            event.ignore()
+                            return
+        
+        # Allow close event to proceed
+        event.accept()
 
