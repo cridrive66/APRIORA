@@ -71,10 +71,10 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
     catchmentAreas = 'CatchmentAreas'
     riverNetwork = 'RiverNetwork'
-    #FLIP_OPTION = 'FLIP_OPTION'
     OUTLET_POINT = 'OUTLET_POINT'
     SEARCH_RADIUS = 'SEARCH_BUFFER'
     OUTPUT = 'OUTPUT'
+    OUTPUT_ungauged = "OUTPUT_ungauged"
 
     def shortHelpString(self):
         return self.tr(""" This tool aligns the river network with the subcatchments' borders and calculates the contributing relationship between the different river sections.
@@ -118,15 +118,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             )
         )
 
-        # self.addParameter(
-        #     QgsProcessingParameterEnum(
-        #         self.FLIP_OPTION,
-        #         self.tr("Flip lines according to flow direction?"),
-        #         ['yes (from source to mouth)','no', 'against (from mouth to source)'],
-        #         defaultValue=[0]
-        #     )
-        # )
-
         self.addParameter(
             QgsProcessingParameterPoint(
                 self.OUTLET_POINT,
@@ -163,6 +154,15 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             )
         )
 
+        # contributing subcatchments with the "CATCH ID" code
+        self.addParameter(
+            QgsProcessingParameterFeatureSink(
+                self.OUTPUT_ungauged,
+                self.tr('Ungauged subcatch'),
+                QgsProcessing.TypeVectorPolygon
+            )
+        )
+
     def executePointSelection(self): #should I add "parameters, context, feedback"?
         """
         This function allows the user to click on the map and select the outlet point.
@@ -181,6 +181,16 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         self._map_tool = FixRiverNetwork.PointSelectionTool(canvas, pointSelected)
         canvas.setMapTool(self._map_tool)
     
+    @staticmethod
+    def _get_geos_fix_method():
+        """Return the appropriate fix-geometries method based on GEOS version.
+        GEOS >= 3.10 supports method 1; older versions fall back to method 0 (Mac compatibility).
+        """
+        geos_version_str = Qgis.geosVersion()
+        major, minor = (int(x) for x in geos_version_str.split('.')[:2])
+        method = 1 if (major > 3 or (major == 3 and minor >= 10)) else 0
+        return method, geos_version_str
+
     def find_closest_vertex(self, parameters, context, feedback, point, spatial_index, vertex_map, threshold):
         # Get 5 nearest vertices using a geometry built from the input point
         nearest_ids = spatial_index.nearestNeighbor(QgsGeometry.fromPointXY(point), 5)
@@ -220,207 +230,131 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         river_layer_imperfections = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         search_radius = self.parameterAsDouble(parameters, self.SEARCH_RADIUS, context)
 
-        # remove imperfections in the river input file
-        river_layer = processing.run("native:simplifygeometries", {
-            'INPUT':river_layer_imperfections,
-            'METHOD':0,
-            'TOLERANCE':0.01, # 1cm
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
-        crs = subcatchments_layer_original.crs().authid()
-        geom_type = QgsWkbTypes.displayString(subcatchments_layer_original.wkbType())
-        # create memory layer
-        subcatchments_layer = QgsVectorLayer(f"{geom_type}?crs={crs}", "subcatchment_layer_copy", "memory")
-        provider = subcatchments_layer.dataProvider()
-        # copy all fields
-        provider.addAttributes(subcatchments_layer_original.fields())
-        subcatchments_layer.updateFields()
-        # copy all features
-        features = []
-        for feat in subcatchments_layer_original.getFeatures():
-            new_feat = QgsFeature(feat)
-            features.append(new_feat)
-        provider.addFeatures(features)
-        subcatchments_layer.updateExtents()
-        
-        with edit(subcatchments_layer):
-            field_name = "id_catch"
-            fields = subcatchments_layer.fields()
+        # validate that both layers share the same CRS
+        subcatch_crs = subcatchments_layer_original.crs()
+        river_crs = river_layer_imperfections.crs()
+        if subcatch_crs != river_crs:
+            raise QgsProcessingException(
+                f"CRS mismatch: the subcatchment layer uses '{subcatch_crs.authid()}' "
+                f"while the river network uses '{river_crs.authid()}'. "
+                f"Please reproject one of the layers so that both share the same CRS before running this tool."
+            )
 
-            # check if the field already exists
-            if field_name not in [field.name() for field in fields]:
-                subcatchments_layer.dataProvider().addAttributes([QgsField(field_name, QVariant.Int)])
-                subcatchments_layer.updateFields()
-            else:
-                feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.") 
+        # preprocess river layer: simplify → snap → fix → merge
+        feedback.setProgressText("\nPreprocessing river layer...")
 
-            # populate the new column with unique IDs
-            unique_id_start = 100 #or any starting value
-            for idx, feature in enumerate(subcatchments_layer.getFeatures(), start = unique_id_start):
-                feature[field_name] = idx
-                subcatchments_layer.updateFeature(feature)
-
-        feedback.setProgressText(f"Number of features in subcatchments_layer: {subcatchments_layer.featureCount()}")
-
-        # before we start, let's preprocess the river layer and clean it from possible imperfections
-        feedback.setProgressText("\nPreprocessing river layer and clean it from possible imperfections...")
         feedback.setProgressText("Simplify geometries...")
         simplified = processing.run("native:simplifygeometries", {
-            'INPUT':river_layer,
-            'METHOD':0,
-            'TOLERANCE':0.5, #50 cm
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
+            'INPUT': river_layer_imperfections,
+            'METHOD': 0,
+            'TOLERANCE': 0.5,
+            'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)["OUTPUT"]
+
+        if feedback.isCanceled():
+            return {}
+
         feedback.setProgressText("Snap geometries...")
         snapped = processing.run("native:snapgeometries", {
-            'INPUT':simplified,
-            'REFERENCE_LAYER':simplified,
-            'TOLERANCE':0.5,
-            'BEHAVIOR':7,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
+            'INPUT': simplified,
+            'REFERENCE_LAYER': simplified,
+            'TOLERANCE': 0.5,
+            'BEHAVIOR': 7,
+            'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)["OUTPUT"]
+
+        if feedback.isCanceled():
+            return {}
+
         feedback.setProgressText("Fix geometries...")
         fixed_snapped = processing.run("native:fixgeometries", {
-            'INPUT':snapped,
-            'METHOD':0,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
+            'INPUT': snapped,
+            'METHOD': 0,
+            'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)["OUTPUT"]
+
         feedback.setProgressText("Merging lines...")
         merged_lines = processing.run("native:mergelines", {
-            'INPUT':fixed_snapped,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+            'INPUT': fixed_snapped,
+            'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)["OUTPUT"]
 
-        # extract start [0] and end [-1] vertices from the river network
+        if feedback.isCanceled():
+            return {}
+
+        # extract start and end vertices from the river network, then deduplicate
         feedback.setProgressText("\nExtracting start and end vertices from river network...")
-        vertices_river_result = processing.run("native:extractspecificvertices", {
-            'INPUT': merged_lines,
-            'VERTICES':'0, -1',
-            'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)["OUTPUT"]
-        # remove duplicates
         vertices_river_layer = processing.run("native:deleteduplicategeometries", {
-            'INPUT':vertices_river_result,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-
+            'INPUT': processing.run("native:extractspecificvertices", {
+                'INPUT': merged_lines,
+                'VERTICES': '0, -1',
+                'OUTPUT': 'TEMPORARY_OUTPUT'},
+                context=context, feedback=feedback)["OUTPUT"],
+            'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
         feedback.setProgressText(f"Number of features in vertices_river_layer: {vertices_river_layer.featureCount()}")
 
-        # extract all the vertices from the subcatchments
+        # extract all vertices from the subcatchments, then deduplicate
         feedback.setProgressText("\nExtracting vertices from the subcatchments...")
-        vertices_catch_result = processing.run("native:extractvertices", {
-            'INPUT':subcatchments_layer,
-            'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)["OUTPUT"]
-        # remove duplicates
         vertices_catch_layer = processing.run("native:deleteduplicategeometries", {
-            'INPUT':vertices_catch_result,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-
+            'INPUT': processing.run("native:extractvertices", {
+                'INPUT': subcatchments_layer_original,
+                'OUTPUT': 'TEMPORARY_OUTPUT'},
+                context=context, feedback=feedback)["OUTPUT"],
+            'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
         feedback.setProgressText(f"Number of features in vertices_catch_layer: {vertices_catch_layer.featureCount()}")
 
-        # splitting river network at lines by creating buffer at vertices
+        if feedback.isCanceled():
+            return {}
+
+        # split river network at vertices using the buffer-split-difference-snap approach
+        feedback.setProgressText("\nSplitting river network at vertices...")
         buffer = processing.run("native:buffer", {
             'INPUT': vertices_river_layer,
-            'DISTANCE':0.02,    # buffer of 2 cm
-            'SEGMENTS':5,
-            'END_CAP_STYLE':0,
-            'JOIN_STYLE':0,
-            'MITER_LIMIT':2,
-            'DISSOLVE':False,
-            'SEPARATE_DISJOINT':False,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
-        # split with the buffer
+            'DISTANCE': 0.02,
+            'SEGMENTS': 5,
+            'END_CAP_STYLE': 0,
+            'JOIN_STYLE': 0,
+            'MITER_LIMIT': 2,
+            'DISSOLVE': False,
+            'SEPARATE_DISJOINT': False,
+            'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
+
         split_with_errors = processing.run("native:splitwithlines", {
-            'INPUT':merged_lines,
-            'LINES':buffer,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
+            'INPUT': merged_lines,
+            'LINES': buffer,
+            'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
 
-        # remove the segments within the buffer from the river layer
         difference = processing.run("native:difference", {
-            'INPUT':split_with_errors,
-            'OVERLAY':buffer,
-            'OUTPUT':'TEMPORARY_OUTPUT',
-            'GRID_SIZE':None})["OUTPUT"]
+            'INPUT': split_with_errors,
+            'OVERLAY': buffer,
+            'OUTPUT': 'TEMPORARY_OUTPUT',
+            'GRID_SIZE': None})["OUTPUT"]
 
-        # snap the river line back together
         split_river_layer = processing.run("native:snapgeometries", {
             'INPUT': difference,
             'REFERENCE_LAYER': vertices_river_layer,
-            'TOLERANCE':0.05,   # snapping within 5cm
-            'BEHAVIOR':0,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-
-        # # splitting river network at lines by creating new lines
-        # line_layer = processing.run("native:geometrybyexpression", {
-        #     'INPUT':vertices_river_layer,
-        #     'OUTPUT_GEOMETRY':1,
-        #     'WITH_Z':False,
-        #     'WITH_M':False,
-        #     'EXPRESSION': """
-        #     make_line(
-        #         project($geometry, -0.01, radians("angle"-5)),
-        #         $geometry,
-        #         project($geometry, 0.01, radians("angle"-5))
-        #     )
-        #     """,
-        #     'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
-        # feedback.setProgressText(f"Number of features in line_layer: {line_layer.featureCount()}")
-
-        # split_river_layer = processing.run("native:splitwithlines", {
-        #     'INPUT':river_layer,
-        #     'LINES':line_layer,
-        #     'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-
-
-
-        # # split river network at each river vertex (SAGA required)
-        # # maybe add a trouble shooting line to check if SAGA is installed and raise a proper error
-        # feedback.setProgressText("\nSplitting river network at each river vertex...")
-        # split_result = processing.run("sagang:splitlinesatpoints", {
-        #     'LINES': parameters[self.riverNetwork],
-        #     'SPLIT': vertices_river_layer,
-        #     'INTERSECT':'TEMPORARY_OUTPUT',
-        #     'OUTPUT': 1, # not sure about which method use
-        #     'EPSILON':0},
-        #     context=context, feedback=feedback)
-        # split_river_layer = QgsVectorLayer(split_result["INTERSECT"], "split_river", "ogr")
+            'TOLERANCE': 0.05,
+            'BEHAVIOR': 0,
+            'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
 
         feedback.setProgressText(f"Number of features in split_river_layer: {split_river_layer.featureCount()}")
 
-        # the file has geometries that need to be fixed
-        # with MAC, method [1] gives problem so we add method [0] as well
-        # check GEOS version and choose method
-        geos_version_str = Qgis.geosVersion()
-        version_parts = geos_version_str.split('.')[:2] # extract first two numbers, e.g., "3" and "10"
-        major = int(version_parts[0]) #e.g., "3"
-        minor = int(version_parts[1]) #e.g., "10"
-        if major > 3 or (major == 3 and minor >= 10):
-            method = 1
-        else:
-            method = 0
-        feedback.pushInfo(f"GEOS version: {geos_version_str}")
-        feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
-        fixed_result = processing.run("native:fixgeometries", {
-            'INPUT':split_river_layer,
-            'METHOD':method, 
-            'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)
-        fixed_layer = fixed_result["OUTPUT"]
-        #QgsProject.instance().addMapLayer(fixed_layer)
-        #del split_river_layer
+        if feedback.isCanceled():
+            return {}
 
+        # fix geometries and remove nulls
+        method, geos_version_str = self._get_geos_fix_method()
+        feedback.pushInfo(f"GEOS version: {geos_version_str}")
+        feedback.setProgressText(f"\nFixing geometries with method [{method}]...")
+        fixed_layer = processing.run("native:fixgeometries", {
+            'INPUT': split_river_layer,
+            'METHOD': method,
+            'OUTPUT': 'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
         feedback.setProgressText(f"Number of features in fixed_layer: {fixed_layer.featureCount()}")
 
-        # remove null geometries from the layer
-        feedback.setProgressText("\nRemoving the null geometries...")
-        non_null_geom_result = processing.run("native:removenullgeometries", {
-            'INPUT':fixed_layer,
-            'REMOVE_EMPTY':True,
-            'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)
-        non_null_geom_layer = non_null_geom_result["OUTPUT"]
-        #del fixed_layer
+        feedback.setProgressText("\nRemoving null geometries...")
+        non_null_geom_layer = processing.run("native:removenullgeometries", {
+            'INPUT': fixed_layer,
+            'REMOVE_EMPTY': True,
+            'OUTPUT': 'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
         feedback.setProgressText(f"Number of features in non_null_geom_layer: {non_null_geom_layer.featureCount()}")
 
         # get all points from the subcatchment vertices layer
@@ -460,7 +394,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 return {}
 
             geom = feature.geometry()
-            feature_id = feature.id()
 
             if geom:
                 points = [QgsPointXY(point) for point in geom.vertices()]
@@ -490,42 +423,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         feedback.setProgressText(f"\nNumber of features in non_null_geom_layer after editing: {non_null_geom_layer.featureCount()}")
         #QgsProject.instance().addMapLayer(non_null_geom_layer)
-
-        # # align start points of river network vertices
-        # for feature in non_null_geom_layer.getFeatures(): # this part of the code is computationally very intense, so try to change it (add bounding box instead of for loop?)
-        #     geom = feature.geometry()
-        #     feature_id = feature.id()
-            
-        #     if geom:
-        #         # extract geometry points as QgsPointXY objects
-        #         points = [QgsPointXY(point) for point in geom.vertices()]
-        #         modified = False
-                
-        #         # check start vertex
-        #         closest_start = self.find_closest_vertex(parameters, context, feedback, points[0], vertices_catch_points, threshold)
-        #         if closest_start:
-        #             points[0] = closest_start
-        #             modified = True
-
-        #         # check end vertex
-        #         closest_end = self.find_closest_vertex(parameters, context, feedback, points[-1], vertices_catch_points, threshold)
-        #         if closest_end:
-        #             points[-1] = closest_end
-        #             modified = True
-                    
-        #         # collect changes if modified:
-        #         if modified:
-        #             new_geom = QgsGeometry.fromPolylineXY(points)
-        #             feature.setGeometry(new_geom)
-        #             features_to_update.append(feature)
-
-        # # apply updates in batch mode
-        # with edit(non_null_geom_layer):
-        #     for feature in features_to_update:
-        #         non_null_geom_layer.updateFeature(feature)
-
-        # feedback.setProgressText(f"\nNumber of features in non_null_geom_layer after editing: {non_null_geom_layer.featureCount()}")
-
         
         # identify invalid geometries before starting the intersection process
         feedback.setProgressText("\nChecking for invalid geometries...")
@@ -575,16 +472,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         
         # fix geometries from the layer
-        # with MAC, method [1] gives problem so we add method [0] as well
-        # check GEOS version and choose method
-        geos_version_str = Qgis.geosVersion()
-        version_parts = geos_version_str.split('.')[:2] # extract first two numbers, e.g., "3" and "10"
-        major = int(version_parts[0]) #e.g., "3"
-        minor = int(version_parts[1]) #e.g., "10"
-        if major > 3 or (major == 3 and minor >= 10):
-            method = 1
-        else:
-            method = 0
+        method, geos_version_str = self._get_geos_fix_method()
         feedback.pushInfo(f"GEOS version: {geos_version_str}")
         feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
         again_fixed_layer = processing.run("native:fixgeometries", {
@@ -594,24 +482,40 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             context=context, feedback=feedback)["OUTPUT"]
         
         subcatchments_layer_fixed = processing.run("native:fixgeometries", {
-            'INPUT':subcatchments_layer,
-            'METHOD':method,
-            'OUTPUT':'TEMPORARY_OUTPUT'},
+            'INPUT': subcatchments_layer_original,
+            'METHOD': method,
+            'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
-        
 
-        # intersection with subcatchments
+        # create a copy of subcatchments and add CATCH_ID (starting from 100)
+        crs = subcatchments_layer_fixed.crs().authid()
+        geom_type = QgsWkbTypes.displayString(subcatchments_layer_fixed.wkbType())
+        subcatch_with_id = QgsVectorLayer(f"{geom_type}?crs={crs}", "subcatch_with_catch_id", "memory")
+        provider = subcatch_with_id.dataProvider()
+        provider.addAttributes(subcatchments_layer_fixed.fields())
+        subcatch_with_id.updateFields()
+        provider.addFeatures([QgsFeature(f) for f in subcatchments_layer_fixed.getFeatures()])
+        subcatch_with_id.updateExtents()
+
+        with edit(subcatch_with_id):
+            if "CATCH_ID" not in [f.name() for f in subcatch_with_id.fields()]:
+                subcatch_with_id.dataProvider().addAttributes([QgsField("CATCH_ID", QVariant.String)])
+                subcatch_with_id.updateFields()
+            for idx, feature in enumerate(subcatch_with_id.getFeatures(), start=100):
+                feature["CATCH_ID"] = str(idx)
+                subcatch_with_id.updateFeature(feature)
+
+        # intersect river with subcatchments to split segments at subcatchment boundaries
         feedback.setProgressText("\nCalculating intersection with the subcatchments...")
         intersection_layer = processing.run("native:intersection", {
             'INPUT': again_fixed_layer,
-            'OVERLAY': subcatchments_layer_fixed,
-            'INPUT_FIELDS':[],
-            'OVERLAY_FIELDS':[],
-            'OVERLAY_FIELDS_PREFIX':'',
-            'OUTPUT':'TEMPORARY_OUTPUT',
-            'GRID_SIZE':None},
+            'OVERLAY': subcatch_with_id,
+            'INPUT_FIELDS': [],
+            'OVERLAY_FIELDS': ['CATCH_ID'],
+            'OVERLAY_FIELDS_PREFIX': '',
+            'OUTPUT': 'TEMPORARY_OUTPUT',
+            'GRID_SIZE': None},
             context=context, feedback=feedback)["OUTPUT"]
-        #QgsProject.instance().addMapLayer(intersection_layer)
 
         # delete mistakes of river sections that are wrongly crossing the subcatchment
         # define the threshold length
@@ -633,66 +537,38 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 intersection_layer.dataProvider().deleteFeatures(features_to_delete)
                 feedback.pushInfo(f"\nDeleted {len(features_to_delete)} short features below {threshold_length}.")
         
-
-        # dissolve line within the subcatchment
-        # feedback.setProgressText("\nDissolving river lines within the subcatchment...")
-        # dissolve_layer = processing.run("native:dissolve", {
-        #     'INPUT': intersection_layer,
-        #     'FIELD':['id_apr'],
-        #     'SEPARATE_DISJOINT':False,
-        #     'OUTPUT':'TEMPORARY_OUTPUT'},
-        #     context=context, feedback=feedback)["OUTPUT"]
-        
         dissolve_layer = intersection_layer
-        #QgsProject.instance().addMapLayer(dissolve_layer)
-        
-        with edit(dissolve_layer):
-            field_name = "id_riv"
-            fields = dissolve_layer.fields()
 
-            # check if the field already exists
-            if field_name not in [field.name() for field in fields]:
-                dissolve_layer.dataProvider().addAttributes([QgsField(field_name, QVariant.Int)])
-                dissolve_layer.updateFields()
-            else:
-                feedback.pushInfo(f"\nField '{field_name}' already exists. Skipping field creation.")   #maybe the cause of the crashing is here
-
-            # populate the new column with unique IDs
-            unique_id_start = 1000 #or any starting value
-            for idx, feature in enumerate(dissolve_layer.getFeatures(), start = unique_id_start):
-                feature[field_name] = idx
-                dissolve_layer.updateFeature(feature)
-
-        
+        # build a mapping from feature ID to sequential NET_ID (no need for an extra field on the layer)
+        fid_to_net_id = {}
+        for idx, feature in enumerate(dissolve_layer.getFeatures(), start=1000):
+            fid_to_net_id[feature.id()] = str(idx)
 
         '''start of the plugin "WaterNetwConstructor" from Jannik Schilling'''
-        #flip_opt = self.parameterAsInt(parameters, self.FLIP_OPTION, context)
         flip_opt = 0
 
         sp_index = QgsSpatialIndex(dissolve_layer.getFeatures())
-        dissolve_fields = dissolve_layer.fields()
-
-        # retrieving the ID column
-        idxid = dissolve_layer.fields().indexFromName("id_riv")  
+        dissolve_fields = dissolve_layer.fields()  
 
         feedback.pushInfo(f"\nUsing outlet point: {outlet_point.x()}, {outlet_point.y()}")
 
-        def find_closest_river_section(outlet_point, river_network): # change this one and add a spatial index as well
+        def find_closest_river_section(outlet_point, river_network):
             """
-            Function to define the closest river section to the outlet_point
+            Find the river section closest to the outlet_point using the spatial
+            index (sp_index) for an O(log n) candidate lookup, then compute exact
+            geometric distances only for those candidates.
             """
+            outlet_geometry = QgsGeometry.fromPointXY(outlet_point)
+
+            # fetch a small number of candidates by bounding-box proximity
+            candidate_ids = sp_index.nearestNeighbor(outlet_geometry, 5)
+
             closest_section = None
             min_distance = float('inf')
 
-            # convert the outlet_point to QgsGeometry
-            outlet_geometry = QgsGeometry.fromPointXY(outlet_point)
-
-            # iterate through river network sections and find the closest
-            for feature in river_network.getFeatures():
-                section_geom = feature.geometry()
-                distance = section_geom.distance(outlet_geometry)
-                #feedback.pushInfo(f"\nAnalising section (id_riv): {feature['id_riv']} \nDistance to the outlet point: {distance}")
-
+            for fid in candidate_ids:
+                feature = river_network.getFeature(fid)
+                distance = feature.geometry().distance(outlet_geometry)
                 if distance < min_distance:
                     min_distance = distance
                     closest_section = feature
@@ -702,7 +578,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         closest_section = find_closest_river_section(outlet_point, dissolve_layer)
         if closest_section is None:
             raise QgsProcessingException("No closest river section identified")
-        feedback.pushInfo(f"\nClosest section (id_riv): {closest_section['id_riv']}")
+        feedback.pushInfo(f"\nClosest section (NET_ID): {fid_to_net_id[closest_section.id()]}")
 
         # define new fields for the output
         out_fields = QgsFields()
@@ -711,9 +587,8 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             out_fields.append(QgsField(field.name(), field.type()))
         out_fields.append(QgsField('NET_ID', QVariant.String, "String", 255))
         out_fields.append(QgsField('NET_TO', QVariant.String, "String", 255))
-        out_fields.append(QgsField('NET_FROM', QVariant.String, "String", 255))
         # lists for results
-        finished_segm = {}  # {qgis id: [net_id, net_to, net_from]}
+        finished_segm = {}  # {qgis id: [net_id, net_to]}
         netw_dict = {}  # a dict for individual network numbers
         circ_list = []  # list for found circles
         flip_list = []  # list to flip geometries according or against flow direction
@@ -728,7 +603,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             vertex_list = [v for v in ge.vertices()]
             vert1 = QgsGeometry.fromPointXY(QgsPointXY(vertex_list[0]))
             vert2 = QgsGeometry.fromPointXY(QgsPointXY(vertex_list[-1]))
-            column_id = str(ft.attribute(idxid))
+            column_id = fid_to_net_id.get(ft.id(), str(ft.id()))
             return [vert1, vert2, ft.id(), column_id]
 
         def get_id_and_vertice_if_connected(
@@ -775,8 +650,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 else:
                     finished_segm[cd_id] = [
                         str(ft_data[-1]),
-                        str(finished_segm[current_id][0]),
-                        str(ft_data[-1])
+                        str(finished_segm[current_id][0])
                     ]
                     finished_ids.append(cd_id)
             return result_tuple
@@ -828,8 +702,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         start_f_id = first_ft_data[2]
         finished_segm[first_ft_data[2]] = [
             str(first_ft_data[-1]),
-            out_marker,
-            str(first_ft_data[-1])
+            out_marker
         ]
         finished_ids.append(first_ft_data[2])
         
@@ -915,16 +788,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                     feedback.pushWarning(self.tr('{0}, ').format(", ".join(net_ids)))
 
 
-        # # identify the index of "id_riv", I dont want it in the final output
-        # id_riv_index = dissolve_fields.indexOf("id_riv")
-        # if id_riv_index != -1:
-        #     with edit(dissolve_layer):
-        #         dissolve_layer.dataProvider().deleteAttributes([id_riv_index])
-        #         dissolve_layer.updateFields()
-        # else:
-        #     feedback.pushInfo("'id_riv' field not found in dissolve layer.")
-
-
         '''sink definition'''
         (sink, dest_id) = self.parameterAsSink(
             parameters,
@@ -966,26 +829,27 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 outFt.setAttributes(feature.attributes()+finished_segm[old_f_id])
             else:
                 ft_data = get_features_data(feature)
-                outFt.setAttributes(feature.attributes()+[str(ft_data[-1]), 'unconnected', 'unconnected'])
+                outFt.setAttributes(feature.attributes()+[str(ft_data[-1]), 'unconnected'])
             sink.addFeature(outFt, QgsFeatureSink.FastInsert)
 
+        # initialize the feature sink for ungauged subcatchments
+        (sink_ungauged, dest_id_ungauged) = self.parameterAsSink(
+            parameters,
+            self.OUTPUT_ungauged,
+            context,
+            subcatch_with_id.fields(),
+            subcatch_with_id.wkbType(),
+            subcatch_with_id.sourceCrs()
+        )
 
-        return {self.OUTPUT: dest_id}
+        for feat in subcatch_with_id.getFeatures():
+            sink_ungauged.addFeature(feat, QgsFeatureSink.FastInsert)
 
-        # # save the output layer
-        # (sink, dest_id) = self.parameterAsSink(parameters, self.OUTPUT, context,
-        # dissolve_layer.fields(), dissolve_layer.wkbType(), dissolve_layer.sourceCrs())
+        return {
+            self.OUTPUT: dest_id,
+            self.OUTPUT_ungauged: dest_id_ungauged
+            }
 
-        # if dissolve_layer is None:
-        #     raise QgsProcessingException(self.tr("Failed to create river layer"))
-
-        # # write features from dissolve_layer to the sink
-        # for feature in dissolve_layer.getFeatures():  # name to change
-        #     success = sink.addFeature(feature)
-        #     if not success:
-        #         feedback.pushInfo(f"Failed to add feature: {feature.id()}")
-
-        # return {self.OUTPUT: dest_id}
 
     def name(self):
         """
