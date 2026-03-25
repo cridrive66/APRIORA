@@ -50,6 +50,7 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
                        QgsProcessingParameterMatrix,
+                       QgsProcessingParameterNumber,
                        QgsProcessingParameterRasterLayer,
                        QgsField,
                        QgsVectorLayer,
@@ -75,6 +76,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
     settlementArea = 'SettlementArea'
     precipitationData = 'PrecipitationData'
     aggregated = 'Aggregated'
+    dryMonth = 'DryMonth'
 
     def shortHelpString(self):
         return self.tr(""" This tool calculates the geofactors for each subcatchment. The geofactors are necessaries to estimate the flow in the tool "4 - Flow estimation".
@@ -125,7 +127,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
-                self.tr('River network'),
+                self.tr('Fixed river network'),
                 [QgsProcessing.TypeVectorLine],
                 defaultValue = QgsProject.instance().mapLayersByName("Fixed river network")[0].id() if QgsProject.instance().mapLayersByName("Fixed river network") else None
             )
@@ -169,6 +171,17 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 self.aggregated,
                 self.tr('The folder contains an aggregated file'),
                 defaultValue=False
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.dryMonth,
+                self.tr('Dry month (1=Jan, 2=Feb, ..., 12=Dec)'),
+                type=QgsProcessingParameterNumber.Integer,
+                defaultValue=8,
+                minValue=1,
+                maxValue=12
             )
         )
         
@@ -404,12 +417,18 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         feedback.setProgress(80)    # set the progress to 80% because otherwise it is stuck at 100
         netcdf_dir = self.parameterAsString(parameters, self.precipitationData, context)
         aggregated_selection = self.parameterAsBoolean(parameters, self.aggregated, context)
+        dry_month = self.parameterAsInt(parameters, self.dryMonth, context)
+        days_per_month = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+        days_in_dry_month = days_per_month[dry_month - 1]
+        month_names = ('January','February','March','April','May','June','July','August','September','October','November','December')
+        dry_month_name = month_names[dry_month - 1]
+        feedback.pushInfo(f"Dry month: {dry_month_name} (month {dry_month}, {days_in_dry_month} days)")
         # list of all .nc file in the directory
         netcdf_files = QDir(netcdf_dir).entryList(["*.nc"], QDir.Files)
 
         # Variables
         yearlyMeanRaster = None
-        augustMeanRaster =  None
+        dryMeanRaster =  None
         firstRound=True
         firstFile=True
 
@@ -452,7 +471,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
 
             # initialize arrays
             yearly_sum = None
-            august_sum = None
+            dry_sum = None
 
             # sum all bands
             for b in range(1, raster_count +1):
@@ -465,18 +484,18 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             # final yearly average
             finalYearlyMeanRaster = yearly_sum*1000*30.4375 / num_years #30.4375 is the average number of days in a month over a 30 years time series with 7.5 leap years
 
-            # august mean
+            # dry month mean
             for i in range(num_years):
-                august_band_index = i * 12 + 8
-                band_array = raster_ds.GetRasterBand(august_band_index).ReadAsArray()
+                dry_band_index = i * 12 + dry_month
+                band_array = raster_ds.GetRasterBand(dry_band_index).ReadAsArray()
 
-                if august_sum is None:
-                    august_sum = band_array
+                if dry_sum is None:
+                    dry_sum = band_array
                 else:
-                    august_sum += band_array
+                    dry_sum += band_array
             
-            # final august average
-            finalAugustMeanRaster = august_sum*1000*31 / num_years
+            # final dry month average
+            finalDryMeanRaster = dry_sum*1000*days_in_dry_month / num_years
 
 
         if not aggregated_selection:
@@ -504,22 +523,22 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                     i+=1
                     
                 yearlyMean = np.sum(yearlyTemp, axis=0)
-                augustMean = rasterDataSource.GetRasterBand(8).ReadAsArray()
+                dryMean = rasterDataSource.GetRasterBand(dry_month).ReadAsArray()
                 
                 if firstRound:
                     yearlyMeanRaster = np.array([yearlyMean])
-                    augustMeanRaster = np.array([augustMean])
+                    dryMeanRaster = np.array([dryMean])
                     firstRound = False
                 else:
                     yearlyMeanRaster= np.append(yearlyMeanRaster, [yearlyMean], axis=0)
-                    augustMeanRaster= np.append(augustMeanRaster, [augustMean], axis=0)
+                    dryMeanRaster= np.append(dryMeanRaster, [dryMean], axis=0)
                 
 
             finalYearlyMeanRaster = np.mean(yearlyMeanRaster, axis=0)
-            finalAugustMeanRaster = np.mean(augustMeanRaster, axis=0)
+            finalDryMeanRaster = np.mean(dryMeanRaster, axis=0)
 
         outfnYearly = outputDir+ungaugedSourceName+'_yearlyPrecipitation.tif'
-        outfnAugust = outputDir+ungaugedSourceName+'_augustPrecipitation.tif'
+        outfnDry = outputDir+ungaugedSourceName+'_dryMonthPrecipitation.tif'
 
         # run the function to create the raster
         # yearly precipitation
@@ -528,57 +547,20 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             feedback.reportError("Error: finalYearlyMeanRster is None!", fatalError = True)
         feedback.setProgressText(f"Debug: Output file path: {outfnYearly}")
         
-        # august precipitation
-        self.createRaster(parameters, context, feedback, outfnAugust, xmax, xmin, xres, ymax, ymin, yres, spatref, finalAugustMeanRaster)
-        if finalAugustMeanRaster is None:
-            feedback.reportError("Error: finalAugustMeanRaster is None!", fatalError = True)
-        feedback.setProgressText(f"Debug: Output file path: {outfnAugust}")
+        # dry month precipitation
+        self.createRaster(parameters, context, feedback, outfnDry, xmax, xmin, xres, ymax, ymin, yres, spatref, finalDryMeanRaster)
+        if finalDryMeanRaster is None:
+            feedback.reportError("Error: finalDryMeanRaster is None!", fatalError = True)
+        feedback.setProgressText(f"Debug: Output file path: {outfnDry}")
        
        # save as raster layer
         precipitationYearlyLayer = QgsRasterLayer(outfnYearly, "precipitationYearly")
         if not precipitationYearlyLayer.isValid():
             feedback.reportError("Error: precipitationYearlyLayer is not valid!", fatalError = True)
         
-        precipitationAugustLayer = QgsRasterLayer(outfnAugust, "precipitationAugust")
-        if not precipitationAugustLayer.isValid():
-            feedback.reportError("Error: precipitationAugustLayer is not valid!", fatalError = True)
-
-        # get CRS of the vector layer
-        # vector_crs = JoinCatchmentsSettlementAreaSummarize.crs()
-        # reproject raster to match vector layer  CRS
-        # feedback.setProgressText("\nStart the reprojecting process")
-        # precipitationYearlyLayer_reprojected = processing.run("gdal:warpreproject", {
-        #     'INPUT': outfnYearly,
-        #     'TARGET_CRS': vector_crs.authid(),  # Match vector CRS
-        #     'RESAMPLING': 0,  # Nearest neighbor (for categorical data) or 1 for bilinear (for continuous)
-        #     'OUTPUT': 'TEMPORARY_OUTPUT'
-        #     })["OUTPUT"]
-        
-        #QgsProject.instance().addMapLayer(precipitationYearlyLayer_reprojected)
-
-        # feedback.setProgressText("\nReprojecting august layer")
-        # precipitationAugustLayer_reprojected = processing.run("gdal:warpreproject", {
-        #     'INPUT': precipitationAugustLayer,
-        #     'TARGET_CRS': vector_crs.authid(),  # Match vector CRS
-        #     'RESAMPLING': 0,  # Nearest neighbor (for categorical data) or 1 for bilinear (for continuous)
-        #     'OUTPUT': 'TEMPORARY_OUTPUT'
-        #     })["OUTPUT"]
-
-        #QgsProject.instance().addMapLayer(precipitationAugustLayer_reprojected)
-    
-        
-
-
-        # Remove "MEAN" from the column name if it exists
-        # if 'PreYearly_MEAN' in [field.name() for field in JoinCatchmentsSettlementAreaSummarize.fields()]:
-        #     idx = JoinCatchmentsSettlementAreaSummarize.fields().indexOf('PreYearly_MEAN')
-        #     JoinCatchmentsSettlementAreaSummarize.renameAttribute(idx, 'PreYearly_')  # Rename column to "PreYearly_"
-     
-     
-        # Remove "MEAN" from the column name if it exists
-        # if 'PreYearly_MEAN' in [field.name() for field in JoinCatchmentsSettlementAreaSummarize.fields()]:
-        #     idx = JoinCatchmentsSettlementAreaSummarize.fields().indexOf('PreYearly_MEAN')
-        #     JoinCatchmentsSettlementAreaSummarize.renameAttribute(idx, 'PreYearly_')  # Rename column to "PreYearly_"
+        precipitationDryLayer = QgsRasterLayer(outfnDry, "precipitationDryMonth")
+        if not precipitationDryLayer.isValid():
+            feedback.reportError("Error: precipitationDryLayer is not valid!", fatalError = True)
      
         feedback.setProgressText("\nStart the zonal statistic of yearly precipitation")
         precipitation_yearly_ungauged = processing.run("native:zonalstatisticsfb",
@@ -590,12 +572,12 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'OUTPUT': 'TEMPORARY_OUTPUT'},
              context=context)['OUTPUT']
         
-        feedback.setProgressText("\nStart the zonal statistic of august precipitation")
+        feedback.setProgressText("\nStart the zonal statistic of dry month precipitation")
         finalLayer_ungauged = processing.run("native:zonalstatisticsfb",
-            {'INPUT_RASTER': precipitationAugustLayer,
+            {'INPUT_RASTER': precipitationDryLayer,
              'RASTER_BAND':1,
              'INPUT': precipitation_yearly_ungauged,
-             'COLUMN_PREFIX': "PrecAugust_",
+             'COLUMN_PREFIX': "PrecDry_",
              'STATISTICS': [2], # mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context)['OUTPUT']
@@ -609,10 +591,10 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 idx = finalLayer_ungauged.fields().indexOf('PrecYearly_mean')
                 finalLayer_ungauged.renameAttribute(idx, 'PrecYearly')
         
-        if 'PrecAugust_mean' in [field.name() for field in finalLayer_ungauged.fields()]:
+        if 'PrecDry_mean' in [field.name() for field in finalLayer_ungauged.fields()]:
             with edit(finalLayer_ungauged):
-                idx = finalLayer_ungauged.fields().indexOf('PrecAugust_mean')
-                finalLayer_ungauged.renameAttribute(idx, 'PrecAugust')
+                idx = finalLayer_ungauged.fields().indexOf('PrecDry_mean')
+                finalLayer_ungauged.renameAttribute(idx, 'PrecDry')
 
         feedback.setProgressText("\nRemoving field")
         # remove unwanted fields
@@ -661,10 +643,6 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
 
         #Set area and perimeter field to layer
         provider = catchments_gauged.dataProvider()
-        # id_field = QgsField("ID_SC", QVariant.Int, 'int')
-        # area_field = QgsField("AREA_SC", QVariant.Double, 'double', 20, 3)
-        # perimeter_field = QgsField("PERIM_SC", QVariant.Double, 'double', 20, 3)
-        # shapeFactor_field = QgsField("SHAPE_SC", QVariant.Double, 'double', 20, 3)
         provider.addAttributes([id_field, area_field, perimeter_field, shapeFactor_field])
         catchments_gauged.updateFields() 
         #Calculate area and perimeter
@@ -764,7 +742,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         feedback.setProgress(80)    # set the progress to 80% because otherwise it is stuck at 100
 
         outfnYearly = outputDir+gaugedSourceName+'_yearlyPrecipitation.tif'
-        outfnAugust = outputDir+gaugedSourceName+'_augustPrecipitation.tif'
+        outfnDry = outputDir+gaugedSourceName+'_dryMonthPrecipitation.tif'
 
         # run the function to create the raster
         # yearly precipitation
@@ -773,20 +751,20 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             feedback.reportError("Error: finalYearlyMeanRster is None!", fatalError = True)
         feedback.setProgressText(f"Debug: Output file path: {outfnYearly}")
         
-        # august precipitation
-        self.createRaster(parameters, context, feedback, outfnAugust, xmax, xmin, xres, ymax, ymin, yres, spatref, finalAugustMeanRaster)
-        if finalAugustMeanRaster is None:
-            feedback.reportError("Error: finalAugustMeanRaster is None!", fatalError = True)
-        feedback.setProgressText(f"Debug: Output file path: {outfnAugust}")
+        # dry month precipitation
+        self.createRaster(parameters, context, feedback, outfnDry, xmax, xmin, xres, ymax, ymin, yres, spatref, finalDryMeanRaster)
+        if finalDryMeanRaster is None:
+            feedback.reportError("Error: finalDryMeanRaster is None!", fatalError = True)
+        feedback.setProgressText(f"Debug: Output file path: {outfnDry}")
 
         # save as raster file
         precipitationYearlyLayer = QgsRasterLayer(outfnYearly, "precipitationYearly")
         if not precipitationYearlyLayer.isValid():
             feedback.reportError("Error: precipitationYearlyLayer is not valid!", fatalError = True)
         
-        precipitationAugustLayer = QgsRasterLayer(outfnAugust, "precipitationAugust")
-        if not precipitationAugustLayer.isValid():
-            feedback.reportError("Error: precipitationAugustLayer is not valid!", fatalError = True)
+        precipitationDryLayer = QgsRasterLayer(outfnDry, "precipitationDryMonth")
+        if not precipitationDryLayer.isValid():
+            feedback.reportError("Error: precipitationDryLayer is not valid!", fatalError = True)
         
         # zonal statistics
         feedback.setProgressText("\nStart the zonal statistic of yearly precipitation")
@@ -799,12 +777,12 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context)['OUTPUT']
 
-        feedback.setProgressText("\nStart the zonal statistic of august precipitation")
+        feedback.setProgressText("\nStart the zonal statistic of dry month precipitation")
         finalLayer_gauged = processing.run("native:zonalstatisticsfb",
-            {'INPUT_RASTER': precipitationAugustLayer,
+            {'INPUT_RASTER': precipitationDryLayer,
              'RASTER_BAND':1,
              'INPUT': precipitation_yearly_gauged,
-             'COLUMN_PREFIX': "PrecAugust_",    
+             'COLUMN_PREFIX': "PrecDry_",    
              'STATISTICS': [2], #mean
              'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context)['OUTPUT']
@@ -818,10 +796,10 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 idx = finalLayer_gauged.fields().indexOf('PrecYearly_mean')   
                 finalLayer_gauged.renameAttribute(idx, 'PrecYearly')
         
-        if 'PrecAugust_mean' in [field.name() for field in finalLayer_gauged.fields()]:
+        if 'PrecDry_mean' in [field.name() for field in finalLayer_gauged.fields()]:
             with edit(finalLayer_gauged):
-                idx = finalLayer_gauged.fields().indexOf('PrecAugust_mean')
-                finalLayer_gauged.renameAttribute(idx, 'PrecAugust')
+                idx = finalLayer_gauged.fields().indexOf('PrecDry_mean')
+                finalLayer_gauged.renameAttribute(idx, 'PrecDry')
 
         # remove unwanted fields
         fields_to_remove = ["RivNe_sum","WatAr_sum","ForAr_sum","SettAr_sum", "ID_SC"]
