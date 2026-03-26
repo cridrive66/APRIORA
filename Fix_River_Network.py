@@ -105,7 +105,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.catchmentAreas,
-                self.tr('Catchment areas'),
+                self.tr('Catchment area'),
                 [QgsProcessing.TypeVectorPolygon]
             )
         )
@@ -289,11 +289,28 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
         feedback.setProgressText(f"Number of features in vertices_river_layer: {vertices_river_layer.featureCount()}")
 
+        # clean subcatchment original layer first
+        feedback.setProgressText("\nClean subcatchment input file...")
+        
+        method, geos_version_str = self._get_geos_fix_method()
+        feedback.pushInfo(f"GEOS version: {geos_version_str}")
+        feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
+        
+        subcatchments_layer_fixed = processing.run("native:fixgeometries", {
+            'INPUT': processing.run("native:removenullgeometries", {
+                'INPUT': subcatchments_layer_original,
+                'REMOVE_EMPTY':True,
+                'OUTPUT': 'TEMPORARY_OUTPUT'},
+                context=context, feedback=feedback)["OUTPUT"],
+            'METHOD': method,
+            'OUTPUT': 'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
+
         # extract all vertices from the subcatchments, then deduplicate
         feedback.setProgressText("\nExtracting vertices from the subcatchments...")
         vertices_catch_layer = processing.run("native:deleteduplicategeometries", {
             'INPUT': processing.run("native:extractvertices", {
-                'INPUT': subcatchments_layer_original,
+                'INPUT': subcatchments_layer_fixed,
                 'OUTPUT': 'TEMPORARY_OUTPUT'},
                 context=context, feedback=feedback)["OUTPUT"],
             'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
@@ -479,12 +496,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'INPUT':non_null_geom_layer,
             'METHOD':method,
             'OUTPUT':'TEMPORARY_OUTPUT'},
-            context=context, feedback=feedback)["OUTPUT"]
-        
-        subcatchments_layer_fixed = processing.run("native:fixgeometries", {
-            'INPUT': subcatchments_layer_original,
-            'METHOD': method,
-            'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
 
         # create a copy of subcatchments and add CATCH_ID (starting from 100)
@@ -842,8 +853,11 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             subcatch_with_id.sourceCrs()
         )
 
+        # only keep subcatchments that have at least one river segment passing through them
+        catch_ids_in_river = {f["CATCH_ID"] for f in dissolve_layer.getFeatures() if f["CATCH_ID"]}
         for feat in subcatch_with_id.getFeatures():
-            sink_ungauged.addFeature(feat, QgsFeatureSink.FastInsert)
+            if feat["CATCH_ID"] in catch_ids_in_river:
+                sink_ungauged.addFeature(feat, QgsFeatureSink.FastInsert)
 
         return {
             self.OUTPUT: dest_id,
@@ -883,7 +897,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Flow Estimation'
+        return 'Hydro-Module'
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

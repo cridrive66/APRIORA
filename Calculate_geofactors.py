@@ -382,26 +382,32 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         idxFA_Sum = provider.fieldNameIndex('ForAr_sum')
         idxSA_Sum = provider.fieldNameIndex('SettAr_sum')
         for feature in JoinCatchmentsSettlementAreaSummarize.getFeatures():
+            area_sc = feature["AREA_SC"]
+            if not area_sc or area_sc <= 0:
+                feedback.pushWarning(f"Skipping feature {feature.id()}: AREA_SC is {area_sc}. Assigning 0 to derived fields.")
+                attrs = {idxRND: 0, idxPWA: 0, idxFS: 0, idxSS: 0, idxRN_Sum: 0, idxWA_Sum: 0, idxFA_Sum: 0, idxSA_Sum: 0}
+                JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id(): attrs})
+                continue
             if feature["RivNe_sum"] != None:
-                calcRND = (feature["RivNe_sum"] / feature["AREA_SC"]) *100
+                calcRND = (feature["RivNe_sum"] / area_sc) *100
                 RNsum = feature["RivNe_sum"]
             else:
                 calcRND = 0
                 RNsum = 0
             if feature["WatAr_sum"] != None:
-                calcPWA = (feature["WatAr_sum"] / feature["AREA_SC"]) *100
+                calcPWA = (feature["WatAr_sum"] / area_sc) *100
                 WAsum = feature["WatAr_sum"]
             else:
                 calcPWA = 0
                 WAsum = 0
             if feature["ForAr_sum"] != None:
-                calcFS = (feature["ForAr_sum"] / feature["AREA_SC"]) *100
+                calcFS = (feature["ForAr_sum"] / area_sc) *100
                 FAsum = feature["ForAr_sum"]
             else:
                 calcFS = 0
                 FAsum = 0
             if feature["SettAr_sum"] != None:
-                calcSS = (feature["SettAr_sum"] / feature["AREA_SC"]) *100
+                calcSS = (feature["SettAr_sum"] / area_sc) *100
                 SAsum = feature["SettAr_sum"] 
             else:
                 calcSS = 0
@@ -707,26 +713,32 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         idxFA_Sum = provider.fieldNameIndex('ForAr_sum')
         idxSA_Sum = provider.fieldNameIndex('SettAr_sum')
         for feature in JoinCatchmentsSettlementAreaSummarize.getFeatures():
+            area_sc = feature["AREA_SC"]
+            if not area_sc or area_sc <= 0:
+                feedback.pushWarning(f"Skipping feature {feature.id()}: AREA_SC is {area_sc}. Assigning 0 to derived fields.")
+                attrs = {idxRND: 0, idxPWA: 0, idxFS: 0, idxSS: 0, idxRN_Sum: 0, idxWA_Sum: 0, idxFA_Sum: 0, idxSA_Sum: 0}
+                JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id(): attrs})
+                continue
             if feature["RivNe_sum"] != None:
-                calcRND = (feature["RivNe_sum"] / feature["AREA_SC"]) *100
+                calcRND = (feature["RivNe_sum"] / area_sc) *100
                 RNsum = feature["RivNe_sum"]
             else:
                 calcRND = 0
                 RNsum = 0
             if feature["WatAr_sum"] != None:
-                calcPWA = (feature["WatAr_sum"] / feature["AREA_SC"]) *100
+                calcPWA = (feature["WatAr_sum"] / area_sc) *100
                 WAsum = feature["WatAr_sum"]
             else:
                 calcPWA = 0
                 WAsum = 0
             if feature["ForAr_sum"] != None:
-                calcFS = (feature["ForAr_sum"] / feature["AREA_SC"]) *100
+                calcFS = (feature["ForAr_sum"] / area_sc) *100
                 FAsum = feature["ForAr_sum"]
             else:
                 calcFS = 0
                 FAsum = 0
             if feature["SettAr_sum"] != None:
-                calcSS = (feature["SettAr_sum"] / feature["AREA_SC"]) *100
+                calcSS = (feature["SettAr_sum"] / area_sc) *100
                 SAsum = feature["SettAr_sum"] 
             else:
                 calcSS = 0
@@ -875,7 +887,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'Flow Estimation'
+        return 'Hydro-Module'
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
