@@ -30,21 +30,18 @@ __revision__ = '$Format:%H$'
 
 import os
 import pandas as pd
-import tempfile
 
-from qgis.PyQt.QtCore import QCoreApplication, QTimer, Qt, QUrl
+from qgis.PyQt.QtCore import QCoreApplication, Qt, QUrl
 from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.PyQt import uic, QtWidgets
 from qgis.core import (
     QgsProcessingAlgorithm,
-    QgsProcessingContext,
     QgsProject, 
     QgsMapLayer, 
-    QgsWkbTypes, 
-    QgsMessageLog, 
-    Qgis
+    QgsVectorLayer,
+    QgsWkbTypes
 )
-from PyQt5.QtWidgets import QStyle
+from PyQt5.QtWidgets import QStyle, QAbstractItemView
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QDesktopServices
 
 # This loads your .ui file so that PyQt can populate your plugin with the elements from Qt Designer
@@ -84,8 +81,9 @@ class APIParameterSelectionAlgorithm(QgsProcessingAlgorithm):
             Tabs:
             1. Consumption Data - Select APIs and their consumption rates
             2. Removal Rates - Configure technical class-specific removal rates
-            3. Custom Table - Create a custom WWTP table with your selected APIs
-            4. PNEC Values - Set Predicted No Effect Concentrations for risk assessment
+            3. PNEC Values - Set Predicted No Effect Concentrations for risk assessment
+            4. Custom Table - Create a custom WWTP table with your selected APIs
+            
             
             IMPORTANT: This tool must be run BEFORE using the '6 - Emission Loads' tool.
             The selections made here will be used by the emission loads calculation.
@@ -135,6 +133,182 @@ class APIParameterSelectionAlgorithm(QgsProcessingAlgorithm):
 
 
 class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
+
+    def _get_selection_view(self):
+        """
+        Return the selection view widget from the UI.
+        Supports both the new name (listView) and the previous one (selectionListWidget).
+        """
+        if hasattr(self, "listView"):
+            return self.listView
+        if hasattr(self, "selectionListWidget"):
+            return self.selectionListWidget
+        return None
+
+    def _update_progress_by_tab(self):
+        """
+        Update progressBar according to the current tab and PNEC subtab.
+        Progress steps: Consumption(20) -> Removal(40) -> PNEC ERA(50)/HH(60)/AMR(70) -> Custom(80).
+        100% is set after printing.
+        """
+        if not hasattr(self, "progressBar") or not hasattr(self, "tabWidget"):
+            return
+
+        current_idx = self.tabWidget.currentIndex()
+        current_title = self.tabWidget.tabText(current_idx).strip().lower()
+
+        if "consumption" in current_title:
+            value = 20
+        elif "removal" in current_title:
+            value = 40
+        elif "pnec" in current_title:
+            # Sub-progress based on PNEC subtab
+            if hasattr(self, "tabWidget_2"):
+                sub_idx = self.tabWidget_2.currentIndex()
+                value = 50 + sub_idx * 10  # ERA=50, HH=60, AMR=70
+            else:
+                value = 60
+        elif "custom" in current_title:
+            value = 80
+        else:
+            value = 0
+
+        self.progressBar.setValue(value)
+
+    def _update_navigation_buttons(self):
+        """
+        Enable/disable back and next buttons at tab boundaries,
+        and PNEC subtab back/next buttons.
+        """
+        if not hasattr(self, "tabWidget"):
+            return
+
+        current_idx = self.tabWidget.currentIndex()
+        last_idx = self.tabWidget.count() - 1
+
+        if hasattr(self, "backButton"):
+            self.backButton.setEnabled(current_idx > 0)
+        if hasattr(self, "nextButton"):
+            self.nextButton.setEnabled(current_idx < last_idx)
+
+        # PNEC subtab navigation buttons
+        self._update_pnec_navigation_buttons()
+
+    def go_to_next_tab(self):
+        """
+        Move user to the next tab and refresh progress.
+        """
+        if not hasattr(self, "tabWidget"):
+            return
+
+        self.save_current_tab()
+
+        current_idx = self.tabWidget.currentIndex()
+        if current_idx < self.tabWidget.count() - 1:
+            self.tabWidget.setCurrentIndex(current_idx + 1)
+        self._update_progress_by_tab()
+        self._update_navigation_buttons()
+
+    def go_to_previous_tab(self):
+        """
+        Move user to the previous tab and refresh progress.
+        """
+        if not hasattr(self, "tabWidget"):
+            return
+
+        self.save_current_tab()
+
+        current_idx = self.tabWidget.currentIndex()
+        if current_idx > 0:
+            self.tabWidget.setCurrentIndex(current_idx - 1)
+        self._update_progress_by_tab()
+        self._update_navigation_buttons()
+
+    def _update_pnec_navigation_buttons(self):
+        """
+        Enable/disable PNEC subtab back/next buttons.
+        Back disabled on ERA (index 0), Next disabled on AMR (last index).
+        """
+        if not hasattr(self, "tabWidget_2"):
+            return
+        sub_idx = self.tabWidget_2.currentIndex()
+        last_sub = self.tabWidget_2.count() - 1
+        if hasattr(self, "backButton_PNEC"):
+            self.backButton_PNEC.setEnabled(sub_idx > 0)
+        if hasattr(self, "nextButton_PNEC"):
+            self.nextButton_PNEC.setEnabled(sub_idx < last_sub)
+
+    def go_to_next_pnec_tab(self):
+        if not hasattr(self, "tabWidget_2"):
+            return
+        sub_idx = self.tabWidget_2.currentIndex()
+        if sub_idx < self.tabWidget_2.count() - 1:
+            self.tabWidget_2.setCurrentIndex(sub_idx + 1)
+        self._update_pnec_navigation_buttons()
+        self._update_progress_by_tab()
+
+    def go_to_previous_pnec_tab(self):
+        if not hasattr(self, "tabWidget_2"):
+            return
+        sub_idx = self.tabWidget_2.currentIndex()
+        if sub_idx > 0:
+            self.tabWidget_2.setCurrentIndex(sub_idx - 1)
+        self._update_pnec_navigation_buttons()
+        self._update_progress_by_tab()
+
+    def clear_selection(self):
+        """
+        Remove all substances from the selection list.
+        """
+        self.selection_model.clear()
+        self.save_selection_to_file()
+
+    def save_current_tab(self):
+        """
+        Save the currently active tab before switching to another one.
+        """
+        if not hasattr(self, "tabWidget"):
+            return
+
+        current_idx = self.tabWidget.currentIndex()
+
+        if current_idx == 0:
+            self.handle_save_consumption()
+        elif current_idx == 1:
+            self.handle_save_rr()
+        elif current_idx == 2:
+            self.handle_save_pnec()
+        elif current_idx == 3 and hasattr(self, "wwtpTableView"):
+            # Save only if a custom table model is already loaded.
+            if self.wwtpTableView.model() is not None:
+                self.save_wwtp_table_to_csv()
+
+    def handle_save_pnec(self):
+        """
+        Save all three PNEC sub-tables to their custom CSV files.
+        """
+        self.save_temp_table(self.ERATableView, "PNEC_ERA_")
+        self.save_temp_table(self.HHTableView, "PNEC_HH_")
+        self.save_temp_table(self.AMRTableView, "PNEC_AMR_")
+        # Keep in-memory dataframes in sync
+        era_path = os.path.join(os.path.dirname(__file__), "datasets/custom_dataset/PNEC_ERA_.csv")
+        hh_path = os.path.join(os.path.dirname(__file__), "datasets/custom_dataset/PNEC_HH_.csv")
+        amr_path = os.path.join(os.path.dirname(__file__), "datasets/custom_dataset/PNEC_AMR_.csv")
+        if os.path.exists(era_path):
+            self.df_ERA = pd.read_csv(era_path, sep=",")
+        if os.path.exists(hh_path):
+            self.df_HH = pd.read_csv(hh_path, sep=",")
+        if os.path.exists(amr_path):
+            self.df_AMR = pd.read_csv(amr_path, sep=",")
+        self.pnec_modified = False
+    
+    def close_with_save(self):
+        """
+        Save the current tab before closing the dialog.
+        """
+        self.save_current_tab()
+        self.save_field_selection()
+        self.close()
     
     def get_dataset_path(self, original_filename, custom_filename):
         """
@@ -160,15 +334,61 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 for line in file:
                     line = line.strip()
                     if line:
-                        self.selectionListWidget.addItem(line)
+                        self.selection_model.appendRow(QStandardItem(line))
 
-    def load_table(self, df, table_view, update_filters):
+    def save_field_selection(self):
+        """Persist the WWTP layer name and field combo selections to a text file."""
+        plugin_dir = os.path.dirname(__file__)
+        path = os.path.join(plugin_dir, "field_selection.txt")
+        with open(path, "w") as f:
+            f.write(f"layer={self.WWTPcomboBox.currentText()}\n")
+            f.write(f"id_field={self.IDcomboBox.currentText()}\n")
+            f.write(f"name_field={self.NamecomboBox.currentText()}\n")
+            f.write(f"conn_inh_field={self.ConnInhcomboBox.currentText()}\n")
+            f.write(f"tc_field={self.TCcomboBox.currentText()}\n")
+
+    def load_field_selection(self):
+        """Restore saved WWTP layer and field combo selections from text file."""
+        plugin_dir = os.path.dirname(__file__)
+        path = os.path.join(plugin_dir, "field_selection.txt")
+        if not os.path.exists(path):
+            return
+        try:
+            data = {}
+            with open(path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        data[key] = value
+        except OSError:
+            return
+
+        # Restore layer selection
+        layer_name = data.get("layer", "")
+        idx = self.WWTPcomboBox.findText(layer_name)
+        if idx >= 0:
+            self.WWTPcomboBox.setCurrentIndex(idx)
+            self.update_field_combos()
+
+            # Restore field selections
+            for combo, key in [
+                (self.IDcomboBox, "id_field"),
+                (self.NamecomboBox, "name_field"),
+                (self.ConnInhcomboBox, "conn_inh_field"),
+                (self.TCcomboBox, "tc_field"),
+            ]:
+                val = data.get(key, "")
+                fi = combo.findText(val)
+                if fi >= 0:
+                    combo.setCurrentIndex(fi)
+
+    def load_table(self, df, table_view):
         """
         Load dataframe to specified table view
         
-        csv_path: path to CSV file
+        df: pandas DataFrame
         table_view: Target QTableView object
-        update_filters: wheter call update_filters after loading
         """
         try:
             model = QStandardItemModel()
@@ -184,10 +404,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             # set the table model
             table_view.setModel(model)
 
-            # update filters if needed
-            if update_filters:
-                self.update_filters()
-
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
     
@@ -201,201 +417,263 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # http://qt-project.org/doc/qt-4.8/designer-using-a-ui-file.html
         # #widgets-and-dialogs-with-auto-connect
         self.setupUi(self)
-        # set a save icon
-        self.saveButton_1.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
-        self.saveButton_2.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
-        self.saveButton_tab4.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
         # set a reload icon
         self.reloadButton_3.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        # set a flag for save pop-up
-        self.flag = False   # check the utility of this flag
         # Modification tracking flags for each table
         self.consumption_modified = False
         self.removal_modified = False
         self.pnec_modified = False
+
+        # Selection view model (QListView)
+        self.selection_model = QStandardItemModel()
+        self.selection_view = self._get_selection_view()
+        if self.selection_view is None:
+            QMessageBox.critical(self, "Error", "Selection view not found in UI.")
+            return
+        self.selection_view.setModel(self.selection_model)
+        self.selection_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
+        # Progress bar setup
+        if hasattr(self, "progressBar"):
+            self.progressBar.setMinimum(0)
+            self.progressBar.setMaximum(100)
+            self.progressBar.setValue(0)
         # directory of the databases
         csv_file, self.temp_cons = self.get_dataset_path("consumption_dataset.csv", "consumption_.csv")
         RR_file, self.temp_rr = self.get_dataset_path("removal_rates.csv", "removal_.csv")
-        PNEC_file, self.temp_pnec = self.get_dataset_path("PNEC ERA.csv", "PNEC_.csv")
+        ERA_file, self.temp_era = self.get_dataset_path("PNEC ERA.csv", "PNEC_ERA_.csv")
+        HH_file, self.temp_hh = self.get_dataset_path("PNEC HHRA.csv", "PNEC_HH_.csv")
+        AMR_file, self.temp_amr = self.get_dataset_path("PNEC AMR-RA.csv", "PNEC_AMR_.csv")
 
         try:
             # consumption data
             self.df = pd.read_csv(csv_file, sep=",")
-            self.load_table(self.df, self.excelTableView, True)
+            self.load_table(self.df, self.excelTableView)
+            # enable full-row selection so the user can highlight rows to add
+            self.excelTableView.setSelectionBehavior(QAbstractItemView.SelectRows)
+            self.excelTableView.setSelectionMode(QAbstractItemView.ExtendedSelection)
             # removal rate
             self.df_RR = pd.read_csv(RR_file, sep=",")
-            self.load_table(self.df_RR, self.RRTableView, False)
-            # PNEC values
-            self.df_PNEC = pd.read_csv(PNEC_file, sep=",")
-            self.load_table(self.df_PNEC, self.PNECTableView, False)
+            self.load_table(self.df_RR, self.RRTableView)
+            # PNEC tables
+            self.df_ERA = pd.read_csv(ERA_file, sep=",")
+            self.load_table(self.df_ERA, self.ERATableView)
+            self.df_HH = pd.read_csv(HH_file, sep=",")
+            self.load_table(self.df_HH, self.HHTableView)
+            self.df_AMR = pd.read_csv(AMR_file, sep=",")
+            self.load_table(self.df_AMR, self.AMRTableView)
+            # populate country combo from HHRA columns (skip 'API name')
+            if hasattr(self, "CountrycomboBox"):
+                self.CountrycomboBox.clear()
+                self.CountrycomboBox.addItems([c.strip() for c in self.df_HH.columns[1:]])
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not read Excel file: {e}")
-            return {}
+            return
 
         # Connect signals
-        # tab 1
-        self.apiComboBox.currentTextChanged.connect(self.update_filters)
-        self.yearComboBox.currentTextChanged.connect(self.update_filters)
-        self.countryComboBox.currentTextChanged.connect(self.update_filters)
-        self.regionComboBox.currentTextChanged.connect(self.update_filters)
+        # tab 1 - Consumption
         self.load_selection_from_file()
         self.addSelectionButton.clicked.connect(self.add_selection)
-        self.saveSelectionButton.clicked.connect(self.save_selection_to_file)
         self.removeSelectionButton.clicked.connect(self.remove_selected_item)
-        self.resetButton.clicked.connect(self.reset_filters)
-        self.closeButton.clicked.connect(self.close)
-        self.update_filters()
+        self.ClearpushButton.clicked.connect(self.clear_selection)
+        self.closeButton.clicked.connect(self.close_with_save)
+        if hasattr(self, "backButton"):
+            self.backButton.clicked.connect(self.go_to_previous_tab)
+        if hasattr(self, "nextButton"):
+            self.nextButton.clicked.connect(self.go_to_next_tab)
         self.addButton_tab1.clicked.connect(lambda: self.add_row_to_table(self.excelTableView))
         self.removeButton_tab1.clicked.connect(lambda: self.remove_selected_row(self.excelTableView))
         self.restoreButton_1.clicked.connect(
             lambda: self.restore_original(
-                "consumption_dataset.csv", "consumption_.csv", self.load_table, self.excelTableView, True
+                "consumption_dataset.csv", "consumption_.csv", self.load_table, self.excelTableView
             )
         )
-        self.saveButton_1.clicked.connect(self.handle_save_consumption)
         self.help_tab1.clicked.connect(
             lambda: QDesktopServices.openUrl(
                 QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#consumption-data")
                 )
             )
         
-        # tab 2
+        # tab 2 - Removal rate
         self.addButton_tab2.clicked.connect(lambda: self.add_row_to_table(self.RRTableView))
         self.removeButton_tab2.clicked.connect(lambda: self.remove_selected_row(self.RRTableView))
         self.restoreButton_2.clicked.connect(
             lambda: self.restore_original(
-                "removal_rates.csv", "removal_.csv", self.load_table, self.RRTableView, False
+                "removal_rates.csv", "removal_.csv", self.load_table, self.RRTableView
             )
         )
-        self.saveButton_2.clicked.connect(self.handle_save_rr)
         self.help_tab2.clicked.connect(
             lambda: QDesktopServices.openUrl(
                 QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#removal-rate")
                 )
             )
 
-        # tab 3
-        self.WWTPcomboBox.currentIndexChanged.connect(self.update_field_combos)
-        self.loadButton.clicked.connect(self.load_wwtp_table)
-        self.populate_layer_combo()
-        self.reloadButton_3.clicked.connect(self.populate_layer_combo)
-        self.restoreButton_3.clicked.connect(self.load_wwtp_table)
-        self.saveButton.clicked.connect(self.save_wwtp_table_to_csv)
-        self.help_tab3.clicked.connect(
-            lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#custom-table")
-                )
-            )
-
-        # tab 4
-        self.addButton_tab4.clicked.connect(lambda: self.add_row_to_table(self.PNECTableView))
-        self.removeButton_tab4.clicked.connect(lambda: self.remove_selected_row(self.PNECTableView))
-        self.restoreButton_tab4.clicked.connect(
+        # tab 3 - PNEC subtabs (ERA, HH, AMR)
+        self.addButton_ERA.clicked.connect(lambda: self.add_row_to_table(self.ERATableView))
+        self.removeButton_ERA.clicked.connect(lambda: self.remove_selected_row(self.ERATableView))
+        self.restoreButton_ERA.clicked.connect(
             lambda: self.restore_original(
-                "PNEC ERA.csv", "PNEC_.csv", self.load_table, self.PNECTableView, False
+                "PNEC ERA.csv", "PNEC_ERA_.csv", self.load_table, self.ERATableView
             )
         )
-        self.saveButton_tab4.clicked.connect(self.handle_save_pnec)
-        self.help_tab4.clicked.connect(
+        self.help_ERA.clicked.connect(
             lambda: QDesktopServices.openUrl(
                 QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#pnec-values")
                 )
             )
 
+        self.addButton_HH.clicked.connect(lambda: self.add_row_to_table(self.HHTableView))
+        self.removeButton_HH.clicked.connect(lambda: self.remove_selected_row(self.HHTableView))
+        self.restoreButton_HH.clicked.connect(
+            lambda: self.restore_original(
+                "PNEC HHRA.csv", "PNEC_HH_.csv", self.load_table, self.HHTableView
+            )
+        )
+        self.help_HH.clicked.connect(
+            lambda: QDesktopServices.openUrl(
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#pnec-values")
+                )
+            )
 
-    def update_filters(self):
-        current_api = self.apiComboBox.currentText()
-        current_year = self.yearComboBox.currentText()
-        current_country = self.countryComboBox.currentText()
-        current_region = self.regionComboBox.currentText()
+        self.addButton_AMR.clicked.connect(lambda: self.add_row_to_table(self.AMRTableView))
+        self.removeButton_AMR.clicked.connect(lambda: self.remove_selected_row(self.AMRTableView))
+        self.restoreButton_AMR.clicked.connect(
+            lambda: self.restore_original(
+                "PNEC AMR-RA.csv", "PNEC_AMR_.csv", self.load_table, self.AMRTableView
+            )
+        )
+        self.help_AMR.clicked.connect(
+            lambda: QDesktopServices.openUrl(
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#pnec-values")
+                )
+            )
 
-        # create filtered versions of the dataframe for each combo box
-        df = self.df
-        df_api = df.copy()
-        if current_year:
-            df_api = df_api[df_api['year'].astype(str) == current_year]
-        if current_country: 
-            df_api = df_api[df_api['country'] == current_country]
-        if current_region: 
-            df_api = df_api[df_api['region'] == current_region]
+        if hasattr(self, "backButton_PNEC"):
+            self.backButton_PNEC.clicked.connect(self.go_to_previous_pnec_tab)
+        if hasattr(self, "nextButton_PNEC"):
+            self.nextButton_PNEC.clicked.connect(self.go_to_next_pnec_tab)
 
-        df_year = df.copy()
-        if current_api:
-            df_year = df_year[df_year['API name'] == current_api]
-        if current_country: 
-            df_year = df_year[df_year['country'] == current_country]
-        if current_region: 
-            df_year = df_year[df_year['region'] == current_region]
+        # tab 4 - Custom table
+        self.WWTPcomboBox.currentIndexChanged.connect(self.update_field_combos)
+        self.loadButton.clicked.connect(self.load_wwtp_table)
+        self.populate_layer_combo()
+        self.reloadButton_3.clicked.connect(self.populate_layer_combo)
+        self.restoreButton_3.clicked.connect(self.load_wwtp_table)
+        self.help_tab3.clicked.connect(
+            lambda: QDesktopServices.openUrl(
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#custom-table")
+                )
+            )
+        if hasattr(self, "PrintOptioncomboBox"):
+            self.PrintOptioncomboBox.clear()
+            self.PrintOptioncomboBox.addItems([
+                "Custom and PNEC table",
+                "Custom table only",
+                "PNEC table only",
+            ])
+        if hasattr(self, "printButton"):
+            self.printButton.clicked.connect(self.print_tables)
 
-        df_country = df.copy()
-        if current_api:
-            df_country = df_country[df_country['API name'] == current_api]
-        if current_year:
-            df_country = df_country[df_country['year'].astype(str) == current_year]
-        if current_region: 
-            df_country = df_country[df_country['region'] == current_region]
+        # Keep progress synced with manual tab navigation
+        if hasattr(self, "tabWidget"):
+            self.tabWidget.currentChanged.connect(lambda _: self._update_progress_by_tab())
+            self.tabWidget.currentChanged.connect(lambda _: self._update_navigation_buttons())
+        if hasattr(self, "tabWidget_2"):
+            self.tabWidget_2.currentChanged.connect(lambda _: self._update_progress_by_tab())
+            self.tabWidget_2.currentChanged.connect(lambda _: self._update_pnec_navigation_buttons())
+        self._update_progress_by_tab()
+        self._update_navigation_buttons()
 
-        df_region = df.copy()
-        if current_api:
-            df_region = df_region[df_region['API name'] == current_api]
-        if current_year:
-            df_region = df_region[df_region['year'].astype(str) == current_year]
-        if current_country: 
-            df_region = df_region[df_region['country'] == current_country]
+        # Restore saved field selections (layer + ID/Name/ConnInh/TC combos)
+        self.load_field_selection()
 
-        self.set_combo_items(self.apiComboBox, sorted(df_api['API name'].unique()), current_api)
-        self.set_combo_items(self.yearComboBox, sorted(df_year['year'].astype(str).unique()), current_year)
-        self.set_combo_items(self.countryComboBox, sorted(df_country['country'].unique()), current_country)
-        self.set_combo_items(self.regionComboBox, sorted(df_region['region'].unique()), current_region)
+
 
 
     """
     Tab 1 - Consumption data
     """
-    
-    def set_combo_items(self, combo, items, current):
-        block = combo.blockSignals(True)
-        combo.clear()
-        combo.addItem("")
-        combo.addItems(items)
-        if current in items:
-            combo.setCurrentText(current)
-        combo.blockSignals(block)
 
     def add_selection(self):
-        self.flag = True
-        filters = self.get_selected_filters()
 
-        # check that all fields are filled
-        if not all(filters.values()):
-            QMessageBox.warning(self, "Incomplete", "Please select all fields before adding.")
+        # save the consumption table first so self.df captures any edits
+        self.temp_consumption_path = self.save_temp_table(self.excelTableView, "consumption_")
+        self.df = pd.read_csv(self.temp_consumption_path, sep=",")
+        self.propagate_substances_from_consumption()
+        self.consumption_modified = False
+
+        model = self.excelTableView.model()
+        selection = self.excelTableView.selectionModel().selectedRows()
+
+        if not selection:
+            QMessageBox.warning(self, "No selection", "Please highlight one or more rows in the table before adding.")
             return
 
-        text = f"{filters['API name']}, {filters['year']}, {filters['country']}, {filters['region']}"
-
-        # avoid duplicates
-        for i in range(self.selectionListWidget.count()):
-            if self.selectionListWidget.item(i).text() == text:
-                QMessageBox.information(self, "Duplicate", "This selection is already added.")
+        # find column indices for the required fields
+        headers = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+        required = ["API name", "year", "country", "region", "API input (mg/inh./a)"]
+        col_indices = {}
+        for field in required:
+            if field in headers:
+                col_indices[field] = headers.index(field)
+            else:
+                QMessageBox.critical(self, "Error", f"Column '{field}' not found in the table.")
                 return
 
-        self.selectionListWidget.addItem(text)
-        self.save_selection_to_file()
+        added = 0
+        skipped_missing = []  # rows skipped due to missing fields
+        skipped_duplicate = 0
+        mandatory_keys = ["API name", "year", "country", "region"]
+
+        for idx in selection:
+            row = idx.row()
+            values = {field: str(model.index(row, col_indices[field]).data() or "").strip()
+                      for field in required}
+
+            # check which mandatory fields are missing
+            missing = [f for f in mandatory_keys if not values[f]]
+            if missing:
+                skipped_missing.append((row + 1, missing))
+                continue
+
+            text = (f"{values['API name']}, {values['year']}, {values['country']}, "
+                    f"{values['region']}, {values['API input (mg/inh./a)']}")
+
+            # avoid duplicates (compare on API name + year + country + region)
+            key = f"{values['API name']}, {values['year']}, {values['country']}, {values['region']}"
+            duplicate = False
+            for i in range(self.selection_model.rowCount()):
+                existing = self.selection_model.item(i).text()
+                existing_key = ", ".join(existing.split(", ")[:4])
+                if existing_key == key:
+                    duplicate = True
+                    break
+            if duplicate:
+                skipped_duplicate += 1
+            else:
+                self.selection_model.appendRow(QStandardItem(text))
+                added += 1
+
+        if added == 0 and not skipped_missing and skipped_duplicate > 0:
+            QMessageBox.information(self, "No new items", "All highlighted rows are already in the selection.")
+        elif skipped_missing:
+            details = "\n".join(
+                f"  Row {r}: missing {', '.join(fields)}" for r, fields in skipped_missing
+            )
+            QMessageBox.warning(
+                self, "Missing fields",
+                f"Some rows could not be added because mandatory fields are empty:\n\n{details}\n\n"
+                f"Please fill in: API name, year, country, region."
+            )
+        if added > 0:
+            self.save_selection_to_file()
 
     def remove_selected_item(self):
-        self.flag = True
-        selected_items = self.selectionListWidget.selectedItems()
-        for item in selected_items:
-            row = self.selectionListWidget.row(item)
-            self.selectionListWidget.takeItem(row)
+        selected_rows = self.selection_view.selectionModel().selectedRows()
+        for idx in sorted(selected_rows, key=lambda x: x.row(), reverse=True):
+            self.selection_model.removeRow(idx.row())
         self.save_selection_to_file()
-
-    def reset_filters(self):
-        self.apiComboBox.setCurrentIndex(0)
-        self.yearComboBox.setCurrentIndex(0)
-        self.countryComboBox.setCurrentIndex(0)
-        self.regionComboBox.setCurrentIndex(0)
 
     def add_row_to_table(self, table_view):
         model = table_view.model()
@@ -410,7 +688,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 self.consumption_modified = True
             elif table_view == self.RRTableView:
                 self.removal_modified = True
-            elif table_view == self.PNECTableView:
+            elif table_view in (self.ERATableView, self.HHTableView, self.AMRTableView):
                 self.pnec_modified = True
 
     def remove_selected_row(self, table_view):
@@ -423,7 +701,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             self.consumption_modified = True
         elif table_view == self.RRTableView:
             self.removal_modified = True
-        elif table_view == self.PNECTableView:
+        elif table_view in (self.ERATableView, self.HHTableView, self.AMRTableView):
             self.pnec_modified = True
 
     def save_temp_table(self, table_view, name):
@@ -465,15 +743,19 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             # Get API names from removal rates table
             removal_apis = set(self.df_RR["API name"].unique())
             
-            # Get API names from PNEC table
-            pnec_apis = set(self.df_PNEC["API name"].unique())
+            # Get API names from PNEC tables
+            era_apis = set(self.df_ERA["API name"].unique())
+            hh_apis = set(self.df_HH["API name"].unique())
+            amr_apis = set(self.df_AMR["API name"].unique())
             
             # APIs to add (in consumption but not in removal/PNEC)
             apis_to_add = consumption_apis - removal_apis
             
             # APIs to remove (in removal/PNEC but not in consumption)
             apis_to_remove_removal = removal_apis - consumption_apis
-            apis_to_remove_pnec = pnec_apis - consumption_apis
+            apis_to_remove_era = era_apis - consumption_apis
+            apis_to_remove_hh = hh_apis - consumption_apis
+            apis_to_remove_amr = amr_apis - consumption_apis
             
             # Add missing APIs to removal rates table
             if apis_to_add:
@@ -496,28 +778,42 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             if apis_to_remove_removal:
                 self.df_RR = self.df_RR[~self.df_RR["API name"].isin(apis_to_remove_removal)].reset_index(drop=True)
             
-            # Add missing APIs to PNEC table
-            if apis_to_add:
-                for api_name in apis_to_add:
-                    new_row = {"API name": api_name}
-                    # Add other columns that might exist
-                    for col in self.df_PNEC.columns:
-                        if col not in new_row:
-                            new_row[col] = ""
-                    # Append to dataframe
-                    self.df_PNEC = pd.concat([self.df_PNEC, pd.DataFrame([new_row])], ignore_index=True)
+            # Add only genuinely new APIs to all three PNEC tables
+            # (use apis_to_add, not consumption - pnec, to avoid adding
+            #  existing consumption substances that were never in a PNEC table)
+            for df_attr, df_pnec in [("df_ERA", self.df_ERA), ("df_HH", self.df_HH), ("df_AMR", self.df_AMR)]:
+                pnec_apis = set(df_pnec["API name"].unique())
+                pnec_to_add = apis_to_add - pnec_apis
+                if pnec_to_add:
+                    for api_name in pnec_to_add:
+                        new_row = {"API name": api_name}
+                        for col in df_pnec.columns:
+                            if col not in new_row:
+                                new_row[col] = ""
+                        df_pnec = pd.concat([df_pnec, pd.DataFrame([new_row])], ignore_index=True)
+                    setattr(self, df_attr, df_pnec)
             
-            # Remove APIs from PNEC table
-            if apis_to_remove_pnec:
-                self.df_PNEC = self.df_PNEC[~self.df_PNEC["API name"].isin(apis_to_remove_pnec)].reset_index(drop=True)
+            # Remove APIs from all three PNEC tables
+            if apis_to_remove_era:
+                self.df_ERA = self.df_ERA[~self.df_ERA["API name"].isin(apis_to_remove_era)].reset_index(drop=True)
+            if apis_to_remove_hh:
+                self.df_HH = self.df_HH[~self.df_HH["API name"].isin(apis_to_remove_hh)].reset_index(drop=True)
+            if apis_to_remove_amr:
+                self.df_AMR = self.df_AMR[~self.df_AMR["API name"].isin(apis_to_remove_amr)].reset_index(drop=True)
             
             # Reload tables and persist propagated changes to CSV
             if apis_to_add or apis_to_remove_removal:
-                self.load_table(self.df_RR, self.RRTableView, False)
+                self.load_table(self.df_RR, self.RRTableView)
                 self.save_temp_table(self.RRTableView, "removal_")
-            if apis_to_add or apis_to_remove_pnec:
-                self.load_table(self.df_PNEC, self.PNECTableView, False)
-                self.save_temp_table(self.PNECTableView, "PNEC_")
+            if apis_to_add or apis_to_remove_era:
+                self.load_table(self.df_ERA, self.ERATableView)
+                self.save_temp_table(self.ERATableView, "PNEC_ERA_")
+            if apis_to_add or apis_to_remove_hh:
+                self.load_table(self.df_HH, self.HHTableView)
+                self.save_temp_table(self.HHTableView, "PNEC_HH_")
+            if apis_to_add or apis_to_remove_amr:
+                self.load_table(self.df_AMR, self.AMRTableView)
+                self.save_temp_table(self.AMRTableView, "PNEC_AMR_")
                 
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Could not automatically propagate substances: {e}\nYou may need to manually add substances to Removal Rates and PNEC tables.")
@@ -549,15 +845,13 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
         self.temp_consumption_path = self.save_temp_table(self.excelTableView, "consumption_")
         self.df = pd.read_csv(self.temp_consumption_path, sep=",")
-        self.update_filters()
         # Auto-propagate new substances to other tables
         self.propagate_substances_from_consumption()
         # Reset modification flag
         self.consumption_modified = False
-        QMessageBox.information(self, "Success", "Consumption table saved.\nNew substances have been automatically added to Removal Rates and PNEC tables.")
 
 
-    def restore_original(self, original_filename, custom_filename, loader_func, table_view, update_filters):
+    def restore_original(self, original_filename, custom_filename, loader_func, table_view):
         """
         Delete custom dataset (if it exists) and reload the original.
         """
@@ -577,11 +871,15 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             self.df = temp_df
         elif "removal" in original_filename.lower():
             self.df_RR = temp_df
-        elif "pnec" in original_filename.lower():
-            self.df_PNEC = temp_df
+        elif original_filename == "PNEC ERA.csv":
+            self.df_ERA = temp_df
+        elif original_filename == "PNEC HHRA.csv":
+            self.df_HH = temp_df
+        elif original_filename == "PNEC AMR-RA.csv":
+            self.df_AMR = temp_df
 
         # reload original
-        loader_func(temp_df, table_view, update_filters)
+        loader_func(temp_df, table_view)
 
         QMessageBox.information(self, "Success", "Table restored to its original values.")
 
@@ -595,8 +893,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # get the selected items
         selected_items = []
-        for index in range(self.selectionListWidget.count()):
-            item = self.selectionListWidget.item(index)
+        for index in range(self.selection_model.rowCount()):
+            item = self.selection_model.item(index)
             selected_items.append(item.text())
 
         # Create the text file and write the selections
@@ -604,20 +902,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             for selection in selected_items:
                 file.write(f"{selection}\n")
 
-        if not self.flag:
-            QMessageBox.information(self, "Success", "Selection saved successfully!")
-
-        else:
-            self.flag = False
-
-
-    def get_selected_filters(self):
-        return {
-            "API name": self.apiComboBox.currentText(),
-            "year": self.yearComboBox.currentText(),
-            "country": self.countryComboBox.currentText(),
-            "region": self.regionComboBox.currentText()
-        }
 
     """
     Tab 2 - Removal rate
@@ -627,11 +911,18 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.df_RR = pd.read_csv(self.temp_rr_path, sep=",")
         # Reset modification flag
         self.removal_modified = False
-        QMessageBox.information(self, "Success", "Removal rate table saved.")
 
     
     """
-    Tab 3 - Custom table
+    Tab 3 - PNEC values
+    """
+    # PNEC save logic is in handle_save_pnec() above.
+    # ERA, HH, AMR table views are managed through the shared
+    # add_row_to_table / remove_selected_row / restore_original methods.
+
+
+    """
+    Tab 4 - Custom table
     """
     
     def populate_layer_combo(self):
@@ -651,9 +942,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
         self.IDcomboBox.clear()
         self.NamecomboBox.clear()
+        self.ConnInhcomboBox.clear()
         self.TCcomboBox.clear()
         self.IDcomboBox.addItems(field_names)
         self.NamecomboBox.addItems(field_names)
+        self.ConnInhcomboBox.addItems(field_names)
         self.TCcomboBox.addItems(field_names)
 
     def load_wwtp_table(self):
@@ -668,6 +961,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             layer = self.vector_layers[index]
             id_field = self.IDcomboBox.currentText()
             name_field = self.NamecomboBox.currentText()
+            conn_inh_field = self.ConnInhcomboBox.currentText()
             tc_field = self.TCcomboBox.currentText()
             
 
@@ -678,14 +972,19 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             model = QStandardItemModel()
             
             # get all selected API combinations from the list widget in tab 1
+            # format: "API name, year, country, region, API input value"
             selections = []
-            for i in range(self.selectionListWidget.count()):
-                selections.append(self.selectionListWidget.item(i).text().split(", "))
+            for i in range(self.selection_model.rowCount()):
+                parts = self.selection_model.item(i).text().split(", ")
+                if len(parts) >= 5:
+                    selections.append(parts[:5])
+                elif len(parts) == 4:
+                    selections.append(parts + [""])  # backwards compat
 
             api_names = [sel[0] for sel in selections]
             removal_names = [f"RR_{api}" for api in api_names]
 
-            model.setHorizontalHeaderLabels(["WWTP ID", "WWTP name", "Technical Class"] + api_names + removal_names)
+            model.setHorizontalHeaderLabels([id_field, name_field, conn_inh_field, tc_field] + api_names + removal_names)
 
             for feature in layer.getFeatures():
                 api_items = []
@@ -697,6 +996,10 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 name_item = QStandardItem(str(name_val))
                 api_items.append(name_item)
 
+                conn_inh_val = feature[conn_inh_field]
+                conn_inh_item = QStandardItem(str(conn_inh_val))
+                api_items.append(conn_inh_item)
+
                 try:
                     tech_class = int(feature[tc_field])
                 except (TypeError, ValueError, KeyError):
@@ -704,18 +1007,10 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 tech_item = QStandardItem(str(tech_class))
                 api_items.append(tech_item)
                 
-                # add each API value based on match
-                for api_name, year, country, region in selections:
-                    df = self.df
-                    match = df[
-                        (df["API name"] == api_name) &
-                        (df["year"].astype(str) == year) &
-                        (df["country"] == country) &
-                        (df["region"] == region)
-                    ]
-
-                    val = match["API input (mg/inh./a)"].values[0] if not match.empty else ""
-                    api_item = QStandardItem(str(val))
+                # add each API value from the stored selection
+                for sel in selections:
+                    api_value = sel[4] if len(sel) > 4 else ""
+                    api_item = QStandardItem(str(api_value))
                     api_items.append(api_item)
 
                 # add removal rates (RR) values
@@ -768,20 +1063,102 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             df_save = pd.DataFrame(data, columns=headers)
             df_save.to_csv(save_path, index=False)
 
-            QMessageBox.information(self, "Saved", f"Table successfully saved to: \n{save_path}")
-
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not save file:\n{e}")
 
+    def _table_view_to_df(self, table_view):
+        """Extract a DataFrame from a QTableView model."""
+        model = table_view.model()
+        if model is None or model.rowCount() == 0:
+            return None
+        headers = [model.headerData(c, Qt.Horizontal) for c in range(model.columnCount())]
+        data = []
+        for r in range(model.rowCount()):
+            data.append([model.index(r, c).data() for c in range(model.columnCount())])
+        return pd.DataFrame(data, columns=headers)
 
-    """
-    Tab 4 - PNEC values
-    """
-    def handle_save_pnec(self):
-        self.temp_pnec_path = self.save_temp_table(self.PNECTableView, "PNEC_")
-        # Reset modification flag
-        self.pnec_modified = False
-        QMessageBox.information(self, "Success", "PNEC table saved.")
+    def print_tables(self):
+        """
+        Let the user pick a folder, write the selected CSV files there,
+        and add them as layers in the active QGIS project.
+        PNEC tables are merged into one table: API name, ERA_PNEC, HH_PNEC, AMR_PNEC.
+        """
+        from PyQt5.QtWidgets import QFileDialog
+
+        option = self.PrintOptioncomboBox.currentText()
+
+        save_dir = QFileDialog.getExistingDirectory(self, "Select output folder")
+        if not save_dir:
+            return
+
+        added_layers = []
+
+        try:
+            if option in ("Custom and PNEC table", "Custom table only"):
+                df_custom = self._table_view_to_df(self.wwtpTableView) if hasattr(self, "wwtpTableView") else None
+                if df_custom is None:
+                    QMessageBox.warning(self, "No Data", "Custom table is empty. Load it first.")
+                    return
+                path = os.path.join(save_dir, "API_parameters.csv")
+                df_custom.to_csv(path, index=False)
+
+                # Write .csvt type-hint file so QGIS reads correct column types
+                # (prevents TC column being auto-detected as boolean)
+                n_cols = len(df_custom.columns)
+                col_types = ["String", "String"]  # ID, Name
+                if n_cols > 2:
+                    col_types.append("Real")      # Conn. Inh.
+                if n_cols > 3:
+                    col_types.append("Integer")   # TC
+                for i in range(4, n_cols):
+                    col_types.append("Real")       # API values and RR values
+                csvt_path = path.replace(".csv", ".csvt")
+                with open(csvt_path, "w") as f:
+                    f.write(",".join(f'"{ t}"' for t in col_types) + "\n")
+
+                layer = QgsVectorLayer(f"file:///{path}?delimiter=,", "API_parameters", "delimitedtext")
+                if layer.isValid():
+                    QgsProject.instance().addMapLayer(layer)
+                    added_layers.append("API_parameters")
+
+            if option in ("Custom and PNEC table", "PNEC table only"):
+                # Build merged PNEC table
+                df_era = self._table_view_to_df(self.ERATableView)
+                df_hh = self._table_view_to_df(self.HHTableView)
+                df_amr = self._table_view_to_df(self.AMRTableView)
+
+                merged = pd.DataFrame()
+                if df_era is not None:
+                    merged = df_era[["API name"]].copy()
+                    merged["ERA_PNEC"] = df_era.iloc[:, 1].values
+
+                if df_hh is not None:
+                    country = self.CountrycomboBox.currentText().strip() if hasattr(self, "CountrycomboBox") else ""
+                    if country and country in df_hh.columns:
+                        hh_sub = df_hh[["API name", country]].rename(columns={country: "HH_PNEC"})
+                    else:
+                        hh_sub = df_hh[["API name"]].copy()
+                        hh_sub["HH_PNEC"] = ""
+                    merged = merged.merge(hh_sub, on="API name", how="outer") if not merged.empty else hh_sub
+
+                if df_amr is not None:
+                    amr_sub = df_amr[["API name"]].copy()
+                    amr_sub["AMR_PNEC"] = df_amr.iloc[:, 1].values
+                    merged = merged.merge(amr_sub, on="API name", how="outer") if not merged.empty else amr_sub
+
+                if not merged.empty:
+                    path = os.path.join(save_dir, "PNEC.csv")
+                    merged.to_csv(path, index=False)
+                    layer = QgsVectorLayer(f"file:///{path}?delimiter=,", "PNEC", "delimitedtext")
+                    if layer.isValid():
+                        QgsProject.instance().addMapLayer(layer)
+                        added_layers.append("PNEC")
+
+            self.progressBar.setValue(100)
+            QMessageBox.information(self, "Success", f"Layers added to project:\n{', '.join(added_layers)}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not export tables:\n{e}")
+
 
     def closeEvent(self, event):
         """
@@ -796,7 +1173,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         if self.removal_modified:
             modified_tabs.append(("Removal Rates (Tab 2)", self.handle_save_rr))
         if self.pnec_modified:
-            modified_tabs.append(("PNEC Values (Tab 4)", self.handle_save_pnec))
+            modified_tabs.append(("PNEC Values (Tab 3)", self.handle_save_pnec))
         
         # If there are unsaved changes, prompt user for each tab
         if modified_tabs:
@@ -830,6 +1207,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                             event.ignore()
                             return
         
+        # Persist field combo selections
+        self.save_field_selection()
         # Allow close event to proceed
         event.accept()
 
