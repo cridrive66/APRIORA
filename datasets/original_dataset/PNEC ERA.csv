@@ -1,11 +1,11 @@
-API name,ERA [ng/l],HHRA [ng/l],AMR-RA [ng/l]
-Carbamazepine,2500,na,-
-Clarithromycin,130,na,250
-Diclofenac,40,na,-
-Estrone,0.36,na,-
-Fluconazole,250,na,-
-Metoprolol,8600,na,-
-Primidone,2500,na,-
-Sulfamethoxazole,100,na,16000
-Trimethoprim,100,na,500
-Venlafaxine,6.1,na,-
+API name,ERA [ng/l]
+Carbamazepine,2500
+Clarithromycin,130
+Diclofenac,40
+Estrone (E1),0.36
+Fluconazole,250
+Metoprolol,8600
+Primidone,2500
+Sulfamethoxazole,100
+Trimethoprim,100
+Venlafaxine,6.1
