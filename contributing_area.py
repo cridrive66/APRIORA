@@ -32,7 +32,21 @@ __revision__ = '$Format:%H$'
 
 from qgis.PyQt.QtCore import QCoreApplication
 from PyQt5.QtCore import QVariant
-from qgis.core import * #change
+from qgis.core import (QgsProcessingAlgorithm,
+                       QgsProcessing,
+                       QgsProcessingException,
+                       QgsProcessingParameterFeatureSource,
+                       QgsProcessingParameterFeatureSink,
+                       QgsProcessingParameterField,
+                       QgsProject,
+                       QgsFields,
+                       QgsField,
+                       QgsFeature,
+                       QgsFeatureSink,
+                       QgsGeometry,
+                       QgsPointXY,
+                       QgsSpatialIndex,
+                       Qgis)
 import processing
 import numpy as np
 
@@ -45,14 +59,36 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
     OUTPUT_gauged = "OUTPUT_gauged"
 
     def shortHelpString(self):
-        return self.tr(""" This tool calculates the contributing subcatchments of each gauging station. This output can be visualized as a single shapefile by choosing the option "aggregated output" or as a single shapefile for each gauging station with the option "add also contributing subcatchments". 
-        The second output "coded subcatchments" overlap with the input catchment file but has a coded system necessary for the next steps of the plugin.
-        Workflow:
-        1. Choose the catchment file, the output from "1 - Fix river network" as river network and the gauging stations.
-        2. Select which kind of output would you like to display.
-        3. Click on "Run".
+        return self.tr(
+            """
+            This tool identifies the contributing (upstream) subcatchments for each
+            gauging station and produces a single dissolved polygon per station.
 
-        """)
+            Steps performed:
+            1. Match each gauging station to the nearest river section (via NET_ID).
+            2. Traverse the network upstream to find all contributing river segments.
+            3. Collect the subcatchments associated with those segments (via CATCH_ID).
+            4. Dissolve them into one polygon per gauging station.
+            5. Attach Mean Flow and Mean Low Flow from the gauging-station layer.
+
+            Inputs:
+            - Ungauged subcatchments: output of Tool 1 ("Ungauged subcatch").
+            - Fixed river network: output of Tool 1 ("Fixed river network").
+            - Gauging stations: point layer with flow data columns.
+            - Mean Flow / Mean Low Flow: select the corresponding fields.
+
+            Output:
+            - Gauged subcatchments: one dissolved polygon per gauging station,
+              carrying Mean_Flow and M_Low_Flow attributes.
+
+            Workflow:
+            1. Select the layers and fields.
+            2. Click Run.
+
+            Note: The river network must contain NET_ID, NET_TO and CATCH_ID fields
+            (produced by Tool 1). Both layers must share the same CRS (reprojection
+            is attempted automatically for gauging stations if needed).
+            """)
 
     def initAlgorithm(self, config):
         self.addParameter(
@@ -113,17 +149,11 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
 
 
     def processAlgorithm(self, parameters, context, feedback):
-        source = self.parameterAsSource(
-            parameters,
-            self.catchmentAreas,
-            context
-        )
-        if source is None:
-            raise QgsProcessingException(self.invalidSourceError(parameters, self.catchmentAreas))
-
         '''loading the subcatchments'''
         feedback.setProgressText(self.tr("Loading subcatchments..\n "))
         subcatch = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
+        if subcatch is None:
+            raise QgsProcessingException(self.invalidSourceError(parameters, self.catchmentAreas))
         river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         MQ_field = self.parameterAsString(parameters, self.meanFlow, context)
         MNQ_field = self.parameterAsString(parameters, self.MNQ, context)
@@ -150,24 +180,26 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
 
         '''loading the gauging stations'''
         gaug_stat = self.parameterAsVectorLayer(parameters, self.gaugingStations, context)
+        if gaug_stat is None or gaug_stat.featureCount() == 0:
+            raise QgsProcessingException("No gauging stations found. Please provide a valid gauging station layer.")
 
-        '''names of fields for id, next segment, previous segment'''
+        # Field indices for the network data array.
+        # DataArr layout: [NET_ID, NET_ID, NET_TO, qgis_fid]
+        #   col 0 = segment id (NET_ID)
+        #   col 1 = same as col 0 (used as MARKER during traversal)
+        #   col 2 = downstream target (NET_TO)
+        #   col 3 = QGIS feature id
         id_field = "NET_ID"
-        next_field = "NET_ID"
-        prev_field = "NET_TO"
+        to_field = "NET_TO"
 
-        '''field index for id, next segment, previous segment'''
         idxId = waternet.fields().indexFromName(id_field)
-        idxPrev = waternet.fields().indexFromName(next_field)
-        idxNext = waternet.fields().indexFromName(prev_field)
+        idxTo = waternet.fields().indexFromName(to_field)
 
-        if idxId == -1 or idxNext == -1:
+        if idxId == -1 or idxTo == -1:
             raise QgsProcessingException("Required fields (NET_ID, NET_TO) not found in river network.")
 
         subcat_layer = subcatch_fixed
         feedback.pushInfo(f"\nNumber of features in the subcat_layer: {subcat_layer.featureCount()}")
-
-            
 
         # we do the same with the gauging stations. So we have the same IDs to identify river network, gauging stations and subcatchments
         gaug_result = processing.run("native:joinattributesbylocation", {
@@ -214,15 +246,14 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                     raise QgsProcessingException(
                         'The selected features in the flow are marked as \'unconnected\' '
                         + '(most likely because of manual editing). Please delete the columns with the network information ('
-                        + next_field
+                        + id_field
                         + ', '
-                        + prev_field
+                        + to_field
                         + ') and run tool 1 \"Water Network Constructor\" again.'
                     )
                 return(rows_connect)
 
 
-        # this function is probably not necessary with the new method
         def find_closest_river_section(outlet_point, spatial_index, river_map, feedback):
             '''
             Finds the closest river section to the gauging station
@@ -275,16 +306,9 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
         else:
             gaug_reproject = gaug_id
-        
-        gaugFt = gaug_reproject.getFeatures()
 
-
-
-        """
-        The next part calculate the contributing subcatchments at the gauging stations.
-        """
-
-        for station in gaugFt:      # add an error in case gaugFt is empty
+        # iterate over gauging stations and find contributing subcatchments for each
+        for station in gaug_reproject.getFeatures():
             # little debugging
             feedback.pushInfo(f"\nProcessing gauging station ID: {station.id()}")
 
@@ -305,7 +329,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 else:
                     feedback.reportError('This segment has an invalid ID (NULL)')
                     raise QgsProcessingException()
-                if startF.attributes()[idxNext] == 'unconnected' or startF.attributes()[idxPrev] == 'unconnected':
+                if startF.attributes()[idxTo] == 'unconnected':
                     feedback.reportError(self.tr('{0}: Unconnected segment selected.').format(self.displayName()))
                     raise QgsProcessingException()
 
@@ -318,8 +342,9 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
 
             
             '''load data from layer "waternet" '''
-            Data = [[str(f.attribute(idxId)),str(f.attribute(idxPrev)),str(f.attribute(idxNext)),f.id()] for f in waternet.getFeatures()]  # 0:id, 1:from, 2:to, 3id
-            DataArr = np.array(Data, dtype= 'object') # save Data as numpy array
+            # DataArr columns: [0: NET_ID, 1: NET_ID (same, used as MARKER), 2: NET_TO, 3: qgis fid]
+            Data = [[str(f.attribute(idxId)), str(f.attribute(idxId)), str(f.attribute(idxTo)), f.id()] for f in waternet.getFeatures()]
+            DataArr = np.array(Data, dtype='object')
             feedback.setProgressText(self.tr("Data loaded\n Calculating {0}\n").format(str(Section_long)))
             feedback.setProgress(20)
         
@@ -338,7 +363,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
             origins = [] # a list for origins/river heads upstream
 
             i=1
-            total = 70 / source.featureCount() if source.featureCount() else 0 # for feedback between 20% and 90%
+            total = 70 / subcatch.featureCount() if subcatch.featureCount() else 0 # for feedback between 20% and 90%
             while str(MARKER) != 'X':
                 if feedback.isCanceled():
                     break
@@ -360,7 +385,6 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                     safe=safe[:-1] #delete used NET_ID from "safe"-list
                 feedback.setProgress(20+total*i)
                 i+=1
-            del i
 
             # little debugging
             feedback.pushInfo(f"\nPrint net_route: {net_route}")
@@ -390,7 +414,7 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
 
             feedback.pushInfo("\nupstream_catch_result = done")
 
-            # dissolve the contributing subcatchments to have only one area
+            # dissolve the contributing subcatchments into one polygon per station
             dissolve_result = processing.run("native:dissolve",{
                 'INPUT':upstream_catch,
                 'FIELD':[],
@@ -399,7 +423,8 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 })
             dissolve_layer = dissolve_result["OUTPUT"]
             feedback.pushInfo("\ndissolve_layer = done")
-            # I want the output to have the geometry of dissolve_layer and the feature corresponding to the subcatchment with the gauging ID
+
+            # identify which subcatchment the gauging station sits in
             net_id_gaug = station["CATCH_ID"]
 
             # find the subcatchment with the same CATCH_ID
@@ -413,22 +438,13 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
                 feedback.pushInfo(f"\nWarning: no subcatchment found with CATCH_ID {net_id_gaug}. Skipping.")
                 continue
             
-            # store the result in the output
+            # use the dissolved geometry with the attributes from the matching subcatchment
             dissolve_feature = next(dissolve_layer.getFeatures())
             dissolve_geom = dissolve_feature.geometry()
-        
-            # aggregate output
-            # create a new feature with the fields from the subcat_layer
-            new_feature = QgsFeature(subcat_layer.fields())  # don't know if it is necessary
-            new_feature.setGeometry(dissolve_geom)
-            # set the attributes from the gauging station
-            new_feature.setAttributes(matching_attributes)
-            # add the new feature to the sink
-            feedback.pushInfo(f"\nPreparing to save gauged subcatchments")
 
+            # find the gauging station record and write to sink with flow attributes
             for gaug in gaug_reproject.getFeatures():
-                # feedback.pushInfo(f"\nProcessing gauging station with CATCH ID: {gaug['CATCH_ID']}")
-                if gaug["CATCH_ID"] == new_feature["CATCH_ID"]:
+                if gaug["CATCH_ID"] == net_id_gaug:
                     gauged_feature = QgsFeature(gauged_fields)
                     gauged_feature.setGeometry(dissolve_geom)
                     gauged_feature.setAttributes(matching_attributes + [gaug[MQ_field], gaug[MNQ_field]])

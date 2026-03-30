@@ -194,14 +194,30 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # PNEC subtab navigation buttons
         self._update_pnec_navigation_buttons()
 
+    def _on_tab_changed(self, new_idx):
+        """
+        Called whenever the main tab changes (click, back/next).
+        Saves the tab we are *leaving*, then updates progress.
+        """
+        self._save_tab_by_index(self._previous_tab_idx)
+        self._previous_tab_idx = new_idx
+        self._update_progress_by_tab()
+
+    def _save_tab_by_index(self, idx):
+        """Save a specific tab by its index."""
+        if idx == 0:
+            self.handle_save_consumption()
+        elif idx == 1:
+            self.handle_save_rr()
+        elif idx == 2:
+            self.handle_save_pnec()
+
     def go_to_next_tab(self):
         """
         Move user to the next tab and refresh progress.
         """
         if not hasattr(self, "tabWidget"):
             return
-
-        self.save_current_tab()
 
         current_idx = self.tabWidget.currentIndex()
         if current_idx < self.tabWidget.count() - 1:
@@ -215,8 +231,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         """
         if not hasattr(self, "tabWidget"):
             return
-
-        self.save_current_tab()
 
         current_idx = self.tabWidget.currentIndex()
         if current_idx > 0:
@@ -576,8 +590,9 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             self.printButton.clicked.connect(self.print_tables)
 
         # Keep progress synced with manual tab navigation
+        self._previous_tab_idx = 0
         if hasattr(self, "tabWidget"):
-            self.tabWidget.currentChanged.connect(lambda _: self._update_progress_by_tab())
+            self.tabWidget.currentChanged.connect(self._on_tab_changed)
             self.tabWidget.currentChanged.connect(lambda _: self._update_navigation_buttons())
         if hasattr(self, "tabWidget_2"):
             self.tabWidget_2.currentChanged.connect(lambda _: self._update_progress_by_tab())

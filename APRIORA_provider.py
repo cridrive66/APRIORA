@@ -34,11 +34,11 @@ import os
 from qgis.core import QgsProcessingProvider
 from PyQt5.QtGui import QIcon 
 from .api_parameter_selection import APIParameterSelectionAlgorithm
-from .Calculate_geofactors import CalculateGeofactors
-from .Calculate_flow import CalculateFlow
-from .Fix_River_Network import FixRiverNetwork
-from .Contributing_area_gaug_station import UpstreamDownstream
-from .WWTP_emission_loads import EmissionLoads
+from .calculate_geofactors import CalculateGeofactors
+from .flow_estimation import CalculateFlow
+from .fix_river_network import FixRiverNetwork
+from .contributing_area import UpstreamDownstream
+from .emission_loads import EmissionLoads
 from .accumulation import Accumulation
 from .risk_assessment import RiskAssessment
 

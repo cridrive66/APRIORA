@@ -37,22 +37,18 @@ import numpy as np
 from osgeo import gdal
 gdal.UseExceptions()
 from PyQt5.QtCore import QVariant
-from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
+from qgis.PyQt.QtCore import QCoreApplication, QDir
 from qgis.core import (QgsProcessingAlgorithm,
                        QgsCoordinateReferenceSystem,
                        QgsProcessing,
                        QgsProject,
                        QgsField,
-                       QgsProcessingAlgorithm,
                        QgsProcessingParameterBoolean,
-                       QgsProcessingParameterEnum,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
-                       QgsProcessingParameterMatrix,
                        QgsProcessingParameterNumber,
                        QgsProcessingParameterRasterLayer,
-                       QgsField,
                        QgsVectorLayer,
                        QgsRasterLayer,
                        edit)
@@ -79,16 +75,38 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
     dryMonth = 'DryMonth'
 
     def shortHelpString(self):
-        return self.tr(""" This tool calculates the geofactors for each subcatchment. The geofactors are necessaries to estimate the flow in the tool "4 - Flow estimation".
-        This tool produces two outputs, ungauged subcatchments geofactors and gauged subcatchments geofactors.
-        Workflow:
-        1. Upload the catchment area ("coded subcatchments" and "gauged subcatchments" both from the 2nd tool).
-        2. Choose the "Fixed River Network" file as river network input.
-        3. Keep filling the inputs with the file required.
-        4. Select a folder with precipitation data. This data must be .nc file, one for each year.
-        5. Click "Run".
+        return self.tr(
+            """
+            This tool calculates geofactors for each subcatchment, which are required by
+            Tool 4 (Flow Estimation) to estimate river discharge.
 
-        """)
+            Geofactors computed per subcatchment:
+            - Elevation statistics (mean, min, max) from the digital surface model.
+            - Slope statistics (mean, max) derived from the DSM.
+            - Shape factor, area, and perimeter.
+            - River network density and proportions of water, forest, and settlement area.
+            - Mean yearly precipitation and mean dry-month precipitation.
+
+            Inputs:
+            - Ungauged subcatchments: output of Tool 2 ("Ungauged subcatch").
+            - Gauged subcatchments: output of Tool 2 ("Gauged subcatch").
+            - Digital surface model: raster DEM.
+            - Fixed river network: output of Tool 1.
+            - Water / Forest / Settlement area: polygon layers for land-use shares.
+            - Precipitation data: folder containing NetCDF (.nc) files (one per year,
+              or a single aggregated multi-band file).
+            - Dry month: month index (1–12) used for the dry-month precipitation average.
+
+            Outputs:
+            - Ungauged subcatchments geofactors.
+            - Gauged subcatchments geofactors.
+
+            Workflow:
+            1. Select the input layers and the precipitation folder.
+            2. Choose whether the folder contains an aggregated file.
+            3. Set the dry month (default: August = 8).
+            4. Click Run.
+            """)
     
 
     #Init tool
@@ -224,7 +242,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         feedback.setProgressText(f"Debug: Raster shape = {raster.shape}")    
         
         
-    def processPropotions(self, parameters, context, feedback, catchments, outputDir, fileName, fieldName, target, calcOption):
+    def processProportions(self, parameters, context, feedback, catchments, outputDir, fileName, fieldName, target, calcOption):
         #Calculates intersection of subcatchments and area/length
         feedback.setProgressText("\nCalculate statistics based on "+ fileName +"...")
         intersections = processing.run("native:intersection",
@@ -349,19 +367,19 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             context=context)
         
         #Calculates statistics based on river network
-        JoinCatchmentsRiverSummarize = self.processPropotions(parameters, context, feedback, catchments_ungauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork],1)
+        JoinCatchmentsRiverSummarize = self.processProportions(parameters, context, feedback, catchments_ungauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork],1)
         del catchments_ungauged
 
         #Calculates statistics based on water area
-        JoinCatchmentsWaterAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WatAr", parameters[self.waterArea],0)
+        JoinCatchmentsWaterAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WatAr", parameters[self.waterArea],0)
         del JoinCatchmentsRiverSummarize
 
         #Calculates statistics based on forest area
-        JoinCatchmentsForestAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsWaterAreaSummarize, outputDir, "ForestArea", "ForAr", parameters[self.forestArea],0)
+        JoinCatchmentsForestAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsWaterAreaSummarize, outputDir, "ForestArea", "ForAr", parameters[self.forestArea],0)
         del JoinCatchmentsWaterAreaSummarize
 
         #Calculates statistics based on settlement area
-        JoinCatchmentsSettlementAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SettlementArea", "SettAr", parameters[self.settlementArea],0)
+        JoinCatchmentsSettlementAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SettlementArea", "SettAr", parameters[self.settlementArea],0)
         del JoinCatchmentsForestAreaSummarize
 
         #Calculates river network density (rnd), proportion of water area (pwa), forest share and settlemet share
@@ -415,8 +433,8 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             attrs = {idxRND : calcRND, idxPWA : calcPWA, idxFS : calcFS, idxSS : calcSS, idxRN_Sum : RNsum, idxWA_Sum : WAsum, idxFA_Sum : FAsum, idxSA_Sum : SAsum}
             JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id() : attrs})
 
-            if not JoinCatchmentsSettlementAreaSummarize.isValid():
-                feedback.reportError("Error: JoinCatchmentsSettlementAreaSummarize is not valid!", fatalError = True)
+        if not JoinCatchmentsSettlementAreaSummarize.isValid():
+            feedback.reportError("Error: JoinCatchmentsSettlementAreaSummarize is not valid!", fatalError=True)
             
         #Calculation of precipitation
         feedback.setProgressText("\nCalculate precipitation")
@@ -521,6 +539,7 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                     xmax = ext.xMaximum()
                     ymin = ext.yMinimum()
                     ymax = ext.yMaximum()
+                    firstFile = False
                 while i <= rasterDataSource.RasterCount:
                     if i == 1:
                         yearlyTemp = np.array([rasterDataSource.GetRasterBand(i).ReadAsArray()])
@@ -546,17 +565,20 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         outfnYearly = outputDir+ungaugedSourceName+'_yearlyPrecipitation.tif'
         outfnDry = outputDir+ungaugedSourceName+'_dryMonthPrecipitation.tif'
 
-        # run the function to create the raster
-        # yearly precipitation
-        self.createRaster(parameters, context, feedback, outfnYearly, xmax, xmin, xres, ymax, ymin, yres, spatref, finalYearlyMeanRaster)
+        # validate raster data before writing
         if finalYearlyMeanRaster is None:
-            feedback.reportError("Error: finalYearlyMeanRster is None!", fatalError = True)
+            feedback.reportError("Error: finalYearlyMeanRaster is None!", fatalError=True)
+            return {}
+        if finalDryMeanRaster is None:
+            feedback.reportError("Error: finalDryMeanRaster is None!", fatalError=True)
+            return {}
+
+        # create yearly precipitation raster
+        self.createRaster(parameters, context, feedback, outfnYearly, xmax, xmin, xres, ymax, ymin, yres, spatref, finalYearlyMeanRaster)
         feedback.setProgressText(f"Debug: Output file path: {outfnYearly}")
         
-        # dry month precipitation
+        # create dry month precipitation raster
         self.createRaster(parameters, context, feedback, outfnDry, xmax, xmin, xres, ymax, ymin, yres, spatref, finalDryMeanRaster)
-        if finalDryMeanRaster is None:
-            feedback.reportError("Error: finalDryMeanRaster is None!", fatalError = True)
         feedback.setProgressText(f"Debug: Output file path: {outfnDry}")
        
        # save as raster layer
@@ -680,19 +702,19 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             context=context)
 
         #Calculates statistics based on river network
-        JoinCatchmentsRiverSummarize = self.processPropotions(parameters, context, feedback, catchments_gauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork],1)
+        JoinCatchmentsRiverSummarize = self.processProportions(parameters, context, feedback, catchments_gauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork],1)
         del catchments_gauged, slope
 
         #Calculates statistics based on water area
-        JoinCatchmentsWaterAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WatAr", parameters[self.waterArea],0)
+        JoinCatchmentsWaterAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WatAr", parameters[self.waterArea],0)
         del JoinCatchmentsRiverSummarize
 
         #Calculates statistics based on forest area
-        JoinCatchmentsForestAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsWaterAreaSummarize, outputDir, "ForestArea", "ForAr", parameters[self.forestArea],0)
+        JoinCatchmentsForestAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsWaterAreaSummarize, outputDir, "ForestArea", "ForAr", parameters[self.forestArea],0)
         del JoinCatchmentsWaterAreaSummarize
 
         #Calculates statistics based on settlement area
-        JoinCatchmentsSettlementAreaSummarize = self.processPropotions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SettlementArea", "SettAr", parameters[self.settlementArea],0)
+        JoinCatchmentsSettlementAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SettlementArea", "SettAr", parameters[self.settlementArea],0)
         del JoinCatchmentsForestAreaSummarize
 
         #Calculates river network density (rnd), proportion of water area (pwa), forest share and settlemet share
@@ -745,9 +767,9 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 SAsum = 0
             attrs = {idxRND : calcRND, idxPWA : calcPWA, idxFS : calcFS, idxSS : calcSS, idxRN_Sum : RNsum, idxWA_Sum : WAsum, idxFA_Sum : FAsum, idxSA_Sum : SAsum}
             JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id() : attrs})
-            
-            if not JoinCatchmentsSettlementAreaSummarize.isValid():
-                feedback.reportError("Error: JoinCatchmentsSettlementAreaSummarize is not valid!", fatalError = True)
+
+        if not JoinCatchmentsSettlementAreaSummarize.isValid():
+            feedback.reportError("Error: JoinCatchmentsSettlementAreaSummarize is not valid!", fatalError=True)
             
         #Calculation of precipitation
         feedback.setProgressText("\nCalculate precipitation")
@@ -756,17 +778,12 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         outfnYearly = outputDir+gaugedSourceName+'_yearlyPrecipitation.tif'
         outfnDry = outputDir+gaugedSourceName+'_dryMonthPrecipitation.tif'
 
-        # run the function to create the raster
-        # yearly precipitation
+        # create yearly precipitation raster
         self.createRaster(parameters, context, feedback, outfnYearly, xmax, xmin, xres, ymax, ymin, yres, spatref, finalYearlyMeanRaster)
-        if finalYearlyMeanRaster is None:
-            feedback.reportError("Error: finalYearlyMeanRster is None!", fatalError = True)
         feedback.setProgressText(f"Debug: Output file path: {outfnYearly}")
         
-        # dry month precipitation
+        # create dry month precipitation raster
         self.createRaster(parameters, context, feedback, outfnDry, xmax, xmin, xres, ymax, ymin, yres, spatref, finalDryMeanRaster)
-        if finalDryMeanRaster is None:
-            feedback.reportError("Error: finalDryMeanRaster is None!", fatalError = True)
         feedback.setProgressText(f"Debug: Output file path: {outfnDry}")
 
         # save as raster file
@@ -834,19 +851,6 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         del finalLayer_gauged
         
         feedback.setProgressText("\nSuccess: gauged_subcatchments_geofactors.shp file was created successfully!")
-        
-        
-        """
-        #Set progressbar
-        features = catchmentAreaSource.getFeatures()
-        total = 100.0 / catchmentAreaSource.featureCount() if catchmentAreaSource.featureCount() else 0
-        for current, feature in enumerate(features):
-            # Stop the algorithm if cancel button has been clicked
-            if feedback.isCanceled():
-                break
-            # Update the progress bar
-            feedback.setProgress(int(current * total))
-        """
     
         # return the result
         return {

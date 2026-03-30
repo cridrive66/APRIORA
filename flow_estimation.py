@@ -35,7 +35,7 @@ import os
 import pandas as pd
 import numpy as np
 from PyQt5.QtCore import QVariant
-from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
+from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessing,
                        QgsProcessingException,
@@ -44,35 +44,17 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsFields,
                        QgsFeatureSink,
                        QgsProject,
-                       QgsProcessingAlgorithm,
                        QgsProcessingParameterDefinition,
                        QgsProcessingParameterEnum,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
-                       QgsProcessingParameterField,
-                       QgsProcessingParameterNumber,
-                       QgsField,
                        QgsVectorLayer,
                        edit)
 
 
 class CalculateFlow(QgsProcessingAlgorithm):
-    """
-    This is an example algorithm that takes a vector layer and
-    creates a new identical one.
 
-    It is meant to be used as an example of how to create your own
-    algorithms and explain methods and variables used to do it. An
-    algorithm like this will be available in all elements, and there
-    is not need for additional work.
-
-    All Processing algorithms should extend the QgsProcessingAlgorithm
-    class.
-    """
-
-    # Constants used to refer to parameters and outputs. They will be
-    # used when calling the algorithm from another algorithm, or when
-    # calling from the QGIS console.
+    # Constants used to refer to parameters and outputs.
 
     OUTPUT_catch = 'OUTPUT_catch'
     OUTPUT_river = "OUTPUT_river"
@@ -102,12 +84,36 @@ class CalculateFlow(QgsProcessingAlgorithm):
     }
 
     def shortHelpString(self):
-        return self.tr(""" This tool estimates the flow for each subcatchment (Subcatchment level) or for each river section (River level).
-        Workflow:
-        1. Insert the gauged and ungauged subcatchments with geofactors calculated with the 3rd tool.
-        2. Insert the river network calculated with the 1st tool.
-        3 Click on "Run"
-        """)
+        return self.tr(
+            """
+            This tool estimates Mean Flow and Mean Low Flow for each ungauged subcatchment
+            using a Random Forest model trained on the geofactors of gauged subcatchments.
+            Results are produced at subcatchment level and distributed to river sections.
+
+            Steps performed:
+            1. Train (or load a pre-trained) Random Forest model using gauged-subcatchment
+               geofactors as predictors and area-normalised flow as target.
+            2. Apply the model to ungauged subcatchments to predict flows.
+            3. Distribute the predicted flow from subcatchments to individual river
+               sections proportionally to section length.
+            4. Accumulate flow downstream along the network for both river and
+               subcatchment outputs.
+
+            Inputs:
+            - Gauged subcatchments with geofactors (output of Tool 3).
+            - Ungauged subcatchments with geofactors (output of Tool 3).
+            - Fixed river network (output of Tool 1).
+            - Region: choose a pre-trained model or "Null" to estimate from your data.
+            - Geofactors selection (advanced): which geofactors to use as predictors.
+
+            Outputs:
+            - Subcatchment level: polygon layer with Mean_Flow, M_Low_Flow, accumulated
+              flows (calc_Mean_, calc_M_Low), CATCH_TO, and calc_unit.
+            - River level: line layer with the same flow fields distributed and
+              accumulated per river section.
+
+            Note: scikit-learn must be installed in the QGIS Python environment.
+            """)
 
     def initAlgorithm(self, config):
         """
@@ -227,20 +233,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             raise QgsProcessingException("Missing dependency: scikit-learn")
         
 
-        # Retrieve the feature source and sink. The 'dest_id' variable is used
-        # to uniquely identify the feature sink, and must be included in the
-        # dictionary returned by the processAlgorithm function.
-        
         # Input data
-        # At first, the model needs to be calibrated and validated so it will import data from the 
-        # catchments containing the gauging stations (gauged subcatchments).
-        # The file imported is a shapefile containing the geofactors previously calculated for each gauged subcatchment.
-
-        # Another input of the model is the subcatchments where we are interested in estimating "Mean Flow" and 
-        # "Mean Low Flow". These subcatchments are called "ungauged subcatchments", because we do not have flow information related to them 
-        # This input is a polygon file containing the geofactors calculated for each subcatchment.
-        # This input will be used later on, after the process of calibration and validation of the model with the gauged subcatchments.
-        
         gaug_stat = self.parameterAsSource(parameters, self.gaugedSubcatchments, context)
         warnow_subcatch_gf = self.parameterAsVectorLayer(parameters, self.ungaugedSubcatchments, context)
         river_network = self.parameterAsSource(parameters, self.riverNetwork, context)
@@ -283,16 +276,13 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 # normalise the flow for the subcatchment area
                 y = gaug_stat_df[flow]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
 
-                # change name variable
-                x_nc = x
-
                 ### Random Forest Regressor
                 ##### Split the data for calibration (train) and validation (test)
 
                 # prepare the data: divide into train and test set
                 # scale the data
                 scaler = StandardScaler()
-                x_train, x_test, y_train, y_test = train_test_split(x_nc, y, test_size=0.4, random_state=42)
+                x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.4, random_state=42)
                 x_train = scaler.fit_transform(x_train) 
                 x_test = scaler.transform(x_test)
 
@@ -415,15 +405,9 @@ class CalculateFlow(QgsProcessingAlgorithm):
             # create dataframe
             warnow_subcatch_gf_df = pd.DataFrame(data, columns = field_names)
 
-            # select number of features (predictors) and dependent variable
-            x = warnow_subcatch_gf_df.filter(items=selected_geofactors)
-            feedback.setProgressText(f"\nDatabase columns: {x.columns} ")
-
-            # change variable name
-            x_nc = x
-            
-            # select number of features (predictors) and dependent variable
-            x_catch = warnow_subcatch_gf_df[x_nc.columns] #filter geofactors
+            # select the geofactors for prediction
+            x_catch = warnow_subcatch_gf_df.filter(items=selected_geofactors)
+            feedback.setProgressText(f"\nDatabase columns: {x_catch.columns} ")
 
             # scale the data and predict
             if selected_region != 'Null (estimate parameters from gauged subcatchments)' and _avg_bundles is not None:
@@ -464,6 +448,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             final_output.updateFields()
 
             # builf a lookup table of existing features by CATCH_ID
+            # (typo intentionally kept)
             existing_features = {f["CATCH_ID"]: f for f in final_output.getFeatures()}
             
             # addition of features
@@ -575,24 +560,26 @@ class CalculateFlow(QgsProcessingAlgorithm):
         '''loading the network'''
         waternet = river_layer
 
-        '''names of fields for id,next segment, previous segment'''
+        # Field layout for DataArr columns:
+        #   col 0 = NET_ID (segment id)
+        #   col 1 = NET_ID (same, used as from-vertex lookup)
+        #   col 2 = NET_TO (downstream target)
+        #   col 3 = flow value (overwritten during accumulation)
+        #   col 4 = QGIS feature id
         id_field = "NET_ID"
-        next_field = "NET_TO"
-        prev_field = "NET_ID"
+        to_field = "NET_TO"
         calc_field = "Mean_Flow"
         
-        '''field index for id,next segment, previous segment'''
         idxId = waternet.fields().indexFromName(id_field) 
-        idxPrev = waternet.fields().indexFromName(prev_field)
-        idxNext = waternet.fields().indexFromName(next_field)
+        idxTo = waternet.fields().indexFromName(to_field)
         idxCalc = waternet.fields().indexFromName(calc_field)
 
         '''load data from layer "waternet" '''
         feedback.setProgressText(self.tr("Loading network layer\n "))
         Data = [[
             str(f.attribute(idxId)),
-            str(f.attribute(idxPrev)),
-            str(f.attribute(idxNext)),
+            str(f.attribute(idxId)),
+            str(f.attribute(idxTo)),
             f.attribute(idxCalc),
             f.id()
         ] for f in waternet.getFeatures()]
@@ -617,9 +604,9 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 raise QgsProcessingException(
                     'The selected features in the flow are marked as \'unconnected\' '
                     + '(most likely because of manual editing). Please delete the columns with the network information ('
-                    + next_field
+                    + id_field
                     + ', '
-                    + prev_field
+                    + to_field
                     + ') and run tool 1 \"Water Network Constructor\" again.'
                 )
             return(rows_to)
@@ -688,19 +675,16 @@ class CalculateFlow(QgsProcessingAlgorithm):
         """
         Accumulate Mean Low Flow
         """
-        '''names of fields for id,next segment, previous segment'''
         calc_field = "M_Low_Flow"
         
-        '''field index for id,next segment, previous segment'''
         idxCalc = waternet.fields().indexFromName(calc_field)
 
         '''load data from layer "waternet" '''
         feedback.setProgressText(self.tr("Loading network layer\n "))
-        Data = []
         Data = [[
             str(f.attribute(idxId)),
-            str(f.attribute(idxPrev)),
-            str(f.attribute(idxNext)),
+            str(f.attribute(idxId)),
+            str(f.attribute(idxTo)),
             f.attribute(idxCalc),
             f.id()
         ] for f in waternet.getFeatures()]
@@ -781,6 +765,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             out_fields.append(QgsField(field.name(), field.type()))
             if field.name() == "CATCH_ID":
                 out_fields.append(QgsField("CATCH_TO", QVariant.String))
+        out_fields.append(QgsField("calc_unit", QVariant.String))
 
         # save the layer
         (sink_river, dest_id_river) = self.parameterAsSink(parameters, self.OUTPUT_river, context,
@@ -797,6 +782,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             attrs = list(feature.attributes())
             cid = str(attrs[catch_id_idx_riv]) if attrs[catch_id_idx_riv] is not None else ""
             attrs.insert(catch_id_idx_riv + 1, catch_to_lookup.get(cid, "Out"))
+            attrs.append('m\u00b3/s')
             out_feat = QgsFeature(out_fields)
             out_feat.setGeometry(feature.geometry())
             out_feat.setAttributes(attrs)
@@ -877,6 +863,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             out_catch_fields.append(QgsField(field.name(), field.type()))
             if field.name() == "CATCH_ID":
                 out_catch_fields.append(QgsField("CATCH_TO", QVariant.String))
+        out_catch_fields.append(QgsField("calc_unit", QVariant.String))
 
         (sink_catch, dest_id_catch) = self.parameterAsSink(parameters, self.OUTPUT_catch,
         context, out_catch_fields, warnow_subcatch_gf.wkbType(), warnow_subcatch_gf.sourceCrs())
@@ -891,6 +878,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             attrs = list(feature.attributes())
             cid = str(attrs[catch_id_idx_sc]) if attrs[catch_id_idx_sc] is not None else ""
             attrs.insert(catch_id_idx_sc + 1, catch_to_lookup.get(cid, "Out"))
+            attrs.append('m\u00b3/s')
             new_feature = QgsFeature(out_catch_fields)
             new_feature.setGeometry(subcatch_geom)
             new_feature.setAttributes(attrs)
