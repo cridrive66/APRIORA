@@ -34,28 +34,23 @@ import os
 import processing
 from collections import Counter
 from PyQt5.QtCore import QVariant
-from qgis.gui import QgsMapToolEmitPoint
-from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
+from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessing,
                        QgsProcessingException,
                        QgsFeature,
                        QgsField,
                        QgsFields,
-                       QgsFeature,
                        QgsFeatureSink,
                        QgsGeometry,
                        QgsMultiLineString,
                        QgsPointXY,
-                       QgsProcessingAlgorithm,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
                        QgsProcessingParameterDefinition,
-                       QgsProcessingParameterEnum,
                        QgsProcessingParameterNumber,
                        QgsProcessingParameterPoint,
                        QgsProject,
-                       QgsField,
                        QgsVectorLayer,
                        QgsSpatialIndex,
                        QgsWkbTypes,
@@ -77,25 +72,35 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
     OUTPUT_ungauged = "OUTPUT_ungauged"
 
     def shortHelpString(self):
-        return self.tr(""" This tool aligns the river network with the subcatchments' borders and calculates the contributing relationship between the different river sections.
-        Workflow:
-        1. Choose the catchment file and the river network.
-        2. Click on the map where the outlet point is.
-        3. Click on "Run".
-
-        Please note: be sure that the river network does not present gaps and all the river sections are connected to each others.
-        """)
+        return self.tr(
+            """
+            This tool preprocesses a river network and aligns it with subcatchment boundaries.
+            It assigns a unique identifier (NET_ID) to each river section and calculates
+            the downstream connectivity (NET_TO) by traversing the network from the outlet.
+            
+            Steps performed:
+            1. Simplify, snap, fix, and merge the river network lines.
+            2. Extract vertices from both river and subcatchment layers.
+            3. Split river sections at subcatchment boundaries.
+            4. Snap river endpoints to the nearest subcatchment vertex.
+            5. Assign each river section to a subcatchment via intersection (CATCH_ID).
+            6. Traverse the network from the outlet point to assign NET_ID and NET_TO.
+            7. Flip line directions so all segments flow toward the outlet.
+            
+            Outputs:
+            - Fixed river network: the river layer with NET_ID, NET_TO, and CATCH_ID fields.
+            - Ungauged subcatchments: subcatchments that contain at least one river section.
+            
+            Workflow:
+            1. Select the subcatchment layer and the river network layer.
+            2. Click on the map to specify the outlet point (downstream end of the network).
+            3. Adjust the search radius if needed (advanced; default 0.025 map units).
+            4. Click Run.
+            
+            Note: Ensure the river network has no gaps and all sections are connected.
+            Both layers must share the same CRS.
+            """)
     
-    class PointSelectionTool(QgsMapToolEmitPoint):
-        def __init__(self, canvas, callback):
-            super().__init__(canvas)
-            self.canvas = canvas
-            self.callback = callback
-
-        def canvasReleaseEvent(self, event):
-            point = self.toMapCoordinates(event.pos())
-            self.callback(QgsPointXY(point))
-
     #Init tool
     def initAlgorithm(self, config):
         """
@@ -163,24 +168,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             )
         )
 
-    def executePointSelection(self): #should I add "parameters, context, feedback"?
-        """
-        This function allows the user to click on the map and select the outlet point.
-        """
-        canvas = iface.mapCanvas()
-        
-        def pointSelected(point):
-            self.outlet_point = QgsPointXY(point)
-            iface.messageBar().pushMessage(
-                f"Point selected: {point.x()}, {point.y()}",
-                level = Qgis.Info
-            )
-            canvas.unsetMapTool(self._map_tool)
-        
-        # activate the map tool to select a point
-        self._map_tool = FixRiverNetwork.PointSelectionTool(canvas, pointSelected)
-        canvas.setMapTool(self._map_tool)
-    
     @staticmethod
     def _get_geos_fix_method():
         """Return the appropriate fix-geometries method based on GEOS version.
@@ -191,8 +178,8 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         method = 1 if (major > 3 or (major == 3 and minor >= 10)) else 0
         return method, geos_version_str
 
-    def find_closest_vertex(self, parameters, context, feedback, point, spatial_index, vertex_map, threshold):
-        # Get 5 nearest vertices using a geometry built from the input point
+    def find_closest_vertex(self, point, spatial_index, vertex_map, threshold):
+        """Find the closest subcatchment vertex to a given point within threshold distance."""
         nearest_ids = spatial_index.nearestNeighbor(QgsGeometry.fromPointXY(point), 5)
 
         closest_vertex = None
@@ -239,6 +226,10 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 f"while the river network uses '{river_crs.authid()}'. "
                 f"Please reproject one of the layers so that both share the same CRS before running this tool."
             )
+
+        # determine GEOS fix method once (reused for all fixgeometries calls)
+        method, geos_version_str = self._get_geos_fix_method()
+        feedback.pushInfo(f"GEOS version: {geos_version_str}, fix method: {method}")
 
         # preprocess river layer: simplify → snap → fix → merge
         feedback.setProgressText("\nPreprocessing river layer...")
@@ -291,9 +282,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         # clean subcatchment original layer first
         feedback.setProgressText("\nClean subcatchment input file...")
-        
-        method, geos_version_str = self._get_geos_fix_method()
-        feedback.pushInfo(f"GEOS version: {geos_version_str}")
         feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
         
         subcatchments_layer_fixed = processing.run("native:fixgeometries", {
@@ -356,8 +344,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             return {}
 
         # fix geometries and remove nulls
-        method, geos_version_str = self._get_geos_fix_method()
-        feedback.pushInfo(f"GEOS version: {geos_version_str}")
         feedback.setProgressText(f"\nFixing geometries with method [{method}]...")
         fixed_layer = processing.run("native:fixgeometries", {
             'INPUT': split_river_layer,
@@ -381,13 +367,10 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             if feature.hasGeometry() and feature.geometry().isGeosValid()
             ]
 
-        # collect changes before applying them
-        features_to_update = []
-
-        feedback.setProgressText("\nAlligning river vertices...")
+        feedback.setProgressText("\nAligning river vertices...")
         
-        # threshold distand (adjust as needed)
-        threshold = 1 # 1cm = 0.01
+        # threshold distance for snapping river vertices to subcatchment vertices
+        threshold = 1
         
         # build a spatial index
         spatial_index = QgsSpatialIndex()
@@ -403,7 +386,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             feature.setGeometry(QgsGeometry.fromPointXY(vertex))
             spatial_index.addFeature(feature)
         
-        # iterate over river network vertices with optimized search
+        # iterate over river features and snap start/end vertices to subcatchment vertices
         features_to_update = []
         for feature in non_null_geom_layer.getFeatures():
             if feedback.isCanceled():
@@ -416,13 +399,13 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 points = [QgsPointXY(point) for point in geom.vertices()]
                 modified = False
 
-                # find closest start & end points using spatial index
-                closest_start = self.find_closest_vertex(parameters, context, feedback, points[0], spatial_index, vertex_map, threshold)
+                # find closest subcatchment vertex for start & end points
+                closest_start = self.find_closest_vertex(points[0], spatial_index, vertex_map, threshold)
                 if closest_start:
                     points[0] = closest_start
                     modified = True
 
-                closest_end = self.find_closest_vertex(parameters, context, feedback, points[-1], spatial_index, vertex_map, threshold)
+                closest_end = self.find_closest_vertex(points[-1], spatial_index, vertex_map, threshold)
                 if closest_end:
                     points[-1] = closest_end
                     modified = True
@@ -488,9 +471,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 feedback.setProgressText(f"\nDeleted {len(features_to_delete)} short features below {min_length_threshold}.")
 
         
-        # fix geometries from the layer
-        method, geos_version_str = self._get_geos_fix_method()
-        feedback.pushInfo(f"GEOS version: {geos_version_str}")
+        # fix geometries again after vertex snapping
         feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
         again_fixed_layer = processing.run("native:fixgeometries", {
             'INPUT':non_null_geom_layer,
@@ -550,13 +531,13 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         
         dissolve_layer = intersection_layer
 
-        # build a mapping from feature ID to sequential NET_ID (no need for an extra field on the layer)
+        # build a mapping from feature ID to sequential NET_ID
         fid_to_net_id = {}
         for idx, feature in enumerate(dissolve_layer.getFeatures(), start=1000):
             fid_to_net_id[feature.id()] = str(idx)
 
-        '''start of the plugin "WaterNetwConstructor" from Jannik Schilling'''
-        flip_opt = 0
+        '''start of the network traversal (based on "WaterNetwConstructor" by Jannik Schilling)'''
+        flip_opt = 0  # 0 = flip according to flow direction
 
         sp_index = QgsSpatialIndex(dissolve_layer.getFeatures())
         dissolve_fields = dissolve_layer.fields()  
@@ -742,9 +723,9 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             if len(connected_list_0) > 0:  # both vertices connecting
                 feedback.reportError(
                     self.tr(
-                        'The selected segment with id == {0} is connecting two segments.'
-                        +' Please chose another segment in layer "{1}" or add a segment as a single outlet'
-                    ).format(first_ft_data[2], parameters[self.INPUT_LAYER]))
+                        'The outlet segment (id == {0}) connects two segments on both ends.'
+                        +' Please choose another segment or add a single outlet segment.'
+                    ).format(first_ft_data[2]))
                 raise QgsProcessingException()
             else:
                 flip_list.append(start_f_id)

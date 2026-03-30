@@ -558,6 +558,15 @@ class Accumulation(QgsProcessingAlgorithm):
         if max_iterations_flag:
             feedback.reportError(f"Emergency break: exceeded {max_iterations} iterations")
 
+        # Add acc_unit column right after all acc_ fields
+        waternet.dataProvider().addAttributes([QgsField('acc_unit', QVariant.String)])
+        waternet.updateFields()
+        waternet.startEditing()
+        for feature in waternet.getFeatures():
+            feature.setAttribute('acc_unit', 'kg/a')
+            waternet.updateFeature(feature)
+        waternet.commitChanges()
+
         """Calculate concentration in each polygon"""
         feedback.setProgressText("\n=== Calculating Concentrations ===\n")
 
@@ -606,6 +615,15 @@ class Accumulation(QgsProcessingAlgorithm):
                     conc_low = (acc_value * conversion_factor) / flow_low
                     feature.setAttribute(conc_field_low, conc_low)
 
+            waternet.updateFeature(feature)
+        waternet.commitChanges()
+
+        # Add conc_unit column right after all conc_ / conL_ fields
+        waternet.dataProvider().addAttributes([QgsField('conc_unit', QVariant.String)])
+        waternet.updateFields()
+        waternet.startEditing()
+        for feature in waternet.getFeatures():
+            feature.setAttribute('conc_unit', 'ng/L')
             waternet.updateFeature(feature)
         waternet.commitChanges()
 
@@ -1465,6 +1483,15 @@ class Accumulation(QgsProcessingAlgorithm):
                     feedback.reportError(f"Duplicate NET_ID {cid} found in features {fids}")
                     
 
+        # Add acc_unit column right after all acc_ fields
+        waternet.dataProvider().addAttributes([QgsField('acc_unit', QVariant.String)])
+        waternet.updateFields()
+        waternet.startEditing()
+        for feature in waternet.getFeatures():
+            feature.setAttribute('acc_unit', 'kg/a')
+            waternet.updateFeature(feature)
+        waternet.commitChanges()
+
         """
         Calculate concentration in each river section
         """
@@ -1527,6 +1554,15 @@ class Accumulation(QgsProcessingAlgorithm):
                     conc_low = (acc_value * conversion_factor)/flow_low
                     feature.setAttribute(conc_field_low, conc_low)
 
+            waternet.updateFeature(feature)
+        waternet.commitChanges()
+
+        # Add conc_unit column right after all conc_ / conL_ fields
+        waternet.dataProvider().addAttributes([QgsField('conc_unit', QVariant.String)])
+        waternet.updateFields()
+        waternet.startEditing()
+        for feature in waternet.getFeatures():
+            feature.setAttribute('conc_unit', 'ng/L')
             waternet.updateFeature(feature)
         waternet.commitChanges()
 
