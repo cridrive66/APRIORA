@@ -30,36 +30,25 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 
 __revision__ = '$Format:%H$'
 
-import processing
 import os
 import pandas as pd
 import numpy as np
-from PyQt5.QtCore import QVariant
-from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
-from qgis.PyQt.QtGui import QColor
+from qgis.PyQt.QtCore import QCoreApplication, QVariant
 from qgis.core import (NULL,
-                       QgsProcessingAlgorithm,
-                       QgsProcessing,
-                       QgsProcessingContext,
-                       QgsProcessingException,
                        QgsFeature,
                        QgsField,
-                       QgsFields,
-                       QgsFeatureSink,
-                       QgsProject,
+                       QgsProcessing,
                        QgsProcessingAlgorithm,
+                       QgsProcessingException,
                        QgsProcessingParameterEnum,
-                       QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
+                       QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterField,
                        QgsProcessingParameterMapLayer,
-                       QgsProcessingParameterVectorLayer,
                        QgsProcessingUtils,
-                       QgsRuleBasedRenderer,
-                       QgsSymbol,
+                       QgsProject,
                        QgsVectorLayer,
-                       QgsVectorFileWriter,
-                       edit)
+                       QgsWkbTypes)
 
 class RiskAssessment(QgsProcessingAlgorithm):
     # Constants used to refer to parameters and outputs. They will be
@@ -101,12 +90,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
                        
             """)
     
-    #Init tool
     def initAlgorithm(self, config):
-        """
-        Here we define the inputs and output of the algorithm, along
-        with some other properties.
-        """
 
         self.addParameter(
             QgsProcessingParameterFeatureSource(
@@ -160,9 +144,6 @@ class RiskAssessment(QgsProcessingAlgorithm):
             )
         )
 
-        # We add a feature sink in which to store our processed features (this
-        # usually takes the form of a newly created vector layer when the
-        # algorithm is run in QGIS).
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
@@ -172,9 +153,6 @@ class RiskAssessment(QgsProcessingAlgorithm):
         )
 
     def processAlgorithm(self, parameters, context, feedback):
-        """
-        Here is where the processing itself takes place.
-        """
         river_layer_original = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         try:
             selected_api_fields = self.parameterAsStrings(parameters, self.selectedAPI, context)
@@ -230,7 +208,6 @@ class RiskAssessment(QgsProcessingAlgorithm):
             feedback.pushInfo(f"Loaded {len(ra_dict)} PNEC values for {ra_label}.")
 
         # create an independent copy of the river layer (supports both line and polygon)
-        from qgis.core import QgsWkbTypes
         crs = river_layer_original.crs().authid()
         geom_type = QgsWkbTypes.displayString(river_layer_original.wkbType())
         feedback.pushInfo(f"\nInput layer geometry type: {geom_type}")
@@ -404,7 +381,6 @@ class RiskAssessment(QgsProcessingAlgorithm):
 
         if sink_layer:
             # Choose style based on geometry type
-            from qgis.core import QgsWkbTypes
             if sink_layer.geometryType() == QgsWkbTypes.PolygonGeometry:
                 style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_CCRI_polygon.qml')
             else:
@@ -417,37 +393,15 @@ class RiskAssessment(QgsProcessingAlgorithm):
 
 
     def name(self):
-        """
-        Returns the algorithm name, used for identifying the algorithm. This
-        string should be fixed for the algorithm, and must not be localised.
-        The name should be unique within each provider. Names should contain
-        lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
         return '8 - Risk Assessment'
 
     def displayName(self):
-        """
-        Returns the translated algorithm name, which should be used for any
-        user-visible display of the algorithm name.
-        """
         return self.tr(self.name())
 
     def group(self):
-        """
-        Returns the name of the group this algorithm belongs to. This string
-        should be localised.
-        """
         return self.tr(self.groupId())
 
     def groupId(self):
-        """
-        Returns the unique ID of the group this algorithm belongs to. This
-        string should be fixed for the algorithm, and must not be localised.
-        The group id should be unique within each provider. Group id should
-        contain lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
         return 'API emission'
     
     def helpUrl(self):

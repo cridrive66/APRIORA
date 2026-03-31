@@ -211,6 +211,9 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             self.handle_save_rr()
         elif idx == 2:
             self.handle_save_pnec()
+        elif idx == 3 and hasattr(self, "wwtpTableView"):
+            if self.wwtpTableView.model() is not None:
+                self.save_wwtp_table_to_csv()
 
     def go_to_next_tab(self):
         """
@@ -283,19 +286,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         """
         if not hasattr(self, "tabWidget"):
             return
-
-        current_idx = self.tabWidget.currentIndex()
-
-        if current_idx == 0:
-            self.handle_save_consumption()
-        elif current_idx == 1:
-            self.handle_save_rr()
-        elif current_idx == 2:
-            self.handle_save_pnec()
-        elif current_idx == 3 and hasattr(self, "wwtpTableView"):
-            # Save only if a custom table model is already loaded.
-            if self.wwtpTableView.model() is not None:
-                self.save_wwtp_table_to_csv()
+        self._save_tab_by_index(self.tabWidget.currentIndex())
 
     def handle_save_pnec(self):
         """
@@ -314,8 +305,45 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             self.df_HH = pd.read_csv(hh_path, sep=",")
         if os.path.exists(amr_path):
             self.df_AMR = pd.read_csv(amr_path, sep=",")
+
+        # Auto-propagate substances across the three PNEC sub-tables
+        self._propagate_pnec_substances()
         self.pnec_modified = False
     
+    def _propagate_pnec_substances(self):
+        """
+        Ensure every API name that appears in any PNEC sub-table also
+        appears in the other two (with empty values).  Does NOT touch
+        Removal Rates or Consumption.
+        """
+        era_apis = set(self.df_ERA["API name"].unique())
+        hh_apis = set(self.df_HH["API name"].unique())
+        amr_apis = set(self.df_AMR["API name"].unique())
+        all_apis = era_apis | hh_apis | amr_apis
+
+        changed = False
+        for df_attr, current_apis in [("df_ERA", era_apis),
+                                       ("df_HH", hh_apis),
+                                       ("df_AMR", amr_apis)]:
+            missing = all_apis - current_apis
+            if not missing:
+                continue
+            df = getattr(self, df_attr)
+            for api_name in missing:
+                new_row = {col: "" for col in df.columns}
+                new_row["API name"] = api_name
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            setattr(self, df_attr, df)
+            changed = True
+
+        if changed:
+            self.load_table(self.df_ERA, self.ERATableView)
+            self.save_temp_table(self.ERATableView, "PNEC_ERA_")
+            self.load_table(self.df_HH, self.HHTableView)
+            self.save_temp_table(self.HHTableView, "PNEC_HH_")
+            self.load_table(self.df_AMR, self.AMRTableView)
+            self.save_temp_table(self.AMRTableView, "PNEC_AMR_")
+
     def close_with_save(self):
         """
         Save the current tab before closing the dialog.
@@ -425,11 +453,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         """Constructor."""
         super(ConsumptionSelectionDialog, self).__init__(parent)
-        # Set up the user interface from Designer through FORM_CLASS.
-        # After self.setupUi() you can access any designer object by doing
-        # self.<objectname>, and you can use autoconnect slots - see
-        # http://qt-project.org/doc/qt-4.8/designer-using-a-ui-file.html
-        # #widgets-and-dialogs-with-auto-connect
         self.setupUi(self)
         # set a reload icon
         self.reloadButton_3.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
@@ -766,11 +789,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             # APIs to add (in consumption but not in removal/PNEC)
             apis_to_add = consumption_apis - removal_apis
             
-            # APIs to remove (in removal/PNEC but not in consumption)
+            # APIs to remove from removal rates (not in consumption anymore)
             apis_to_remove_removal = removal_apis - consumption_apis
-            apis_to_remove_era = era_apis - consumption_apis
-            apis_to_remove_hh = hh_apis - consumption_apis
-            apis_to_remove_amr = amr_apis - consumption_apis
             
             # Add missing APIs to removal rates table
             if apis_to_add:
@@ -808,25 +828,18 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                         df_pnec = pd.concat([df_pnec, pd.DataFrame([new_row])], ignore_index=True)
                     setattr(self, df_attr, df_pnec)
             
-            # Remove APIs from all three PNEC tables
-            if apis_to_remove_era:
-                self.df_ERA = self.df_ERA[~self.df_ERA["API name"].isin(apis_to_remove_era)].reset_index(drop=True)
-            if apis_to_remove_hh:
-                self.df_HH = self.df_HH[~self.df_HH["API name"].isin(apis_to_remove_hh)].reset_index(drop=True)
-            if apis_to_remove_amr:
-                self.df_AMR = self.df_AMR[~self.df_AMR["API name"].isin(apis_to_remove_amr)].reset_index(drop=True)
+            # PNEC tables are NOT pruned — users may add PNEC-only substances
+            # that don't appear in the consumption table.
             
             # Reload tables and persist propagated changes to CSV
             if apis_to_add or apis_to_remove_removal:
                 self.load_table(self.df_RR, self.RRTableView)
                 self.save_temp_table(self.RRTableView, "removal_")
-            if apis_to_add or apis_to_remove_era:
+            if apis_to_add:
                 self.load_table(self.df_ERA, self.ERATableView)
                 self.save_temp_table(self.ERATableView, "PNEC_ERA_")
-            if apis_to_add or apis_to_remove_hh:
                 self.load_table(self.df_HH, self.HHTableView)
                 self.save_temp_table(self.HHTableView, "PNEC_HH_")
-            if apis_to_add or apis_to_remove_amr:
                 self.load_table(self.df_AMR, self.AMRTableView)
                 self.save_temp_table(self.AMRTableView, "PNEC_AMR_")
                 
@@ -949,7 +962,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def update_field_combos(self):
         index = self.WWTPcomboBox.currentIndex()
-        if index == -1:
+        if index < 0 or index >= len(self.vector_layers):
             return
 
         layer = self.vector_layers[index]
@@ -1043,7 +1056,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                     rr_item = QStandardItem(str(removal_val))
                     api_items.append(rr_item)
                 
-                for item in (id_item, name_item, tech_item):
+                for item in (id_item, name_item, conn_inh_item, tech_item):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 model.appendRow(api_items)
 
