@@ -260,13 +260,14 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         provider.addAttributes([field])
         intersections.updateFields() 
         idx = provider.fieldNameIndex(fieldName+"_SC")
+        all_changes = {}
         for feature in intersections.getFeatures():
             if calcOption == 0: #0=area; 1=length/perimeter
                 geom = feature.geometry().area()
             else:
                 geom = feature.geometry().length()
-            attrs = {idx : geom}
-            intersections.dataProvider().changeAttributeValues({feature.id() : attrs})
+            all_changes[feature.id()] = {idx: geom}
+        intersections.dataProvider().changeAttributeValues(all_changes)
 
 
         #Summarizes the target field based on the ID_SC field
@@ -337,18 +338,18 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         idxArea = provider.fieldNameIndex('AREA_SC')
         idxPerimeter = provider.fieldNameIndex('PERIM_SC')
         idxShapeFactor = provider.fieldNameIndex('SHAPE_SC')
+        all_changes = {}
         for feature in catchments_ungauged.getFeatures():
-            attrsID = {idxID : feature.id()}
-            catchments_ungauged.dataProvider().changeAttributeValues({feature.id() : attrsID})
             geomArea = feature.geometry().area()
-            attrsArea = {idxArea : geomArea}
-            catchments_ungauged.dataProvider().changeAttributeValues({feature.id() : attrsArea})
             geomPeri = feature.geometry().length()
-            attrsPerimeter = {idxPerimeter : geomPeri}
-            catchments_ungauged.dataProvider().changeAttributeValues({feature.id() : attrsPerimeter})
-            geomShapeFactor =  math.pow(geomPeri, 2)/(2*math.pi*geomArea)
-            attrsShapeFactor = {idxShapeFactor : geomShapeFactor}
-            catchments_ungauged.dataProvider().changeAttributeValues({feature.id() : attrsShapeFactor})
+            geomShapeFactor = geomPeri ** 2 / (2 * math.pi * geomArea)
+            all_changes[feature.id()] = {
+                idxID: feature.id(),
+                idxArea: geomArea,
+                idxPerimeter: geomPeri,
+                idxShapeFactor: geomShapeFactor,
+            }
+        catchments_ungauged.dataProvider().changeAttributeValues(all_changes)
 
         # calculate slope
         slope = processing.run("native:slope", {
@@ -451,9 +452,6 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         netcdf_files = QDir(netcdf_dir).entryList(["*.nc"], QDir.Files)
 
         # Variables
-        yearlyMeanRaster = None
-        dryMeanRaster =  None
-        firstRound=True
         firstFile=True
 
         spatref = None
@@ -523,13 +521,13 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
 
 
         if not aggregated_selection:
+            yearly_means = []
+            dry_means = []
             for filename in netcdf_files:
-                i=1
                 netcdf_file = os.path.join(netcdf_dir, filename)
                 subdataset_path = 'NETCDF:"{}":pr'.format(netcdf_file)
                 raster_layer_unc = QgsRasterLayer(subdataset_path, "Annual precipitation")
                 rasterDataSource = gdal.Open(str(raster_layer_unc.source()))
-                yearlyTemp = None
                 if firstFile:
                     spatref = raster_layer_unc.crs()
                     xres = raster_layer_unc.rasterUnitsPerPixelX()
@@ -540,27 +538,13 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                     ymin = ext.yMinimum()
                     ymax = ext.yMaximum()
                     firstFile = False
-                while i <= rasterDataSource.RasterCount:
-                    if i == 1:
-                        yearlyTemp = np.array([rasterDataSource.GetRasterBand(i).ReadAsArray()])
-                    else:
-                        yearlyTemp= np.append(yearlyTemp, [rasterDataSource.GetRasterBand(i).ReadAsArray()], axis=0)
-                    i+=1
-                    
-                yearlyMean = np.sum(yearlyTemp, axis=0)
-                dryMean = rasterDataSource.GetRasterBand(dry_month).ReadAsArray()
-                
-                if firstRound:
-                    yearlyMeanRaster = np.array([yearlyMean])
-                    dryMeanRaster = np.array([dryMean])
-                    firstRound = False
-                else:
-                    yearlyMeanRaster= np.append(yearlyMeanRaster, [yearlyMean], axis=0)
-                    dryMeanRaster= np.append(dryMeanRaster, [dryMean], axis=0)
-                
+                bands = [rasterDataSource.GetRasterBand(i).ReadAsArray()
+                         for i in range(1, rasterDataSource.RasterCount + 1)]
+                yearly_means.append(np.sum(np.stack(bands), axis=0))
+                dry_means.append(rasterDataSource.GetRasterBand(dry_month).ReadAsArray())
 
-            finalYearlyMeanRaster = np.mean(yearlyMeanRaster, axis=0)
-            finalDryMeanRaster = np.mean(dryMeanRaster, axis=0)
+            finalYearlyMeanRaster = np.mean(np.stack(yearly_means), axis=0)
+            finalDryMeanRaster = np.mean(np.stack(dry_means), axis=0)
 
         outfnYearly = outputDir+ungaugedSourceName+'_yearlyPrecipitation.tif'
         outfnDry = outputDir+ungaugedSourceName+'_dryMonthPrecipitation.tif'
@@ -678,18 +662,18 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         idxArea = provider.fieldNameIndex('AREA_SC')
         idxPerimeter = provider.fieldNameIndex('PERIM_SC')
         idxShapeFactor = provider.fieldNameIndex('SHAPE_SC')
+        all_changes = {}
         for feature in catchments_gauged.getFeatures():
-            attrsID = {idxID : feature.id()}
-            catchments_gauged.dataProvider().changeAttributeValues({feature.id() : attrsID})
             geomArea = feature.geometry().area()
-            attrsArea = {idxArea : geomArea}
-            catchments_gauged.dataProvider().changeAttributeValues({feature.id() : attrsArea})
             geomPeri = feature.geometry().length()
-            attrsPerimeter = {idxPerimeter : geomPeri}
-            catchments_gauged.dataProvider().changeAttributeValues({feature.id() : attrsPerimeter})
-            geomShapeFactor =  math.pow(geomPeri, 2)/(2*math.pi*geomArea)
-            attrsShapeFactor = {idxShapeFactor : geomShapeFactor}
-            catchments_gauged.dataProvider().changeAttributeValues({feature.id() : attrsShapeFactor})
+            geomShapeFactor = geomPeri ** 2 / (2 * math.pi * geomArea)
+            all_changes[feature.id()] = {
+                idxID: feature.id(),
+                idxArea: geomArea,
+                idxPerimeter: geomPeri,
+                idxShapeFactor: geomShapeFactor,
+            }
+        catchments_gauged.dataProvider().changeAttributeValues(all_changes)
 
         #Calculates zonal statistics based on the slope raster 
         feedback.setProgressText("\nCalculate slope statistics...")
@@ -775,26 +759,8 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         feedback.setProgressText("\nCalculate precipitation")
         feedback.setProgress(80)    # set the progress to 80% because otherwise it is stuck at 100
 
-        outfnYearly = outputDir+gaugedSourceName+'_yearlyPrecipitation.tif'
-        outfnDry = outputDir+gaugedSourceName+'_dryMonthPrecipitation.tif'
+        # Reuse precipitation raster layers from ungauged section (identical data)
 
-        # create yearly precipitation raster
-        self.createRaster(parameters, context, feedback, outfnYearly, xmax, xmin, xres, ymax, ymin, yres, spatref, finalYearlyMeanRaster)
-        feedback.setProgressText(f"Debug: Output file path: {outfnYearly}")
-        
-        # create dry month precipitation raster
-        self.createRaster(parameters, context, feedback, outfnDry, xmax, xmin, xres, ymax, ymin, yres, spatref, finalDryMeanRaster)
-        feedback.setProgressText(f"Debug: Output file path: {outfnDry}")
-
-        # save as raster file
-        precipitationYearlyLayer = QgsRasterLayer(outfnYearly, "precipitationYearly")
-        if not precipitationYearlyLayer.isValid():
-            feedback.reportError("Error: precipitationYearlyLayer is not valid!", fatalError = True)
-        
-        precipitationDryLayer = QgsRasterLayer(outfnDry, "precipitationDryMonth")
-        if not precipitationDryLayer.isValid():
-            feedback.reportError("Error: precipitationDryLayer is not valid!", fatalError = True)
-        
         # zonal statistics
         feedback.setProgressText("\nStart the zonal statistic of yearly precipitation")
         precipitation_yearly_gauged = processing.run("native:zonalstatisticsfb",

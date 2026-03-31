@@ -31,34 +31,26 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 __revision__ = '$Format:%H$'
 
 import processing
-import string   # not sure if this library is in PyQgis
+import string
 import numpy as np
-from PyQt5.QtCore import QVariant
-from qgis.PyQt.QtCore import QCoreApplication, Qt, QDir, QVariant
-from qgis.core import (Qgis,
-                       QgsProcessingAlgorithm,
-                       QgsProcessing,
-                       QgsProcessingException,
-                       QgsFeature,
-                       QgsField,
-                       QgsFields,
+from qgis.PyQt.QtCore import QCoreApplication, QVariant
+from qgis.core import (QgsFeature,
                        QgsFeatureRequest,
                        QgsFeatureSink,
+                       QgsField,
+                       QgsFields,
                        QgsGeometry,
                        QgsPointXY,
-                       QgsProject,
+                       QgsProcessing,
                        QgsProcessingAlgorithm,
-                       QgsProcessingParameterDefinition,
-                       QgsProcessingParameterEnum,
-                       QgsProcessingParameterFeatureSource,
+                       QgsProcessingException,
                        QgsProcessingParameterFeatureSink,
+                       QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterField,
-                       QgsProcessingParameterNumber,
-                       QgsField,
+                       QgsProject,
                        QgsSpatialIndex,
                        QgsVectorLayer,
-                       QgsWkbTypes,
-                       edit)
+                       QgsWkbTypes)
 
 
 class Accumulation(QgsProcessingAlgorithm):
@@ -105,12 +97,7 @@ class Accumulation(QgsProcessingAlgorithm):
             
             """)
 
-    #Init tool
     def initAlgorithm(self, config):
-        """
-        Here we define the inputs and output of the algorithm, along
-        with some other properties.
-        """
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.APIload,
@@ -195,9 +182,6 @@ class Accumulation(QgsProcessingAlgorithm):
         )
 
 
-        # We add a feature sink in which to store our processed features (this
-        # usually takes the form of a newly created vector layer when the
-        # algorithm is run in QGIS).
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
@@ -217,9 +201,6 @@ class Accumulation(QgsProcessingAlgorithm):
         )
 
     def processAlgorithm(self, parameters, context, feedback):
-        """
-        Here is where the processing itself takes place.
-        """
         try:
             selected_api_fields = self.parameterAsStrings(parameters, self.selectedAPI, context)
         except AttributeError:
@@ -426,15 +407,16 @@ class Accumulation(QgsProcessingAlgorithm):
         
         # Load network data
         idxId = waternet.fields().indexFromName(id_field)
-        idxNext = waternet.fields().indexFromName(to_field)
+        idxTo = waternet.fields().indexFromName(to_field)
 
         # Build data structure for accumulation
-        # For polygons, we rely solely on NET_ID -> NET_TO relationships
+        # DataArr columns: [NET_ID, NET_ID, NET_TO, fid]
+        # Column 1 duplicates column 0 (NET_ID used as both id and "from" field)
         feedback.setProgressText("Loading polygon network data...\n")
         Data = [[
             str(f.attribute(idxId)),
-            str(f.attribute(idxId)),  # prev_field = id_field for polygons
-            str(f.attribute(idxNext)),
+            str(f.attribute(idxId)),
+            str(f.attribute(idxTo)),
             f.id()
         ] for f in waternet.getFeatures()]
         DataArr_static = np.array(Data, dtype='object')
@@ -830,11 +812,7 @@ class Accumulation(QgsProcessingAlgorithm):
         # find the closest river section for each emission point
         # create a spatial index for river sections
         river_index = QgsSpatialIndex(river_layer.getFeatures())
-        river_feat_dict = {}
-
-        for feat in river_layer.getFeatures():
-            river_index.addFeature(feat)
-            river_feat_dict[feat.id()] = feat
+        river_feat_dict = {feat.id(): feat for feat in river_layer.getFeatures()}
 
         # dictionary to store
         section_to_points = {}
@@ -846,17 +824,6 @@ class Accumulation(QgsProcessingAlgorithm):
         # go through each emission point
         for point_feat in load.getFeatures():
             point_geom = point_feat.geometry()
-
-            # # find the nearest river section
-            # nearest_ids = river_index.nearestNeighbor(point_geom.asPoint(),1)
-            # if not nearest_ids:
-            #     continue # skip if no match found
-
-            # river_feat = next(river_layer.getFeatures(QgsFeatureRequest(nearest_ids[0])))
-            # river_geom = river_feat.geometry()
-
-            # # debug: print the actual distance for troubleshooting
-            # feedback.pushInfo(f"DEBUG: point ID {point_feat.id()} is at a distance {river_geom.distance(point_geom): .6f} from river section {river_feat[id_field]}")
 
             # create bounding box
             search_rect = point_geom.boundingBox().buffered(tolerance)
@@ -937,13 +904,8 @@ class Accumulation(QgsProcessingAlgorithm):
             # all point_data contain the same river_geom for a section so we take only the first one
             river_geom = point_data[0][1]
 
-            # extract the line geometry as a polyline
-            if river_geom.type() == QgsWkbTypes.LineGeometry:
-                if QgsWkbTypes.isMultiType(river_geom.wkbType()):
-                    river_line = river_geom.asMultiPolyline()[0]
-                else:
-                    river_line = river_geom.asPolyline()
-            else:
+            # skip non-line geometries
+            if river_geom.type() != QgsWkbTypes.LineGeometry:
                 feedback.pushInfo(f"Skipping section {section_id}: not a line geometry")
                 continue
                 
@@ -1250,8 +1212,6 @@ class Accumulation(QgsProcessingAlgorithm):
                 # new flow values
                 feat[MQ_field] = percentage * mean_total
                 feat[acc_MQ_field] = acc_start + (mean_total * ratio)
-                # feat["Mean_Flow"] = percentage * mean_total
-                # feat["calc_Mean_"] = acc_start + (mean_total * ratio)
 
                 non_null_geom_layer.updateFeature(feat)
 
@@ -1263,8 +1223,6 @@ class Accumulation(QgsProcessingAlgorithm):
                 # new flow values
                 feat[MNQ_field] = percentage_low * mean_low_total
                 feat[acc_MNQ_field] = acc_low_start + (mean_low_total * ratio_low)
-                # feat["M_Low_Flow"] = percentage_low * mean_low_total
-                # feat["calc_M_Low"] = acc_low_start + (mean_low_total * ratio_low)
                 non_null_geom_layer.updateFeature(feat)
 
         # 6. transfer the API load to the river section
@@ -1300,58 +1258,49 @@ class Accumulation(QgsProcessingAlgorithm):
         #QgsProject.instance().addMapLayer(non_null_geom_layer)
 
         """ACCUMULATION FUNCTION"""
-        '''loading the network'''
         waternet = non_null_geom_layer
 
-        '''names of fields for id,next segment, previous segment'''
-        id_field = id_field
-        next_field = to_field
-        prev_field = id_field
+        idxId = waternet.fields().indexFromName(id_field)
+        idxTo = waternet.fields().indexFromName(to_field)
 
-        '''field index for id,next segment, previous segment'''
-        idxId = waternet.fields().indexFromName(id_field) 
-        idxPrev = waternet.fields().indexFromName(prev_field)
-        idxNext = waternet.fields().indexFromName(next_field)
-
-        '''load data from layer'''
+        # DataArr columns: [NET_ID, NET_ID, NET_TO, fid]
+        # Column 1 duplicates column 0 (NET_ID used as both id and "from" field)
         feedback.setProgressText(self.tr("Loading network layer\n "))
         Data = [[
             str(f.attribute(idxId)),
-            str(f.attribute(idxPrev)),
-            str(f.attribute(idxNext)),
+            str(f.attribute(idxId)),
+            str(f.attribute(idxTo)),
             f.id()
         ] for f in waternet.getFeatures()]
         DataArr_static = np.array(Data, dtype='object')
         feedback.setProgressText(self.tr("Data loaded \n Calculating flow paths \n"))
 
-        '''function to find next features in the net'''
-        def nextFtsCalc (MARKER2):
-            vtx_to = DataArr[np.where(DataArr[:,0] == MARKER2)[0].tolist(),2][0] # "to"-vertex of actual segment
-            rows_to = np.where(DataArr[:,1] == vtx_to)[0].tolist() # find rows in DataArr with matching "from"-vertices to vtx_to
-            unconnected_errors = [DataArr[x, 4] for x in rows_to if DataArr[x, 2]=='unconnected']  # this can only happen after manual editing
+        def nextFtsCalc(MARKER2):
+            vtx_to = DataArr[np.where(DataArr[:,0] == MARKER2)[0].tolist(),2][0]  # NET_TO of actual segment
+            rows_to = np.where(DataArr[:,1] == vtx_to)[0].tolist()  # rows with matching NET_ID
+            unconnected_errors = [DataArr[x, 4] for x in rows_to if DataArr[x, 2]=='unconnected']
             if len(unconnected_errors) > 0:
                 waternet.removeSelection()
                 waternet.selectByIds(unconnected_errors, waternet.SelectBehavior(1))
                 raise QgsProcessingException(
                     'The selected features in the flow are marked as \'unconnected\' '
                     + '(most likely because of manual editing). Please delete the columns with the network information ('
-                    + next_field
+                    + to_field
                     + ', '
-                    + prev_field
+                    + id_field
                     + ') and run tool 1 \"Water Network Constructor\" again.'
                 )
-            return(rows_to)
+            return rows_to
 
-        '''function to find flow path'''
-        def FlowPath (Start_Row, fp_amount):
+        def FlowPath(Start_Row, fp_amount):
             MARKER=DataArr[Start_Row,0] #set MARKER to ID of the first segment
             Weg = [Start_Row]    
             i=0
             while i!=len(DataArr):
                 next_rows = nextFtsCalc(MARKER)
-                if len(next_rows) > 1: # deviding flow path
-                    calc_column[StartRow] = 0
-                    calc_column[next_rows] = calc_column[next_rows]+fp_amount/len(next_rows) # this can be changed to weightet separation later
+                if len(next_rows) > 1: # dividing flow path
+                    calc_column[Start_Row] = 0
+                    calc_column[next_rows] = calc_column[next_rows]+fp_amount/len(next_rows) # this can be changed to weighted separation later
                     out = [Weg, next_rows]
                     break
                 if len(next_rows) == 1: # continuing flow path
@@ -1389,11 +1338,7 @@ class Accumulation(QgsProcessingAlgorithm):
             calc_segm = [i for i in calc_segm if (DataArr[i, 1] != 'unconnected' and DataArr[i,2] != 'unconnected')]
 
             total2 = len(calc_segm)
-            feedback.pushInfo("Checkpoint A")
 
-            ####
-            # adding some trouble shooting line here
-            ####
             iteration = 0
             max_iterations = 10000 #safety limit
             max_iterations_flag = False
@@ -1434,7 +1379,6 @@ class Accumulation(QgsProcessingAlgorithm):
             if iteration >= max_iterations:
                 max_iterations_flag = True
 
-            feedback.pushInfo("Checkpoint B")
             # add output field
             # get API name for renaming the field
             api_short = calc_field[:4]
@@ -1448,7 +1392,6 @@ class Accumulation(QgsProcessingAlgorithm):
                 feedback.reportError(f"Error: field {new_field_name} not found in waternet")
                 continue
 
-            feedback.pushInfo("Checkpoint C")
             waternet.startEditing()
             for i, feature in enumerate(waternet.getFeatures()):
                 # Stop the algorithm if cancel button has been clicked
@@ -1507,8 +1450,6 @@ class Accumulation(QgsProcessingAlgorithm):
         # prepare indices
         idx_mean_flow = waternet.fields().indexOf(acc_MQ_field)
         idx_low_flow = waternet.fields().indexOf(acc_MNQ_field)
-        # idx_mean_flow = waternet.fields().indexOf("calc_Mean_")
-        # idx_low_flow = waternet.fields().indexOf("calc_M_Low")
 
         # add new concentration fields if they don't exist
         new_fields = []
@@ -1544,13 +1485,13 @@ class Accumulation(QgsProcessingAlgorithm):
                 conc_field_mean = f"conc_{api_short}"
                 conc_field_low = f"conL_{api_short}"
 
-                # Calculate mean concentration only if flow_mean is non-zero
-                if flow_mean != 0:
+                # Calculate mean concentration only if flow_mean is valid and non-zero
+                if flow_mean is not None and flow_mean != 0:
                     conc_mean = (acc_value * conversion_factor)/flow_mean
                     feature.setAttribute(conc_field_mean, conc_mean)
                 
-                # Calculate low concentration only if flow_low is non-zero
-                if flow_low != 0:
+                # Calculate low concentration only if flow_low is valid and non-zero
+                if flow_low is not None and flow_low != 0:
                     conc_low = (acc_value * conversion_factor)/flow_low
                     feature.setAttribute(conc_field_low, conc_low)
 
@@ -1602,7 +1543,7 @@ class Accumulation(QgsProcessingAlgorithm):
             load_crs = load_original.crs()
             # create a new layer, copy of the monitoring station points
             
-            if mon_point.crs().authid() != load_crs.authid:
+            if mon_point.crs().authid() != load_crs.authid():
                 mon_point_copy = processing.run("native:reprojectlayer", {
                     'INPUT':mon_point,
                     'TARGET_CRS':load_crs,
@@ -1778,37 +1719,15 @@ class Accumulation(QgsProcessingAlgorithm):
     
     
     def name(self):
-        """
-        Returns the algorithm name, used for identifying the algorithm. This
-        string should be fixed for the algorithm, and must not be localised.
-        The name should be unique within each provider. Names should contain
-        lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
         return '7 - Accumulation'
 
     def displayName(self):
-        """
-        Returns the translated algorithm name, which should be used for any
-        user-visible display of the algorithm name.
-        """
         return self.tr(self.name())
 
     def group(self):
-        """
-        Returns the name of the group this algorithm belongs to. This string
-        should be localised.
-        """
         return self.tr(self.groupId())
 
     def groupId(self):
-        """
-        Returns the unique ID of the group this algorithm belongs to. This
-        string should be fixed for the algorithm, and must not be localised.
-        The group id should be unique within each provider. Group id should
-        contain lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
         return 'API emission'
     
     def helpUrl(self):

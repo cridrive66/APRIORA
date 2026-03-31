@@ -31,24 +31,18 @@ __copyright__ = '(C) 2024 by Universität Rostock'
 __revision__ = '$Format:%H$'
 
 import pandas as pd
-import os
-from qgis.PyQt.QtCore import (QCoreApplication, QVariant, Qt, QUrl)
-from qgis.PyQt.QtWidgets import QPushButton, QVBoxLayout, QWidget
-from qgis.PyQt.QtGui import QDesktopServices
-from qgis.core import ( QgsFeature,
-                        QgsFeatureSink,
-                        QgsFields,
-                        QgsField,
-                        QgsProcessing,
-                        QgsProcessingAlgorithm,
-                        QgsProcessingParameterFeatureSource,
-                        QgsProcessingParameterFeatureSink,
-                        QgsProcessingParameterMapLayer,
-                        QgsProcessingUtils,
-                        QgsProject,
-                        QgsVectorLayer,
-                        QgsWkbTypes                    
-                        )
+from qgis.PyQt.QtCore import QCoreApplication, QVariant
+from qgis.core import (QgsFeature,
+                       QgsFeatureSink,
+                       QgsFields,
+                       QgsField,
+                       QgsProcessing,
+                       QgsProcessingAlgorithm,
+                       QgsProcessingParameterFeatureSource,
+                       QgsProcessingParameterFeatureSink,
+                       QgsProcessingParameterMapLayer,
+                       QgsProject
+                       )
 
 
 class EmissionLoads(QgsProcessingAlgorithm):
@@ -79,12 +73,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
             For more information, see the documentation at the Help button below.
         """)
 
-    #Init tool
     def initAlgorithm(self, config):
-        """
-        Here we define the inputs and output of the algorithm, along
-        with some other properties.
-        """
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.emissionPoints,
@@ -103,9 +92,6 @@ class EmissionLoads(QgsProcessingAlgorithm):
             )
         )
 
-        # We add a feature sink in which to store our processed features (this
-        # usually takes the form of a newly created vector layer when the
-        # algorithm is run in QGIS).
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
@@ -115,9 +101,6 @@ class EmissionLoads(QgsProcessingAlgorithm):
         )
 
     def processAlgorithm(self, parameters, context, feedback):
-        """
-        Here is where the processing itself takes place.
-        """
         # get input parameters
         layer = self.parameterAsVectorLayer(parameters, self.emissionPoints, context)
         api_layer = self.parameterAsLayer(parameters, self.apiTable, context)
@@ -220,37 +203,15 @@ class EmissionLoads(QgsProcessingAlgorithm):
     
     
     def name(self):
-        """
-        Returns the algorithm name, used for identifying the algorithm. This
-        string should be fixed for the algorithm, and must not be localised.
-        The name should be unique within each provider. Names should contain
-        lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
         return '6 - Emission Loads'
 
     def displayName(self):
-        """
-        Returns the translated algorithm name, which should be used for any
-        user-visible display of the algorithm name.
-        """
         return self.tr(self.name())
 
     def group(self):
-        """
-        Returns the name of the group this algorithm belongs to. This string
-        should be localised.
-        """
         return self.tr(self.groupId())
 
     def groupId(self):
-        """
-        Returns the unique ID of the group this algorithm belongs to. This
-        string should be fixed for the algorithm, and must not be localised.
-        The group id should be unique within each provider. Group id should
-        contain lowercase alphanumeric characters only and no spaces or other
-        formatting characters.
-        """
         return 'API emission'
     
     def helpUrl(self):
