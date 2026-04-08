@@ -1,4 +1,4 @@
-API name,AMR-RA [ng/l]
-Clarithromycin,250
-Sulfamethoxazole,16000
-Trimethoprim,500
+API name,AMR-RA [ng/l],Experimental system,Method,Reference
+Clarithromycin,250,MICs dataset for clinical strains,Extrapolation,Bengtsson-Palme & Larsson (2016)
+Sulfamethoxazole,16000,MICs dataset for clinical strains,Extrapolation,Bengtsson-Palme & Larsson (2016)
+Trimethoprim,500,MICs dataset for clinical strains,Extrapolation,Bengtsson-Palme & Larsson (2016)
