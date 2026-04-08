@@ -14,27 +14,6 @@
    <string>5 - API parameter selection</string>
   </property>
   <layout class="QGridLayout" name="gridLayout_2">
-   <item row="1" column="1">
-    <widget class="QPushButton" name="backButton">
-     <property name="text">
-      <string>Back</string>
-     </property>
-    </widget>
-   </item>
-   <item row="1" column="0">
-    <widget class="QProgressBar" name="progressBar">
-     <property name="value">
-      <number>24</number>
-     </property>
-    </widget>
-   </item>
-   <item row="1" column="2">
-    <widget class="QPushButton" name="nextButton">
-     <property name="text">
-      <string>Next</string>
-     </property>
-    </widget>
-   </item>
    <item row="1" column="3">
     <widget class="QPushButton" name="closeButton">
      <property name="sizePolicy">
@@ -60,6 +39,27 @@
      </property>
     </widget>
    </item>
+   <item row="1" column="1">
+    <widget class="QPushButton" name="backButton">
+     <property name="text">
+      <string>Back</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="2">
+    <widget class="QPushButton" name="nextButton">
+     <property name="text">
+      <string>Next</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="0">
+    <widget class="QProgressBar" name="progressBar">
+     <property name="value">
+      <number>24</number>
+     </property>
+    </widget>
+   </item>
    <item row="0" column="0" colspan="4">
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
@@ -70,24 +70,7 @@
        <string>Consumption data</string>
       </attribute>
       <layout class="QGridLayout" name="gridLayout">
-       <item row="0" column="0">
-        <widget class="QLabel" name="label_6">
-         <property name="text">
-          <string>Consumption data available</string>
-         </property>
-        </widget>
-       </item>
-       <item row="3" column="0" colspan="9">
-        <widget class="QListView" name="listView">
-         <property name="maximumSize">
-          <size>
-           <width>16777215</width>
-           <height>125</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="5">
+       <item row="0" column="8">
         <widget class="QPushButton" name="removeButton_tab1">
          <property name="minimumSize">
           <size>
@@ -109,7 +92,56 @@
          </property>
         </widget>
        </item>
-       <item row="4" column="8">
+       <item row="0" column="10">
+        <widget class="QPushButton" name="restoreButton_1">
+         <property name="maximumSize">
+          <size>
+           <width>100</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="toolTip">
+          <string/>
+         </property>
+         <property name="text">
+          <string>Restore original</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="0">
+        <widget class="QLabel" name="label_6">
+         <property name="text">
+          <string>Consumption data available</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_5">
+         <property name="text">
+          <string>Selected consumption data</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="11">
+        <widget class="QPushButton" name="addSelectionButton">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>105</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Add to the selection</string>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="11">
         <widget class="QPushButton" name="removeSelectionButton">
          <property name="minimumSize">
           <size>
@@ -122,14 +154,33 @@
          </property>
         </widget>
        </item>
-       <item row="1" column="0" colspan="9">
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_12">
+         <property name="font">
+          <font>
+           <pointsize>7</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>(*) mandatory field</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="11">
+        <widget class="QPushButton" name="help_tab1">
+         <property name="text">
+          <string>Help</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="0" colspan="12">
         <widget class="QTableView" name="excelTableView">
          <attribute name="horizontalHeaderVisible">
           <bool>true</bool>
          </attribute>
         </widget>
        </item>
-       <item row="0" column="6">
+       <item row="0" column="9">
         <widget class="QPushButton" name="addButton_tab1">
          <property name="minimumSize">
           <size>
@@ -151,37 +202,17 @@
          </property>
         </widget>
        </item>
-       <item row="2" column="0">
-        <widget class="QLabel" name="label_5">
-         <property name="text">
-          <string>Selected consumption data</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="7">
-        <widget class="QPushButton" name="restoreButton_1">
+       <item row="4" column="0" colspan="12">
+        <widget class="QListView" name="listView">
          <property name="maximumSize">
           <size>
-           <width>100</width>
-           <height>16777215</height>
+           <width>16777215</width>
+           <height>125</height>
           </size>
          </property>
-         <property name="toolTip">
-          <string/>
-         </property>
-         <property name="text">
-          <string>Restore original</string>
-         </property>
         </widget>
        </item>
-       <item row="0" column="8">
-        <widget class="QPushButton" name="help_tab1">
-         <property name="text">
-          <string>Help</string>
-         </property>
-        </widget>
-       </item>
-       <item row="4" column="7">
+       <item row="5" column="0">
         <widget class="QPushButton" name="ClearpushButton">
          <property name="minimumSize">
           <size>
@@ -194,22 +225,10 @@
          </property>
         </widget>
        </item>
-       <item row="2" column="8">
-        <widget class="QPushButton" name="addSelectionButton">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>105</width>
-           <height>0</height>
-          </size>
-         </property>
+       <item row="0" column="1">
+        <widget class="QToolButton" name="exportMenuButton_tab1">
          <property name="text">
-          <string>Add to the selection</string>
+          <string>...</string>
          </property>
         </widget>
        </item>
@@ -227,17 +246,19 @@
          </property>
         </widget>
        </item>
-       <item row="1" column="0" colspan="9">
-        <widget class="QTableView" name="RRTableView">
-         <attribute name="horizontalHeaderVisible">
-          <bool>true</bool>
-         </attribute>
-        </widget>
-       </item>
-       <item row="0" column="0">
-        <widget class="QLabel" name="label_11">
+       <item row="0" column="6">
+        <widget class="QPushButton" name="addButton_tab2">
+         <property name="maximumSize">
+          <size>
+           <width>25</width>
+           <height>23</height>
+          </size>
+         </property>
+         <property name="toolTip">
+          <string>Add new row</string>
+         </property>
          <property name="text">
-          <string>Removal rate data available</string>
+          <string>+</string>
          </property>
         </widget>
        </item>
@@ -254,19 +275,44 @@
          </property>
         </widget>
        </item>
-       <item row="0" column="6">
-        <widget class="QPushButton" name="addButton_tab2">
+       <item row="0" column="0">
+        <widget class="QLabel" name="label_11">
          <property name="maximumSize">
           <size>
-           <width>25</width>
-           <height>23</height>
+           <width>140</width>
+           <height>16777215</height>
           </size>
          </property>
-         <property name="toolTip">
-          <string>Add new row</string>
-         </property>
          <property name="text">
-          <string>+</string>
+          <string>Removal rate data available</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0" colspan="3">
+        <widget class="QLabel" name="label_2">
+         <property name="text">
+          <string>All fields are mandatory except CAS No.</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0" colspan="9">
+        <widget class="QTableView" name="RRTableView">
+         <attribute name="horizontalHeaderVisible">
+          <bool>true</bool>
+         </attribute>
+        </widget>
+       </item>
+       <item row="1" column="0" colspan="3">
+        <widget class="QLabel" name="label_13">
+         <property name="text">
+          <string>The removal rate should be a number between 0 and 1 with point as separator.</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QToolButton" name="exportMenuButton_tab2">
+         <property name="text">
+          <string>...</string>
          </property>
         </widget>
        </item>
@@ -303,13 +349,6 @@
            <string>ERA</string>
           </attribute>
           <layout class="QGridLayout" name="gridLayout_5">
-           <item row="0" column="0">
-            <widget class="QLabel" name="label_34">
-             <property name="text">
-              <string>PNEC values for Environmental Risk Assessment</string>
-             </property>
-            </widget>
-           </item>
            <item row="1" column="0" colspan="6">
             <widget class="QTableView" name="ERATableView">
              <attribute name="horizontalHeaderVisible">
@@ -321,19 +360,6 @@
             <widget class="QPushButton" name="help_ERA">
              <property name="text">
               <string>Help</string>
-             </property>
-            </widget>
-           </item>
-           <item row="0" column="4">
-            <widget class="QPushButton" name="restoreButton_ERA">
-             <property name="maximumSize">
-              <size>
-               <width>100</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>Restore original</string>
              </property>
             </widget>
            </item>
@@ -369,6 +395,26 @@
              </property>
             </widget>
            </item>
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_34">
+             <property name="text">
+              <string>PNEC values for Environmental Risk Assessment (ERA)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="4">
+            <widget class="QPushButton" name="restoreButton_ERA">
+             <property name="maximumSize">
+              <size>
+               <width>100</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>Restore original</string>
+             </property>
+            </widget>
+           </item>
           </layout>
          </widget>
          <widget class="QWidget" name="HHtab">
@@ -376,16 +422,13 @@
            <string>HHRA</string>
           </attribute>
           <layout class="QGridLayout" name="gridLayout_6">
-           <item row="1" column="0">
-            <widget class="QLabel" name="label_37">
-             <property name="maximumSize">
-              <size>
-               <width>150</width>
-               <height>16777215</height>
-              </size>
-             </property>
+           <item row="4" column="0" colspan="7">
+            <widget class="QLabel" name="label_3">
              <property name="text">
-              <string>Select a country</string>
+              <string>Values calculated following the approach suggested in Duarte, D.J., Oldenkamp, R. and Ragas, A.M.J. (2022), Human health risk assessment of pharmaceuticals in the European Vecht River. Integr Environ Assess Manag, 18: 1639-1654.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
@@ -399,28 +442,7 @@
              </property>
             </widget>
            </item>
-           <item row="0" column="0">
-            <widget class="QLabel" name="label_35">
-             <property name="text">
-              <string>PNEC values for Human Health Risk Assessment</string>
-             </property>
-            </widget>
-           </item>
-           <item row="3" column="0" colspan="6">
-            <widget class="QTableView" name="HHTableView">
-             <attribute name="horizontalHeaderVisible">
-              <bool>true</bool>
-             </attribute>
-            </widget>
-           </item>
            <item row="0" column="5">
-            <widget class="QPushButton" name="help_HH">
-             <property name="text">
-              <string>Help</string>
-             </property>
-            </widget>
-           </item>
-           <item row="0" column="4">
             <widget class="QPushButton" name="restoreButton_HH">
              <property name="maximumSize">
               <size>
@@ -433,7 +455,27 @@
              </property>
             </widget>
            </item>
-           <item row="0" column="3">
+           <item row="1" column="0">
+            <widget class="QLabel" name="label_37">
+             <property name="maximumSize">
+              <size>
+               <width>150</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>Select a country</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="6">
+            <widget class="QPushButton" name="help_HH">
+             <property name="text">
+              <string>Help</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="4">
             <widget class="QPushButton" name="addButton_HH">
              <property name="maximumSize">
               <size>
@@ -449,7 +491,21 @@
              </property>
             </widget>
            </item>
-           <item row="0" column="2">
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_35">
+             <property name="text">
+              <string>PNEC values for Human Health Risk Assessment (HHRA)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="0" colspan="7">
+            <widget class="QTableView" name="HHTableView">
+             <attribute name="horizontalHeaderVisible">
+              <bool>true</bool>
+             </attribute>
+            </widget>
+           </item>
+           <item row="0" column="3">
             <widget class="QPushButton" name="removeButton_HH">
              <property name="maximumSize">
               <size>
@@ -477,13 +533,6 @@
              <attribute name="horizontalHeaderVisible">
               <bool>true</bool>
              </attribute>
-            </widget>
-           </item>
-           <item row="0" column="0">
-            <widget class="QLabel" name="label_36">
-             <property name="text">
-              <string>PNEC values for Antimicrobial Resistance Risk Assessment</string>
-             </property>
             </widget>
            </item>
            <item row="0" column="6">
@@ -550,6 +599,13 @@
              </property>
             </widget>
            </item>
+           <item row="0" column="0" colspan="2">
+            <widget class="QLabel" name="label_36">
+             <property name="text">
+              <string>PNEC values for Antimicrobial Resistance Risk Assessment (AMR-RA)</string>
+             </property>
+            </widget>
+           </item>
           </layout>
          </widget>
         </widget>
@@ -568,11 +624,25 @@
          </property>
         </widget>
        </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="label_4">
+         <property name="text">
+          <string>Please export the PNEC tables that will be an input data for tool 8  --&gt;</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QPushButton" name="exportPNECtable">
+         <property name="text">
+          <string>Export Table</string>
+         </property>
+        </widget>
+       </item>
       </layout>
      </widget>
      <widget class="QWidget" name="tab_3">
       <attribute name="title">
-       <string>Custom table</string>
+       <string>WWTP locations</string>
       </attribute>
       <layout class="QGridLayout" name="gridLayout_3">
        <item row="0" column="1">
@@ -615,19 +685,6 @@
         </widget>
        </item>
        <item row="0" column="4">
-        <widget class="QLabel" name="label_12">
-         <property name="maximumSize">
-          <size>
-           <width>115</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>Connected Inhabitants</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="5">
         <widget class="QLabel" name="label_10">
          <property name="maximumSize">
           <size>
@@ -637,6 +694,13 @@
          </property>
          <property name="text">
           <string>Technical Class</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="6">
+        <widget class="QPushButton" name="help_tab3">
+         <property name="text">
+          <string>Help</string>
          </property>
         </widget>
        </item>
@@ -672,7 +736,7 @@
         <widget class="QComboBox" name="WWTPcomboBox">
          <property name="maximumSize">
           <size>
-           <width>115</width>
+           <width>16777215</width>
            <height>16777215</height>
           </size>
          </property>
@@ -682,7 +746,7 @@
         <widget class="QComboBox" name="IDcomboBox">
          <property name="maximumSize">
           <size>
-           <width>115</width>
+           <width>16777215</width>
            <height>16777215</height>
           </size>
          </property>
@@ -692,91 +756,64 @@
         <widget class="QComboBox" name="NamecomboBox">
          <property name="maximumSize">
           <size>
-           <width>115</width>
+           <width>16777215</width>
            <height>16777215</height>
           </size>
          </property>
         </widget>
        </item>
        <item row="1" column="4">
-        <widget class="QComboBox" name="ConnInhcomboBox">
+        <widget class="QComboBox" name="TCcomboBox">
          <property name="maximumSize">
           <size>
-           <width>115</width>
+           <width>16777215</width>
            <height>16777215</height>
           </size>
          </property>
         </widget>
        </item>
        <item row="1" column="5">
-        <widget class="QComboBox" name="TCcomboBox">
-         <property name="maximumSize">
-          <size>
-           <width>115</width>
-           <height>16777215</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="3">
         <widget class="QPushButton" name="loadButton">
          <property name="text">
           <string>Load Table</string>
          </property>
         </widget>
        </item>
-       <item row="2" column="4">
+       <item row="1" column="6">
         <widget class="QPushButton" name="restoreButton_3">
          <property name="text">
           <string>Restore original</string>
          </property>
         </widget>
        </item>
-       <item row="2" column="5">
-        <widget class="QPushButton" name="help_tab3">
-         <property name="text">
-          <string>Help</string>
-         </property>
-        </widget>
-       </item>
-       <item row="3" column="0" colspan="6">
+       <item row="2" column="0" colspan="7">
         <widget class="QTableView" name="wwtpTableView"/>
        </item>
-       <item row="4" column="0" colspan="6">
-        <spacer name="horizontalSpacer">
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>647</width>
-           <height>20</height>
-          </size>
-         </property>
-        </spacer>
-       </item>
-       <item row="5" column="5">
-        <widget class="QPushButton" name="printButton">
-         <property name="text">
-          <string>Print Table</string>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="0" colspan="2">
+       <item row="3" column="3" colspan="3">
         <widget class="QLabel" name="label">
+         <property name="layoutDirection">
+          <enum>Qt::LeftToRight</enum>
+         </property>
          <property name="text">
-          <string>Select which table to print:</string>
+          <string>Please export WWTP locations table that will be an input data for tool 6  --&gt;</string>
          </property>
          <property name="scaledContents">
           <bool>false</bool>
          </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
          <property name="wordWrap">
-          <bool>true</bool>
+          <bool>false</bool>
          </property>
         </widget>
        </item>
-       <item row="5" column="2">
-        <widget class="QComboBox" name="PrintOptioncomboBox"/>
+       <item row="3" column="6">
+        <widget class="QPushButton" name="printButton">
+         <property name="text">
+          <string>Export Table</string>
+         </property>
+        </widget>
        </item>
       </layout>
      </widget>
