@@ -406,7 +406,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
     
     def helpUrl(self):
         # Return a URL or local file path to your documentation
-        return "https://hosting-apriora-manual.readthedocs.io/en/latest/Risk_assessment.html"
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Risk_assessment.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

@@ -932,6 +932,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
         formatting characters.
         """
         return 'Hydro-Module'
+    
+    def helpUrl(self):
+        # Return a URL or local file path to your documentation
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/hydro_module/flow_estimation_model.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
