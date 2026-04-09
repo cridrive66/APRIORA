@@ -19,7 +19,6 @@ about=This plugin contains a series of tools divided into two subgroups: Hydro-M
     numpy and pandas are typically pre-installed with QGIS. To install scikit-learn, open the
     OSGeo4W Shell and run: python -m pip install scikit-learn
     (for Windows see: https://landscapearchaeology.org/2018/installing-python-packages-in-qgis-3-for-windows/).
-    The plugin includes pre-trained Random Forest model files (.pkl) used for flow estimation.
 
 tracker=https://github.com/cridrive66/APRIORA/issues
 repository=https://github.com/cridrive66/APRIORA
