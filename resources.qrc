@@ -1,5 +1,0 @@
-<RCC>
-    <qresource prefix="/plugins/consumption_selection" >
-        <file>icon.png</file>
-    </qresource>
-</RCC>

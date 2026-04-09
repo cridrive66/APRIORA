@@ -1,3 +1,4 @@
 __pycache__/
 /datasets/custom_dataset/*.csv
 /user_selection.txt
+/field_selection.txt
