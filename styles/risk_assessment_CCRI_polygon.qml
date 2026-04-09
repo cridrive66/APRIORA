@@ -1,16 +1,15 @@
 <!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
-<qgis styleCategories="Symbology" version="3.34.9-Prizren">
-  <renderer-v2 graduatedMethod="GraduatedColor" forceraster="0" enableorderby="0" referencescale="-1" type="graduatedSymbol" symbollevels="0" attr="with_variable(&#xd;&#xa;    'non_L_fields',&#xd;&#xa;    array_filter(&#xd;&#xa;        map_akeys(attributes()),&#xd;&#xa;        @element LIKE 'era_%' AND @element NOT LIKE 'eraL_%'&#xd;&#xa;    ),&#xd;&#xa;    with_variable(&#xd;&#xa;        'L_fields',&#xd;&#xa;        array_filter(&#xd;&#xa;            map_akeys(attributes()),&#xd;&#xa;            @element LIKE 'eraL_%'&#xd;&#xa;        ),&#xd;&#xa;        if(&#xd;&#xa;            array_length(@non_L_fields) > 0,&#xd;&#xa;            attribute(@non_L_fields[0]),&#xd;&#xa;            if(&#xd;&#xa;                array_length(@L_fields) > 0,&#xd;&#xa;                attribute(@L_fields[0]),&#xd;&#xa;                NULL&#xd;&#xa;            )&#xd;&#xa;        )&#xd;&#xa;    )&#xd;&#xa;)">
+<qgis version="3.34.9-Prizren" styleCategories="Symbology">
+  <renderer-v2 attr="attribute(array_filter(map_akeys(attributes()), @element LIKE 'CCRI%')[0])" type="graduatedSymbol" enableorderby="0" symbollevels="0" graduatedMethod="GraduatedColor" forceraster="0" referencescale="-1">
     <ranges>
-      <range symbol="0" lower="-1000000000000.000000000000000" uuid="{edf2b36f-f5a2-47d8-ac8a-8cd62c1d5094}" upper="0.000000000000000" render="true" label="No Emission"/>
-      <range symbol="1" lower="0.000000000000000" uuid="{1c2038c9-e700-4375-8d2b-5e2bbbbfed08}" upper="0.250000000000000" render="true" label="0 - 0.25"/>
-      <range symbol="2" lower="0.250000000000000" uuid="{1bccefe5-cbdf-4666-a40f-be5d0367cd34}" upper="0.500000000000000" render="true" label="0.25 - 0.5"/>
-      <range symbol="3" lower="0.500000000000000" uuid="{e20ba663-e90d-4038-a20d-809e92fe5704}" upper="1.000000000000000" render="true" label="0.5 - 1"/>
-      <range symbol="4" lower="1.000000000000000" uuid="{6c094bff-79b1-4f09-b2ff-3c996a0bc9fa}" upper="5.000000000000000" render="true" label="1 - 5"/>
-      <range symbol="5" lower="5.000000000000000" uuid="{2baf7fe7-ace0-4781-9817-6d33e2be3120}" upper="100000000.000000000000000" render="true" label="> 5"/>
+      <range render="true" symbol="0" uuid="{edf2b36f-f5a2-47d8-ac8a-8cd62c1d5094}" label="No Emission" lower="-1000000000000.000000000000000" upper="0.000000000000000"/>
+      <range render="true" symbol="1" uuid="{1c2038c9-e700-4375-8d2b-5e2bbbbfed08}" label="Low Risk" lower="0.000000000000000" upper="1.500000000000000"/>
+      <range render="true" symbol="2" uuid="{1bccefe5-cbdf-4666-a40f-be5d0367cd34}" label="Moderate Risk" lower="1.500000000000000" upper="3.000000000000000"/>
+      <range render="true" symbol="3" uuid="{e20ba663-e90d-4038-a20d-809e92fe5704}" label="High Risk" lower="3.000000000000000" upper="4.500000000000000"/>
+      <range render="true" symbol="4" uuid="{6c094bff-79b1-4f09-b2ff-3c996a0bc9fa}" label="Critical Risk" lower="4.500000000000000" upper="1000000000000.000000000000000"/>
     </ranges>
     <symbols>
-      <symbol is_animated="0" frame_rate="10" clip_to_extent="1" type="fill" name="0" alpha="1" force_rhr="0">
+      <symbol alpha="1" frame_rate="10" force_rhr="0" type="fill" is_animated="0" name="0" clip_to_extent="1">
         <data_defined_properties>
           <Option type="Map">
             <Option value="" type="QString" name="name"/>
@@ -18,7 +17,7 @@
             <Option value="collection" type="QString" name="type"/>
           </Option>
         </data_defined_properties>
-        <layer pass="0" class="SimpleFill" id="{b30d08e9-981c-4405-94e7-6194ca2286cd}" locked="0" enabled="1">
+        <layer class="SimpleFill" locked="0" enabled="1" pass="0" id="{b30d08e9-981c-4405-94e7-6194ca2286cd}">
           <Option type="Map">
             <Option value="3x:0,0,0,0,0,0" type="QString" name="border_width_map_unit_scale"/>
             <Option value="5,1,255,255" type="QString" name="color"/>
@@ -41,7 +40,7 @@
           </data_defined_properties>
         </layer>
       </symbol>
-      <symbol is_animated="0" frame_rate="10" clip_to_extent="1" type="fill" name="1" alpha="1" force_rhr="0">
+      <symbol alpha="1" frame_rate="10" force_rhr="0" type="fill" is_animated="0" name="1" clip_to_extent="1">
         <data_defined_properties>
           <Option type="Map">
             <Option value="" type="QString" name="name"/>
@@ -49,7 +48,7 @@
             <Option value="collection" type="QString" name="type"/>
           </Option>
         </data_defined_properties>
-        <layer pass="0" class="SimpleFill" id="{558079de-bf55-4d02-aea7-2479c01ea52b}" locked="0" enabled="1">
+        <layer class="SimpleFill" locked="0" enabled="1" pass="0" id="{558079de-bf55-4d02-aea7-2479c01ea52b}">
           <Option type="Map">
             <Option value="3x:0,0,0,0,0,0" type="QString" name="border_width_map_unit_scale"/>
             <Option value="114,218,40,255" type="QString" name="color"/>
@@ -72,7 +71,7 @@
           </data_defined_properties>
         </layer>
       </symbol>
-      <symbol is_animated="0" frame_rate="10" clip_to_extent="1" type="fill" name="2" alpha="1" force_rhr="0">
+      <symbol alpha="1" frame_rate="10" force_rhr="0" type="fill" is_animated="0" name="2" clip_to_extent="1">
         <data_defined_properties>
           <Option type="Map">
             <Option value="" type="QString" name="name"/>
@@ -80,7 +79,7 @@
             <Option value="collection" type="QString" name="type"/>
           </Option>
         </data_defined_properties>
-        <layer pass="0" class="SimpleFill" id="{558079de-bf55-4d02-aea7-2479c01ea52b}" locked="0" enabled="1">
+        <layer class="SimpleFill" locked="0" enabled="1" pass="0" id="{558079de-bf55-4d02-aea7-2479c01ea52b}">
           <Option type="Map">
             <Option value="3x:0,0,0,0,0,0" type="QString" name="border_width_map_unit_scale"/>
             <Option value="205,202,10,255" type="QString" name="color"/>
@@ -103,7 +102,7 @@
           </data_defined_properties>
         </layer>
       </symbol>
-      <symbol is_animated="0" frame_rate="10" clip_to_extent="1" type="fill" name="3" alpha="1" force_rhr="0">
+      <symbol alpha="1" frame_rate="10" force_rhr="0" type="fill" is_animated="0" name="3" clip_to_extent="1">
         <data_defined_properties>
           <Option type="Map">
             <Option value="" type="QString" name="name"/>
@@ -111,7 +110,7 @@
             <Option value="collection" type="QString" name="type"/>
           </Option>
         </data_defined_properties>
-        <layer pass="0" class="SimpleFill" id="{558079de-bf55-4d02-aea7-2479c01ea52b}" locked="0" enabled="1">
+        <layer class="SimpleFill" locked="0" enabled="1" pass="0" id="{558079de-bf55-4d02-aea7-2479c01ea52b}">
           <Option type="Map">
             <Option value="3x:0,0,0,0,0,0" type="QString" name="border_width_map_unit_scale"/>
             <Option value="255,127,0,255" type="QString" name="color"/>
@@ -134,7 +133,7 @@
           </data_defined_properties>
         </layer>
       </symbol>
-      <symbol is_animated="0" frame_rate="10" clip_to_extent="1" type="fill" name="4" alpha="1" force_rhr="0">
+      <symbol alpha="1" frame_rate="10" force_rhr="0" type="fill" is_animated="0" name="4" clip_to_extent="1">
         <data_defined_properties>
           <Option type="Map">
             <Option value="" type="QString" name="name"/>
@@ -142,7 +141,7 @@
             <Option value="collection" type="QString" name="type"/>
           </Option>
         </data_defined_properties>
-        <layer pass="0" class="SimpleFill" id="{558079de-bf55-4d02-aea7-2479c01ea52b}" locked="0" enabled="1">
+        <layer class="SimpleFill" locked="0" enabled="1" pass="0" id="{558079de-bf55-4d02-aea7-2479c01ea52b}">
           <Option type="Map">
             <Option value="3x:0,0,0,0,0,0" type="QString" name="border_width_map_unit_scale"/>
             <Option value="255,17,0,255" type="QString" name="color"/>
@@ -165,40 +164,9 @@
           </data_defined_properties>
         </layer>
       </symbol>
-      <symbol is_animated="0" frame_rate="10" clip_to_extent="1" type="fill" name="5" alpha="1" force_rhr="0">
-        <data_defined_properties>
-          <Option type="Map">
-            <Option value="" type="QString" name="name"/>
-            <Option name="properties"/>
-            <Option value="collection" type="QString" name="type"/>
-          </Option>
-        </data_defined_properties>
-        <layer pass="0" class="SimpleFill" id="{558079de-bf55-4d02-aea7-2479c01ea52b}" locked="0" enabled="1">
-          <Option type="Map">
-            <Option value="3x:0,0,0,0,0,0" type="QString" name="border_width_map_unit_scale"/>
-            <Option value="146,0,0,255" type="QString" name="color"/>
-            <Option value="bevel" type="QString" name="joinstyle"/>
-            <Option value="0,0" type="QString" name="offset"/>
-            <Option value="3x:0,0,0,0,0,0" type="QString" name="offset_map_unit_scale"/>
-            <Option value="MM" type="QString" name="offset_unit"/>
-            <Option value="0,0,0,255" type="QString" name="outline_color"/>
-            <Option value="solid" type="QString" name="outline_style"/>
-            <Option value="0.36" type="QString" name="outline_width"/>
-            <Option value="MM" type="QString" name="outline_width_unit"/>
-            <Option value="solid" type="QString" name="style"/>
-          </Option>
-          <data_defined_properties>
-            <Option type="Map">
-              <Option value="" type="QString" name="name"/>
-              <Option name="properties"/>
-              <Option value="collection" type="QString" name="type"/>
-            </Option>
-          </data_defined_properties>
-        </layer>
-      </symbol>
     </symbols>
     <source-symbol>
-      <symbol is_animated="0" frame_rate="10" clip_to_extent="1" type="fill" name="0" alpha="1" force_rhr="0">
+      <symbol alpha="1" frame_rate="10" force_rhr="0" type="fill" is_animated="0" name="0" clip_to_extent="1">
         <data_defined_properties>
           <Option type="Map">
             <Option value="" type="QString" name="name"/>
@@ -206,7 +174,7 @@
             <Option value="collection" type="QString" name="type"/>
           </Option>
         </data_defined_properties>
-        <layer pass="0" class="GradientFill" id="{d3aa235a-8b22-4cfe-8020-ac333f1b90a0}" locked="0" enabled="1">
+        <layer class="GradientFill" locked="0" enabled="1" pass="0" id="{d3aa235a-8b22-4cfe-8020-ac333f1b90a0}">
           <Option type="Map">
             <Option value="0" type="QString" name="angle"/>
             <Option value="0,0,255,255" type="QString" name="color"/>
@@ -238,7 +206,7 @@
             </Option>
           </data_defined_properties>
         </layer>
-        <layer pass="0" class="SimpleFill" id="{558079de-bf55-4d02-aea7-2479c01ea52b}" locked="0" enabled="1">
+        <layer class="SimpleFill" locked="0" enabled="1" pass="0" id="{558079de-bf55-4d02-aea7-2479c01ea52b}">
           <Option type="Map">
             <Option value="3x:0,0,0,0,0,0" type="QString" name="border_width_map_unit_scale"/>
             <Option value="247,247,247,255" type="QString" name="color"/>
@@ -273,8 +241,8 @@
       </Option>
     </colorramp>
     <classificationMethod id="Quantile">
-      <symmetricMode astride="0" enabled="0" symmetrypoint="0"/>
-      <labelFormat trimtrailingzeroes="1" format="%1 - %2" labelprecision="1"/>
+      <symmetricMode enabled="0" astride="0" symmetrypoint="0"/>
+      <labelFormat labelprecision="1" trimtrailingzeroes="0" format="%1 - %2"/>
       <parameters>
         <Option/>
       </parameters>
@@ -286,7 +254,7 @@
   <selection mode="Default">
     <selectionColor invalid="1"/>
     <selectionSymbol>
-      <symbol is_animated="0" frame_rate="10" clip_to_extent="1" type="fill" name="" alpha="1" force_rhr="0">
+      <symbol alpha="1" frame_rate="10" force_rhr="0" type="fill" is_animated="0" name="" clip_to_extent="1">
         <data_defined_properties>
           <Option type="Map">
             <Option value="" type="QString" name="name"/>
@@ -294,7 +262,7 @@
             <Option value="collection" type="QString" name="type"/>
           </Option>
         </data_defined_properties>
-        <layer pass="0" class="SimpleFill" id="{b6b65f08-d62f-4fc9-b48e-aefd73271197}" locked="0" enabled="1">
+        <layer class="SimpleFill" locked="0" enabled="1" pass="0" id="{b6b65f08-d62f-4fc9-b48e-aefd73271197}">
           <Option type="Map">
             <Option value="3x:0,0,0,0,0,0" type="QString" name="border_width_map_unit_scale"/>
             <Option value="0,0,255,255" type="QString" name="color"/>

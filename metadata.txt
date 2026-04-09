@@ -4,13 +4,21 @@
 
 [general]
 name=APRIORA
-qgisMinimumVersion=3.0
-description=Estimation of flow and Active Pharmaceutical Ingredients (API) in a catchment. Requires the 'scikit-learn' Python library (install via OSGeo4W Shell).
-version=0.7.2
+qgisMinimumVersion=3.18
+qgisMaximumVersion=3.99
+description=Estimation of flow and concentration of Active Pharmaceutical Ingredients (API) in a catchment.
+version=1.0.0
 author=Cristiano Guidi
 email=cristiano.guidi2@uni-rostock.de
 
-about=This plugin contains a series of tools divided into two subgroups: Flow Estimation and API emission. Flow estimation -> useful to estimate annual mean flow and annual mean low flow in ungauged subcatchments. API emission -> calculate the load of API from waste water treatment plants and their concentration in the river network.
+about=This plugin contains a series of tools divided into two subgroups: Hydro-Module and API emission.
+    Hydro-Module -> useful to estimate annual mean flow and annual mean low flow in ungauged subcatchments.
+    API emission -> calculate the load of API from waste water treatment plants and their concentration in the river network.
+    Finally, a risk assessment is performed.
+    External dependencies: requires the Python libraries 'numpy', 'pandas' and 'scikit-learn'.
+    numpy and pandas are typically pre-installed with QGIS. To install scikit-learn, open the
+    OSGeo4W Shell and run: python -m pip install scikit-learn
+    (for Windows see: https://landscapearchaeology.org/2018/installing-python-packages-in-qgis-3-for-windows/).
 
 tracker=https://github.com/cridrive66/APRIORA/issues
 repository=https://github.com/cridrive66/APRIORA
@@ -19,11 +27,10 @@ repository=https://github.com/cridrive66/APRIORA
 # Recommended items:
 
 hasProcessingProvider=yes
-# Uncomment the following line and add your changelog:
-# changelog=
+changelog=1.0.0 - Initial release
 
 # Tags are comma separated with spaces allowed
-tags=water, catchment, flow estimation, river, pollutants, risk assessment
+tags=water, catchment, flow estimation, river, pollutants, risk assessment, concentration, pharmaceutical
 
 homepage=https://hosting-apriora-manual.readthedocs.io/en/latest/
 category=Analysis
@@ -38,9 +45,6 @@ deprecated=False
 # (or upgraded) can be specified.
 # Check the documentation for more information.
 # plugin_dependencies=
-
-Category of the plugin: Raster, Vector, Database or Web
-# category=
 
 # If the plugin can run on QGIS Server.
 server=False
