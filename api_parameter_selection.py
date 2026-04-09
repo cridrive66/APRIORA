@@ -528,7 +528,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         )
         self.help_tab1.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#consumption-data")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#consumption-data")
                 )
             )
         
@@ -542,7 +542,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         )
         self.help_tab2.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#removal-rate")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#removal-rate")
                 )
             )
 
@@ -556,7 +556,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         )
         self.help_ERA.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#pnec-values")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#pnec-values")
                 )
             )
 
@@ -569,7 +569,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         )
         self.help_HH.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#pnec-values")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#wwtp-locations")
                 )
             )
 

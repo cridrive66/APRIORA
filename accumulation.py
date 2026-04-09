@@ -1933,7 +1933,7 @@ class Accumulation(QgsProcessingAlgorithm):
     
     def helpUrl(self):
         # Return a URL or local file path to your documentation
-        return "https://hosting-apriora-manual.readthedocs.io/en/latest/Accumulation.html"
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Accumulation.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

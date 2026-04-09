@@ -858,6 +858,10 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
         formatting characters.
         """
         return 'Hydro-Module'
+    
+    def helpUrl(self):
+        # Return a URL or local file path to your documentation
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/hydro_module/calculate_geofactors.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)

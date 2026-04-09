@@ -256,7 +256,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
     
     def helpUrl(self):
         # Return a URL or local file path to your documentation
-        return "https://hosting-apriora-manual.readthedocs.io/en/latest/Emission_Load.html"
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Emission_Load.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
