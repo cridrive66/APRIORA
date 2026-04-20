@@ -75,7 +75,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
     REGION_OPTIONS = [
         'Estimate from gauged_subcatch_geofactors.shp',
         '[Pre-trained] Warnow catchment (Germany)',
-        # '[Pre-trained] Leba catchment (Poland)',
+        # '[Pre-trained] Łeba catchment (Poland)',
         # '[Pre-trained] Kyroenjoki catchment (Finland)',
         # '[Pre-trained] Berze catchment (Latvia)',
         # '[Pre-trained] Kaevlingean catchment (Sweden)',
@@ -83,7 +83,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
     ]
     REGION_TO_PREFIX = {
         '[Pre-trained] Warnow catchment (Germany)': 'Warnow',
-        '[Pre-trained] Leba catchment (Poland)': 'Leba',
+        '[Pre-trained] Łeba catchment (Poland)': 'Łeba',
         '[Pre-trained] Kyroenjoki catchment (Finland)': 'Kyroenjoki',
         '[Pre-trained] Berze catchment (Latvia)': 'Berze',
         '[Pre-trained] Kaevlingean catchment (Sweden)': 'Kaevlingean',
