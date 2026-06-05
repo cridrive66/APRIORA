@@ -20,6 +20,9 @@ about=This plugin contains a series of tools divided into two subgroups: Hydro-M
     OSGeo4W Shell and run: python -m pip install scikit-learn
     (for Windows see: https://landscapearchaeology.org/2018/installing-python-packages-in-qgis-3-for-windows/).
 
+    Co-funded by the European Union (ERDF), this #MadeWithInterreg project helps to remove pollutants from our waters. 
+    Project website: https://interreg-baltic.eu/project/apriora/
+
 tracker=https://github.com/cridrive66/APRIORA/issues
 repository=https://github.com/cridrive66/APRIORA
 # End of mandatory metadata
