@@ -13,11 +13,10 @@ email=cristiano.guidi2@uni-rostock.de
 
 about=This plugin contains a series of tools divided into two subgroups: Hydro-Module and API emission.
     Hydro-Module -> useful to estimate annual mean flow and annual mean low flow in ungauged subcatchments.
-    API emission -> calculate the load of API from waste water treatment plants and their concentration in the river network.
-    Finally, a risk assessment is performed.
+    API emission -> calculate the load of API from waste water treatment plants and their concentration in the river network. Finally, a risk assessment is performed.
     External dependencies: requires the Python libraries 'numpy', 'pandas' and 'scikit-learn'.
-    numpy is typically pre-installed with QGIS. To install scikit-learn and pandas, open the
-    OSGeo4W Shell and run: python -m pip install pandas scikit-learn
+    'numpy' is typically pre-installed with QGIS. To install 'pandas' and 'scikit-learn', open the OSGeo4W Shell and run:
+    python -m pip install pandas scikit-learn
     (for Windows see: https://landscapearchaeology.org/2018/installing-python-packages-in-qgis-3-for-windows/).
 
     Co-funded by the European Union (ERDF), this #MadeWithInterreg project helps to remove pollutants from our waters. 
@@ -30,7 +29,7 @@ repository=https://github.com/cridrive66/APRIORA
 # Recommended items:
 
 hasProcessingProvider=yes
-changelog=1.0.1 - updated metadata.txt file and consumption values for Sweden in "5 - API parameter selection"
+changelog=1.0.1 - updated metadata.txt file and consumption values for Sweden
 
 # Tags are comma separated with spaces allowed
 tags=water, catchment, flow estimation, river, pollutants, risk assessment, concentration, pharmaceutical
