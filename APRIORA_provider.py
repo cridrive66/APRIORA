@@ -32,7 +32,7 @@ __revision__ = '$Format:%H$'
 
 import os
 from qgis.core import QgsProcessingProvider
-from PyQt5.QtGui import QIcon 
+from PyQt5.QtGui import QIcon
 from .api_parameter_selection import APIParameterSelectionAlgorithm
 from .calculate_geofactors import CalculateGeofactors
 from .flow_estimation import CalculateFlow
@@ -43,9 +43,7 @@ from .accumulation import Accumulation
 from .risk_assessment import RiskAssessment
 
 
-
 class APRIORAProvider(QgsProcessingProvider):
-
     def __init__(self):
         """
         Default constructor.
