@@ -569,7 +569,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         )
         self.help_HH.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#wwtp-locations")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#pnec-values")
                 )
             )
 
@@ -582,7 +582,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         )
         self.help_AMR.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#pnec-values")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#pnec-values")
                 )
             )
 
@@ -599,7 +599,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.restoreButton_3.clicked.connect(self.load_wwtp_table)
         self.help_tab3.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html#custom-table")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#wwtp-locations")
                 )
             )
         if hasattr(self, "printButton"):
