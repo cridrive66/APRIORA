@@ -26,17 +26,10 @@ __author__ = 'Cristiano Guidi'
 __date__ = '2024-06-13'
 __copyright__ = '(C) 2024 by Cristiano Guidi'
 
-"""
-* Part of this file is adapted from WaterNetAnalyzer QGIS plugin 
-* Copyright (C) 2020 by Jannik Schilling
-* Licensed under the GNU General Public License v2.0
-"""
-
 # This will get replaced with a git SHA1 when you do a git archive
 
 __revision__ = '$Format:%H$'
 
-import processing
 import os
 import pandas as pd
 import numpy as np
@@ -54,8 +47,13 @@ from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessingParameterEnum,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
-                       QgsVectorLayer,
-                       edit)
+                       QgsVectorLayer)
+
+"""
+* Part of this file is adapted from WaterNetAnalyzer QGIS plugin
+* Copyright (C) 2020 by Jannik Schilling
+* Licensed under the GNU General Public License v2.0
+"""
 
 
 class CalculateFlow(QgsProcessingAlgorithm):
@@ -133,16 +131,16 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 self.gaugedSubcatchments,
                 self.tr('Gauged subcatchments with geofactors'),
                 [QgsProcessing.TypeVectorPolygon],
-                defaultValue = QgsProject.instance().mapLayersByName("Gauged subcatch geofactors")[0].id() if QgsProject.instance().mapLayersByName("Gauged subcatch geofactors") else None
+                defaultValue=QgsProject.instance().mapLayersByName("Gauged subcatch geofactors")[0].id() if QgsProject.instance().mapLayersByName("Gauged subcatch geofactors") else None
             )
         )
-        
+
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.ungaugedSubcatchments,
                 self.tr('Ungauged subcatchments with geofactors'),
                 [QgsProcessing.TypeVectorPolygon],
-                defaultValue = QgsProject.instance().mapLayersByName("Ungauged subcatch geofactors")[0].id() if QgsProject.instance().mapLayersByName("Ungauged subcatch geofactors") else None
+                defaultValue=QgsProject.instance().mapLayersByName("Ungauged subcatch geofactors")[0].id() if QgsProject.instance().mapLayersByName("Ungauged subcatch geofactors") else None
             )
         )
 
@@ -151,7 +149,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 self.riverNetwork,
                 self.tr('Fixed river network'),
                 [QgsProcessing.TypeVectorLine],
-                defaultValue = QgsProject.instance().mapLayersByName("Fixed river network")[0].id() if QgsProject.instance().mapLayersByName("Fixed river network") else None
+                defaultValue=QgsProject.instance().mapLayersByName("Fixed river network")[0].id() if QgsProject.instance().mapLayersByName("Fixed river network") else None
             )
         )
 
@@ -187,15 +185,15 @@ class CalculateFlow(QgsProcessingAlgorithm):
         param_geofactors = QgsProcessingParameterEnum(
             self.selectedGeofactors,
             self.tr("Selected geofactors"),
-            options = self.geofactor_options,
-            defaultValue = list(range(len(self.geofactor_options))), # default is all the geofactors
-            allowMultiple = True
+            options=self.geofactor_options,
+            defaultValue=list(range(len(self.geofactor_options))),  # default is all the geofactors
+            allowMultiple=True
         )
 
-        #set it as advanced parameter
+        # set it as advanced parameter
         param_geofactors.setFlags(param_geofactors.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(param_geofactors)
-        
+
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
         # algorithm is run in QGIS).
@@ -213,7 +211,6 @@ class CalculateFlow(QgsProcessingAlgorithm):
             )
         )
 
-
     def processAlgorithm(self, parameters, context, feedback):
         """
         Here is where the processing itself takes place.
@@ -221,8 +218,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # import libraries for flow estimation model
         # Standard library imports (always available)
         from math import sqrt
-        from collections import defaultdict
-        
+
         # scikit-learn imports
         try:
             from sklearn.model_selection import train_test_split
@@ -236,7 +232,6 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 "Please install it via OSGeo4W with the command 'python -m pip install scikit-learn'"
             )
             raise QgsProcessingException("Missing dependency: scikit-learn")
-        
 
         # Input data
         gaug_stat = self.parameterAsSource(parameters, self.gaugedSubcatchments, context)
@@ -248,15 +243,15 @@ class CalculateFlow(QgsProcessingAlgorithm):
         river_layer_original = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         region_idx = self.parameterAsEnum(parameters, self.regionSelection, context)
         selected_region = self.REGION_OPTIONS[region_idx]
-        
+
         def flow_estimation(flow, final_output):
-            
+
             if selected_region == 'Estimate from gauged_subcatch_geofactors.shp':
-                ##### FIRST PART OF THE MODEL
+                # FIRST PART OF THE MODEL
                 # Selecting input (predictors) and output
                 # In this part of the code, we select the number of predictors that will be used in the model and drop
-                # the not necessaries columns. The predictors are the geofactors previously calculated. 
-                # We also select the output and like we said before, there are 2 outputs of this model: "Mean Flow" and "Mean Low Flow". 
+                # the not necessaries columns. The predictors are the geofactors previously calculated.
+                # We also select the output and like we said before, there are 2 outputs of this model: "Mean Flow" and "Mean Low Flow".
 
                 # Get the field names
                 field_names = [field.name() for field in gaug_stat.fields()]
@@ -268,34 +263,33 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 for feature in features:
                     # collect the attribute values for each feature
                     data.append([feature[field] for field in field_names])
-                    
-                # create dataframe
-                gaug_stat_df = pd.DataFrame(data, columns = field_names)
 
-            
+                # create dataframe
+                gaug_stat_df = pd.DataFrame(data, columns=field_names)
+
                 # filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PrecYearly', 'PrecAugust']
                 # select number of features (predictors) and dependent variable
                 x = gaug_stat_df.filter(items=selected_geofactors)
                 feedback.setProgressText(f"\nDatabase columns: {x.columns} ")
-                
-                # normalise the flow for the subcatchment area
-                y = gaug_stat_df[flow]/gaug_stat_df["AREA_SC"].replace(0, np.nan) # avoid division by zero
 
-                ### Random Forest Regressor
-                ##### Split the data for calibration (train) and validation (test)
+                # normalise the flow for the subcatchment area
+                y = gaug_stat_df[flow]/gaug_stat_df["AREA_SC"].replace(0, np.nan)  # avoid division by zero
+
+                # Random Forest Regressor
+                # Split the data for calibration (train) and validation (test)
 
                 # prepare the data: divide into train and test set
                 # scale the data
                 scaler = StandardScaler()
                 x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.4, random_state=42)
-                x_train = scaler.fit_transform(x_train) 
+                x_train = scaler.fit_transform(x_train)
                 x_test = scaler.transform(x_test)
 
                 # initialize the model
                 model = RandomForestRegressor()
 
                 # model training
-                model.fit(x_train,y_train)
+                model.fit(x_train, y_train)
 
                 """
                 Part to un-comment related to save a trained model in the installation folder
@@ -309,9 +303,9 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 # file = os.path.join(save_dir, f"{catchment_name}_{flow}.pkl")
                 # # save
                 # joblib.dump({"model": model, "scaler": scaler}, file)
-                
-                ##### Calibration
-                # Here we work with the train dataset (x_train) to calibrate the model. 
+
+                # Calibration
+                # Here we work with the train dataset (x_train) to calibrate the model.
                 # After, we print the performance of the model through two metrics like RMSE and R^2.
 
                 # performance of the trained model
@@ -319,11 +313,11 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 # get the matching areas for y_train by preserving index
                 train_idx = y_train.index
                 area_train = gaug_stat_df.loc[train_idx, "AREA_SC"]
-        
+
                 # convert normalized flows back to total flows
                 y_train_total = y_train * area_train
                 y_train_pred_total = y_train_pred * area_train
-        
+
                 # evaluation
                 mse = mean_squared_error(y_train_total, y_train_pred_total)
                 rmse = sqrt(mse)
@@ -331,8 +325,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 feedback.setProgressText(f"\nCalibration {flow} RMSE: {rmse}")
                 feedback.setProgressText(f"Calibration {flow} R-squared: {r2}")
 
-                ##### Validation
-                # Now, we work with the test dataset (x_test) to validate the model and make estimation on new different data. 
+                # Validation
+                # Now, we work with the test dataset (x_test) to validate the model and make estimation on new different data.
                 # Like in the calibration, the performance of the model are evaluated by the metrics RMSE and R^2.
 
                 # prediction and evaluation
@@ -340,11 +334,11 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 # get the matching areas for y_train by preserving index
                 test_idx = y_test.index
                 area_test = gaug_stat_df.loc[test_idx, "AREA_SC"]
-        
+
                 # convert normalized flows back to total flows
                 y_test_total = y_test * area_test
                 y_pred_total = y_pred * area_test
-        
+
                 # evaluation
                 mse = mean_squared_error(y_test_total, y_pred_total)
                 rmse = sqrt(mse)
@@ -383,7 +377,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
                     if not os.path.exists(file_model):
                         feedback.reportError(f"Pre-trained model for {catchment_name}_{flow}.pkl not found.")
                         return
-                    
+
                     # load model + scaler
                     bundle = joblib.load(file_model)
                     model = bundle["model"]
@@ -391,8 +385,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
                     _avg_bundles = None
                     feedback.setProgressText(f"Using pre-trained {flow} model for {catchment_name}")
 
-            ##### SECOND PART OF THE MODEL
-            ### Estimate flow in ungauged subcatchments
+            # SECOND PART OF THE MODEL
+            # Estimate flow in ungauged subcatchments
             # Now it is time to run the model with the ungauged subcatchments and make an estimation of the flow.
             # First, we select the predictors of the model (geofactors) and we drop all the other columns that are not necessaries.
 
@@ -406,9 +400,9 @@ class CalculateFlow(QgsProcessingAlgorithm):
             for feature in features:
                 # collect the attribute values for each feature
                 data.append([feature[field] for field in field_names])
-                
+
             # create dataframe
-            warnow_subcatch_gf_df = pd.DataFrame(data, columns = field_names)
+            warnow_subcatch_gf_df = pd.DataFrame(data, columns=field_names)
 
             # select the geofactors for prediction
             x_catch = warnow_subcatch_gf_df.filter(items=selected_geofactors)
@@ -428,8 +422,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
             y_catch = y_catch_normalized * warnow_subcatch_gf_df["AREA_SC"]
 
             # THIRD PART OF THE MODEL
-            # The flow is estimated for each ungauged subcatchment and now it is time to store it in a new shapfile. 
-            # The goal of this part of the code is to create a new polygon file with 2 columns(+ geometry): 
+            # The flow is estimated for each ungauged subcatchment and now it is time to store it in a new shapfile.
+            # The goal of this part of the code is to create a new polygon file with 2 columns(+ geometry):
             # the gbk_lawa code of the ungauged subcatchment where the flow estimation was made,
             # the flow estimation + the geometry of the ungauged subcatchment.
 
@@ -448,14 +442,14 @@ class CalculateFlow(QgsProcessingAlgorithm):
             # add the new flow field
             if flow not in existing_fields:
                 final_output.addAttribute(QgsField(flow, QVariant.Double))
-                
+
             # update
             final_output.updateFields()
 
             # builf a lookup table of existing features by CATCH_ID
             # (typo intentionally kept)
             existing_features = {f["CATCH_ID"]: f for f in final_output.getFeatures()}
-            
+
             # addition of features
             for row in output_df.itertuples():
                 catch_id = getattr(row, "CATCH_ID")
@@ -473,14 +467,13 @@ class CalculateFlow(QgsProcessingAlgorithm):
                     feature.setAttribute("CATCH_ID", catch_id)
                     feature.setAttribute(flow, flow_value)
                     final_output.addFeature(feature)
-                
+
             # saving changes
             final_output.commitChanges()
 
-        # create new shapefile     
+        # create new shapefile
         crs = warnow_subcatch_gf.sourceCrs()
         final_output = QgsVectorLayer("Polygon?crs={}".format(crs.authid()), "output test", "memory")
-        final_output_provider = final_output.dataProvider()
 
         flow_estimation("Mean_Flow", final_output)
         flow_estimation("M_Low_Flow", final_output)
@@ -553,7 +546,6 @@ class CalculateFlow(QgsProcessingAlgorithm):
         feats = [f for f in river_layer_original.getFeatures()]
         provider.addFeatures(feats)
 
-
         # calculate flow distribution in river sections
         flow_fields = ["Mean_Flow", "M_Low_Flow"]
         distribute_flow_to_rivers(final_output, river_layer, flow_fields, id_field="CATCH_ID")
@@ -574,8 +566,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
         id_field = "NET_ID"
         to_field = "NET_TO"
         calc_field = "Mean_Flow"
-        
-        idxId = waternet.fields().indexFromName(id_field) 
+
+        idxId = waternet.fields().indexFromName(id_field)
         idxTo = waternet.fields().indexFromName(to_field)
         idxCalc = waternet.fields().indexFromName(calc_field)
 
@@ -589,20 +581,20 @@ class CalculateFlow(QgsProcessingAlgorithm):
             f.id()
         ] for f in waternet.getFeatures()]
         DataArr = np.array(Data, dtype='object')
-        DataArr[np.where(DataArr[:,3] == None),3]=0
+        DataArr[np.equal(DataArr[:, 3], None), 3] = 0
         feedback.setProgressText(self.tr("Data loaded \n Calculating flow paths \n"))
 
         '''segments with numbers'''
-        calc_column = np.copy(DataArr[:,3])  # deep copy of column to do calculations on
+        calc_column = np.copy(DataArr[:, 3])  # deep copy of column to do calculations on
         calc_segm = np.where(calc_column > 0)[0].tolist()  # indices!
-        calc_segm = [i for i in calc_segm if (DataArr[i,1] != 'unconnected' and DataArr[i,2] != 'unconnected')]
-        DataArr[:,3] = 0 # set all to 0
+        calc_segm = [i for i in calc_segm if (DataArr[i, 1] != 'unconnected' and DataArr[i, 2] != 'unconnected')]
+        DataArr[:, 3] = 0  # set all to 0
 
         '''function to find next features in the net'''
-        def nextFtsCalc (MARKER2):
-            vtx_to = DataArr[np.where(DataArr[:,0] == MARKER2)[0].tolist(),2][0] # "to"-vertex of actual segment
-            rows_to = np.where(DataArr[:,1] == vtx_to)[0].tolist() # find rows in DataArr with matching "from"-vertices to vtx_to
-            unconnected_errors = [DataArr[x, 4] for x in rows_to if DataArr[x, 2]=='unconnected']  # this can only happen after manual editing
+        def nextFtsCalc(MARKER2):
+            vtx_to = DataArr[np.where(DataArr[:, 0] == MARKER2)[0].tolist(), 2][0]  # "to"-vertex of actual segment  # noqa: F821
+            rows_to = np.where(DataArr[:, 1] == vtx_to)[0].tolist()  # find rows in DataArr with matching "from"-vertices to vtx_to  # noqa: F821
+            unconnected_errors = [DataArr[x, 4] for x in rows_to if DataArr[x, 2] == 'unconnected']  # this can only happen after manual editing  # noqa: F821
             if len(unconnected_errors) > 0:
                 waternet.removeSelection()
                 waternet.selectByIds(unconnected_errors, waternet.SelectBehavior(1))
@@ -614,27 +606,27 @@ class CalculateFlow(QgsProcessingAlgorithm):
                     + to_field
                     + ') and run tool 1 \"Water Network Constructor\" again.'
                 )
-            return(rows_to)
+            return (rows_to)
 
         '''function to find flow path'''
-        def FlowPath (Start_Row, fp_amount):
-            MARKER=DataArr[Start_Row,0] #set MARKER to ID of the first segment
-            Weg = [Start_Row]    
-            i=0
-            while i!=len(DataArr):
-                next_rows = nextFtsCalc(MARKER)
-                if len(next_rows) > 1: # deviding flow path
+        def FlowPath(Start_Row, fp_amount):
+            MARKER = DataArr[Start_Row, 0]  # set MARKER to ID of the first segment  # noqa: F821
+            Weg = [Start_Row]
+            i = 0
+            while i != len(DataArr):  # noqa: F821
+                next_rows = nextFtsCalc(MARKER)  # noqa: F821
+                if len(next_rows) > 1:  # deviding flow path
                     calc_column[StartRow] = 0
-                    calc_column[next_rows] = calc_column[next_rows]+fp_amount/len(next_rows) # this can be changed to weightet separation later
+                    calc_column[next_rows] = calc_column[next_rows]+fp_amount/len(next_rows)  # this can be changed to weightet separation later
                     out = [Weg, next_rows]
                     break
-                if len(next_rows) == 1: # continuing flow path
+                if len(next_rows) == 1:  # continuing flow path
                     Weg = Weg + next_rows
-                    MARKER=DataArr[next_rows[0],0] # change MARKER to Id of next segment 
-                if len(next_rows) == 0: # end point
+                    MARKER = DataArr[next_rows[0], 0]  # change MARKER to Id of next segment  # noqa: F821
+                if len(next_rows) == 0:  # end point
                     out = [Weg]
                     break
-                i=i+1
+                i = i + 1
             return (out)
 
         total2 = len(calc_segm)
@@ -642,14 +634,14 @@ class CalculateFlow(QgsProcessingAlgorithm):
             if feedback.isCanceled():
                 break
             StartRow = calc_segm[0]
-            amount = calc_column[StartRow] # amount to add to flow path
-            calc_column[StartRow] = 0 #"delete" calculated amount from list (set 0)
-            Fl_pth = FlowPath(StartRow, amount) # get flow path of StartRow 
-            if len(Fl_pth)== 2:
-                calc_segm = calc_segm + Fl_pth[1] # if flow path devides add new segments to calc_segm
-            DataArr[Fl_pth[0],3] = DataArr[Fl_pth[0],3]+amount # Add the amount to the calculated flow path
-            calc_segm = calc_segm[1:] # delete used segment
-            calc_segm = list(set(calc_segm)) #delete duplicate values
+            amount = calc_column[StartRow]  # amount to add to flow path
+            calc_column[StartRow] = 0  # "delete" calculated amount from list (set 0)
+            Fl_pth = FlowPath(StartRow, amount)  # get flow path of StartRow
+            if len(Fl_pth) == 2:
+                calc_segm = calc_segm + Fl_pth[1]  # if flow path devides add new segments to calc_segm
+            DataArr[Fl_pth[0], 3] = DataArr[Fl_pth[0], 3] + amount  # Add the amount to the calculated flow path  # noqa: F821
+            calc_segm = calc_segm[1:]  # delete used segment
+            calc_segm = list(set(calc_segm))  # delete duplicate values
             feedback.setProgress((1-(len(calc_segm)/total2))*100)
 
         '''add new field'''
@@ -670,7 +662,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 break
             # set the value for the new field
             value_to_set = float(DataArr[i, 3])
-            #feedback.setProgressText(f"Setting feature {feature.id()} field {MQ_field_name} to {value_to_set}")
+            # feedback.setProgressText(f"Setting feature {feature.id()} field {MQ_field_name} to {value_to_set}")
 
             # set the new field
             feature.setAttribute(field_idx, value_to_set)
@@ -681,7 +673,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         Accumulate Mean Low Flow
         """
         calc_field = "M_Low_Flow"
-        
+
         idxCalc = waternet.fields().indexFromName(calc_field)
 
         '''load data from layer "waternet" '''
@@ -694,28 +686,28 @@ class CalculateFlow(QgsProcessingAlgorithm):
             f.id()
         ] for f in waternet.getFeatures()]
         DataArr = np.array(Data, dtype='object')
-        DataArr[np.where(DataArr[:,3] == None),3]=0
+        DataArr[np.equal(DataArr[:, 3], None), 3] = 0
         feedback.setProgressText(self.tr("Data loaded \n Calculating flow paths \n"))
 
         '''segments with numbers'''
-        calc_column = np.copy(DataArr[:,3])  # deep copy of column to do calculations on
+        calc_column = np.copy(DataArr[:, 3])  # deep copy of column to do calculations on
         calc_segm = np.where(calc_column > 0)[0].tolist()  # indices!
-        calc_segm = [i for i in calc_segm if (DataArr[i,1] != 'unconnected' and DataArr[i,2] != 'unconnected')]
-        DataArr[:,3] = 0 # set all to 0
+        calc_segm = [i for i in calc_segm if (DataArr[i, 1] != 'unconnected' and DataArr[i, 2] != 'unconnected')]
+        DataArr[:, 3] = 0  # set all to 0
 
         total2 = len(calc_segm)
         while len(calc_segm) > 0:
             if feedback.isCanceled():
                 break
             StartRow = calc_segm[0]
-            amount = calc_column[StartRow] # amount to add to flow path
-            calc_column[StartRow] = 0 #"delete" calculated amount from list (set 0)
-            Fl_pth = FlowPath(StartRow, amount) # get flow path of StartRow 
-            if len(Fl_pth)== 2:
-                calc_segm = calc_segm + Fl_pth[1] # if flow path devides add new segments to calc_segm
-            DataArr[Fl_pth[0],3] = DataArr[Fl_pth[0],3]+amount # Add the amount to the calculated flow path
-            calc_segm = calc_segm[1:] # delete used segment
-            calc_segm = list(set(calc_segm)) #delete duplicate values
+            amount = calc_column[StartRow]  # amount to add to flow path
+            calc_column[StartRow] = 0  # "delete" calculated amount from list (set 0)
+            Fl_pth = FlowPath(StartRow, amount)  # get flow path of StartRow
+            if len(Fl_pth) == 2:
+                calc_segm = calc_segm + Fl_pth[1]  # if flow path devides add new segments to calc_segm
+            DataArr[Fl_pth[0], 3] = DataArr[Fl_pth[0], 3] + amount  # Add the amount to the calculated flow path
+            calc_segm = calc_segm[1:]  # delete used segment
+            calc_segm = list(set(calc_segm))  # delete duplicate values
             feedback.setProgress((1-(len(calc_segm)/total2))*100)
 
         '''add new field'''
@@ -736,7 +728,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 break
             # set the value for the new field
             value_to_set = float(DataArr[i, 3])
-            #feedback.setProgressText(f"Setting feature {feature.id()} field {MNQ_field_name} to {value_to_set}")
+            # feedback.setProgressText(f"Setting feature {feature.id()} field {MNQ_field_name} to {value_to_set}")
 
             # set the new field
             feature.setAttribute(field_idx, value_to_set)
@@ -773,12 +765,12 @@ class CalculateFlow(QgsProcessingAlgorithm):
         out_fields.append(QgsField("flow_unit", QVariant.String))
 
         # save the layer
-        (sink_river, dest_id_river) = self.parameterAsSink(parameters, self.OUTPUT_river, context,
-                                               out_fields, river_network.wkbType(), river_network.sourceCrs())
-        
+        (sink_river, dest_id_river) = self.parameterAsSink(
+            parameters, self.OUTPUT_river, context, out_fields, river_network.wkbType(), river_network.sourceCrs())
+
         if sink_river is None:
             raise QgsProcessingException(self.tr("Failed to create river sink"))
-        
+
         # write features to the sink, injecting CATCH_TO value after CATCH_ID
         catch_id_idx_riv = waternet.fields().indexFromName("CATCH_ID")
         for feature in waternet.getFeatures():
@@ -792,7 +784,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             out_feat.setGeometry(feature.geometry())
             out_feat.setAttributes(attrs)
             sink_river.addFeature(out_feat, QgsFeatureSink.FastInsert)
-        
+
         """
         Accumulate Mean Flow and Mean Low Flow at subcatchment level
         """
@@ -824,7 +816,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 i
             ] for i, cid in enumerate(subcatch_order)]
             DataArr = np.array(Data_catch, dtype='object')
-            DataArr[np.where(DataArr[:, 3] == None), 3] = 0
+            DataArr[np.equal(DataArr[:, 3], None), 3] = 0
 
             calc_column = np.copy(DataArr[:, 3])
             calc_segm = np.where(calc_column > 0)[0].tolist()
@@ -870,8 +862,8 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 out_catch_fields.append(QgsField("CATCH_TO", QVariant.String))
         out_catch_fields.append(QgsField("flow_unit", QVariant.String))
 
-        (sink_catch, dest_id_catch) = self.parameterAsSink(parameters, self.OUTPUT_catch,
-        context, out_catch_fields, warnow_subcatch_gf.wkbType(), warnow_subcatch_gf.sourceCrs())
+        (sink_catch, dest_id_catch) = self.parameterAsSink(
+            parameters, self.OUTPUT_catch, context, out_catch_fields, warnow_subcatch_gf.wkbType(), warnow_subcatch_gf.sourceCrs())
 
         if sink_catch is None:
             raise QgsProcessingException(self.tr("Failed to create subcatchment sink"))
@@ -889,15 +881,11 @@ class CalculateFlow(QgsProcessingAlgorithm):
             new_feature.setAttributes(attrs)
             sink_catch.addFeature(new_feature)
 
-        
         # return the result
         return {
             self.OUTPUT_catch: dest_id_catch,
             self.OUTPUT_river: dest_id_river
             }
-
-        #return {}
-
 
     def name(self):
         """
@@ -932,7 +920,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         formatting characters.
         """
         return 'Hydro-Module'
-    
+
     def helpUrl(self):
         # Return a URL or local file path to your documentation
         return "https://hosting-apriora-manual.readthedocs.io/en/latest/hydro_module/flow_estimation_model.html"
@@ -942,4 +930,3 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
     def createInstance(self):
         return CalculateFlow()
-    

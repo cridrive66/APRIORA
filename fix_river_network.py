@@ -26,18 +26,10 @@ __author__ = 'Cristiano Guidi'
 __date__ = '2024-06-13'
 __copyright__ = '(C) 2024 by Cristiano Guidi'
 
-
-"""
-* Part of this file is adapted from WaterNetAnalyzer QGIS plugin 
-* Copyright (C) 2020 by Jannik Schilling
-* Licensed under the GNU General Public License v2.0
-"""
-
 # This will get replaced with a git SHA1 when you do a git archive
 
 __revision__ = '$Format:%H$'
 
-import os
 import processing
 from collections import Counter
 from PyQt5.QtCore import QVariant
@@ -64,6 +56,12 @@ from qgis.core import (QgsProcessingAlgorithm,
                        Qgis,
                        edit)
 
+"""
+* Part of this file is adapted from WaterNetAnalyzer QGIS plugin
+* Copyright (C) 2020 by Jannik Schilling
+* Licensed under the GNU General Public License v2.0
+"""
+
 
 class FixRiverNetwork(QgsProcessingAlgorithm):
 
@@ -84,7 +82,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             This tool preprocesses a river network and aligns it with subcatchment boundaries. \
             It assigns a unique identifier (NET_ID) to each river section and calculates \
             the downstream connectivity (NET_TO) by traversing the network from the outlet.
-            
+
             Steps performed:
             1. Simplify, snap, fix, and merge the river network lines.
             2. Extract vertices from both river and subcatchment layers.
@@ -93,21 +91,21 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             5. Assign each river section to a subcatchment via intersection (CATCH_ID).
             6. Traverse the network from the outlet point to assign NET_ID and NET_TO.
             7. Flip line directions so all segments flow toward the outlet.
-            
+
             Outputs:
             - Fixed river network: the river layer with NET_ID, NET_TO, and CATCH_ID fields.
             - Ungauged subcatchments: subcatchments that contain at least one river section.
-            
+
             Workflow:
             1. Select the subcatchment layer and the river network layer.
             2. Click on the map to specify the outlet point (downstream end of the network).
             3. Adjust the search radius if needed (advanced; default 0.025 map units).
             4. Click Run.
-            
+
             Note: Ensure the river network has no gaps and all sections are connected. Both layers must share the same CRS.
             """)
-    
-    #Init tool
+
+    # Init tool
     def initAlgorithm(self, config):
         """
         Here we define the inputs and output of the algorithm, along
@@ -120,7 +118,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 [QgsProcessing.TypeVectorPolygon]
             )
         )
-        
+
         self.addParameter(
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
@@ -139,7 +137,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         try:
             rad_type = Qgis.ProcessingNumberParameterType.Double
-        except:
+        except AttributeError:
             # for qgis prior to version 3.36
             rad_type = QgsProcessingParameterNumber.Double
         param_Radius = QgsProcessingParameterNumber(
@@ -246,6 +244,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'METHOD': 0,
             'TOLERANCE': 0.5,
             'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(simplified)
 
         if feedback.isCanceled():
             return {}
@@ -257,6 +256,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'TOLERANCE': 0.5,
             'BEHAVIOR': 7,
             'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(snapped)
 
         if feedback.isCanceled():
             return {}
@@ -266,11 +266,13 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'INPUT': snapped,
             'METHOD': 0,
             'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(fixed_snapped)
 
         feedback.setProgressText("Merging lines...")
         merged_lines = processing.run("native:mergelines", {
             'INPUT': fixed_snapped,
             'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(merged_lines)
 
         if feedback.isCanceled():
             return {}
@@ -284,16 +286,17 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 'OUTPUT': 'TEMPORARY_OUTPUT'},
                 context=context, feedback=feedback)["OUTPUT"],
             'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(vertices_river_layer)
         feedback.setProgressText(f"Number of features in vertices_river_layer: {vertices_river_layer.featureCount()}")
 
         # clean subcatchment original layer first
         feedback.setProgressText("\nClean subcatchment input file...")
         feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
-        
+
         subcatchments_layer_fixed = processing.run("native:fixgeometries", {
             'INPUT': processing.run("native:removenullgeometries", {
                 'INPUT': subcatchments_layer_original,
-                'REMOVE_EMPTY':True,
+                'REMOVE_EMPTY': True,
                 'OUTPUT': 'TEMPORARY_OUTPUT'},
                 context=context, feedback=feedback)["OUTPUT"],
             'METHOD': method,
@@ -325,17 +328,20 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'DISSOLVE': False,
             'SEPARATE_DISJOINT': False,
             'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(buffer)
 
         split_with_errors = processing.run("native:splitwithlines", {
             'INPUT': merged_lines,
             'LINES': buffer,
             'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(split_with_errors)
 
         difference = processing.run("native:difference", {
             'INPUT': split_with_errors,
             'OVERLAY': buffer,
             'OUTPUT': 'TEMPORARY_OUTPUT',
             'GRID_SIZE': None})["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(difference)
 
         split_river_layer = processing.run("native:snapgeometries", {
             'INPUT': difference,
@@ -343,6 +349,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'TOLERANCE': 0.05,
             'BEHAVIOR': 0,
             'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(split_river_layer)
 
         feedback.setProgressText(f"Number of features in split_river_layer: {split_river_layer.featureCount()}")
 
@@ -356,6 +363,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'METHOD': method,
             'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(fixed_layer)
         feedback.setProgressText(f"Number of features in fixed_layer: {fixed_layer.featureCount()}")
 
         feedback.setProgressText("\nRemoving null geometries...")
@@ -364,26 +372,27 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'REMOVE_EMPTY': True,
             'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(non_null_geom_layer)
         feedback.setProgressText(f"Number of features in non_null_geom_layer: {non_null_geom_layer.featureCount()}")
 
         # get all points from the subcatchment vertices layer
         vertices_catch_points = [
-            QgsPointXY(feature.geometry().asPoint()) 
+            QgsPointXY(feature.geometry().asPoint())
             for feature in vertices_catch_layer.getFeatures()
             if feature.hasGeometry() and feature.geometry().isGeosValid()
             ]
 
         feedback.setProgressText("\nAligning river vertices...")
-        
+
         # threshold distance for snapping river vertices to subcatchment vertices
         threshold = 1
-        
+
         # build a spatial index
         spatial_index = QgsSpatialIndex()
         vertex_map = {}
 
         for vertex in vertices_catch_points:
-            point_id = len(vertex_map) # unique ID for the spatial index
+            point_id = len(vertex_map)  # unique ID for the spatial index
             vertex_map[point_id] = vertex
 
             # create feature and set ID and geometry
@@ -391,7 +400,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             feature.setId(point_id)
             feature.setGeometry(QgsGeometry.fromPointXY(vertex))
             spatial_index.addFeature(feature)
-        
+
         # iterate over river features and snap start/end vertices to subcatchment vertices
         features_to_update = []
         for feature in non_null_geom_layer.getFeatures():
@@ -421,15 +430,15 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                     new_geom = QgsGeometry.fromPolylineXY(points)
                     feature.setGeometry(new_geom)
                     features_to_update.append(feature)
-            
+
         # apply updates in batch mode
         with edit(non_null_geom_layer):
             for feature in features_to_update:
                 non_null_geom_layer.updateFeature(feature)
 
         feedback.setProgressText(f"\nNumber of features in non_null_geom_layer after editing: {non_null_geom_layer.featureCount()}")
-        #QgsProject.instance().addMapLayer(non_null_geom_layer)
-        
+        # QgsProject.instance().addMapLayer(non_null_geom_layer)
+
         # identify invalid geometries before starting the intersection process
         feedback.setProgressText("\nChecking for invalid geometries...")
         invalid_features = []
@@ -438,7 +447,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 invalid_features.append(feature)
 
         if invalid_features:
-            feedback.reportError(f"Found {len(invalid_features)} invalid geometries!", fatalError = False)
+            feedback.reportError(f"Found {len(invalid_features)} invalid geometries!", fatalError=False)
 
             # create a new memory layer for invalid features
             invalid_layer = QgsVectorLayer("LineString?crs=" + non_null_geom_layer.crs().authid(), "Invalid Geometries", "memory")
@@ -454,9 +463,9 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             # add the layer to the QGIS map
             QgsProject.instance().addMapLayer(invalid_layer)
 
-            feedback.reportError("Invalid geometries have been added to the map. Please fix them and rerun the process.", fatalError = True)
+            feedback.reportError("Invalid geometries have been added to the map. Please fix them and rerun the process.", fatalError=True)
             raise QgsProcessingException("Invalid geometries detected. Check the 'Invalid Geometries' layer.")
-        
+
         # in "non null geom" there are several features with length of 0 or very close to 0. Let's remove them before the intersection
         min_length_threshold = 0.01
 
@@ -476,14 +485,14 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 non_null_geom_layer.dataProvider().deleteFeatures(features_to_delete)
                 feedback.setProgressText(f"\nDeleted {len(features_to_delete)} short features below {min_length_threshold}.")
 
-        
         # fix geometries again after vertex snapping
         feedback.setProgressText(f"\nFixing the geometries of the file with method [{method}]...")
         again_fixed_layer = processing.run("native:fixgeometries", {
-            'INPUT':non_null_geom_layer,
-            'METHOD':method,
-            'OUTPUT':'TEMPORARY_OUTPUT'},
+            'INPUT': non_null_geom_layer,
+            'METHOD': method,
+            'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(again_fixed_layer)
 
         # create a copy of subcatchments and add CATCH_ID (starting from 100)
         crs = subcatchments_layer_fixed.crs().authid()
@@ -517,7 +526,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
 
         # delete mistakes of river sections that are wrongly crossing the subcatchment
         # define the threshold length
-        threshold_length = 0.05 
+        threshold_length = 0.05
 
         # prepare to edit the layer
         with edit(intersection_layer):
@@ -534,7 +543,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             if features_to_delete:
                 intersection_layer.dataProvider().deleteFeatures(features_to_delete)
                 feedback.pushInfo(f"\nDeleted {len(features_to_delete)} short features below {threshold_length}.")
-        
+
         dissolve_layer = intersection_layer
 
         # build a mapping from feature ID to sequential NET_ID
@@ -546,7 +555,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         flip_opt = 0  # 0 = flip according to flow direction
 
         sp_index = QgsSpatialIndex(dissolve_layer.getFeatures())
-        dissolve_fields = dissolve_layer.fields()  
+        dissolve_fields = dissolve_layer.fields()
 
         feedback.pushInfo(f"\nUsing outlet point: {outlet_point.x()}, {outlet_point.y()}")
 
@@ -613,7 +622,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             finished_ids
         ):
             """
-            :param int cd_id 
+            :param int cd_id
             :param QgsGeometry (polygon or point) search_geom
             :param dict finished_segm
             :param int current_id
@@ -703,7 +712,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             out_marker
         ]
         finished_ids.append(first_ft_data[2])
-        
+
         '''find connecting vertex of (first) first_ft_data, add to flip_list if conn_vert is not vert1'''
         connected_list_0 = get_connected_list(
             first_ft_data[0],  # vertex0
@@ -724,13 +733,13 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         # remove none
         connected_list_0 = [f for f in connected_list_0 if f]
         connected_list_1 = [f for f in connected_list_1 if f]
-        
+
         if len(connected_list_1) > 0:  # last vertex connecting
             if len(connected_list_0) > 0:  # both vertices connecting
                 feedback.reportError(
                     self.tr(
                         'The outlet segment (id == {0}) connects two segments on both ends.'
-                        +' Please choose another segment or add a single outlet segment.'
+                        + 'Please choose another segment or add a single outlet segment.'
                     ).format(first_ft_data[2]))
                 raise QgsProcessingException()
             else:
@@ -738,18 +747,18 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 connected_list = connected_list_1
 
         else:  # first vertex connecting
-            connected_list = connected_list_0  
+            connected_list = connected_list_0
         current_id = start_f_id
-        
+
         '''loop: while still connected features, add to finished_segm'''
         while True:
             if feedback.isCanceled():
-                print('finished so far: '+ str(finished_ids))
-                print('current id'+ str(current_id))
+                print('finished so far: ' + str(finished_ids))
+                print('current id' + str(current_id))
                 break
 
             if len(connected_list) == 0:
-                if len(to_do_list)==0:
+                if len(to_do_list) == 0:
                     netw_dict["network"] = finished_ids
                     break
                 else:
@@ -761,7 +770,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 current_id, connecting_point = connected_list[0]
                 to_do_list = to_do_list + connected_list[1:]
 
-           
             # get list of next connected features
             connected_list = get_connected_list(
                 connecting_point,
@@ -774,17 +782,15 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             # remove none
             connected_list = [f for f in connected_list if f]
 
-        
         '''feedback for circles'''
-        if len(circ_list)>0:
+        if len(circ_list) > 0:
             circ_dict = Counter(tuple(sorted(lst)) for lst in circ_list)
             circ_list_out = [f_ids for f_ids, counted in circ_dict.items() if counted > 1]
-            if len(circ_list_out)>0:
+            if len(circ_list_out) > 0:
                 feedback.pushWarning("\nWarning: Circle closed at NET_ID = ")
                 for f_ids in circ_list_out:
                     net_ids = [finished_segm[f_id][0] for f_id in f_ids if f_id in finished_segm]
                     feedback.pushWarning(self.tr('{0}, ').format(", ".join(net_ids)))
-
 
         '''sink definition'''
         (sink, dest_id) = self.parameterAsSink(
@@ -800,14 +806,13 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             all_visited_ids = [f_id for id_list in netw_dict.values() for f_id in id_list]
             flip_list = [f_id for f_id in all_visited_ids if f_id not in flip_list]
 
-            
         '''add features to sink'''
         features = dissolve_layer.getFeatures()
         for i, feature in enumerate(features):
             if feedback.isCanceled():
-                break # Stop the algorithm if cancel button has been clicked
+                break  # Stop the algorithm if cancel button has been clicked
             old_f_id = feature.id()
-            outFt = QgsFeature() # Add a feature
+            outFt = QgsFeature()  # Add a feature
             if flip_opt == 0 or flip_opt == 2:
                 if old_f_id in flip_list:
                     flip_geom = feature.geometry()
@@ -851,7 +856,6 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             self.OUTPUT_ungauged: dest_id_ungauged
             }
 
-
     def name(self):
         """
         Returns the algorithm name, used for identifying the algorithm. This
@@ -885,7 +889,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         formatting characters.
         """
         return 'Hydro-Module'
-    
+
     def helpUrl(self):
         # Return a URL or local file path to your documentation
         return "https://hosting-apriora-manual.readthedocs.io/en/latest/hydro_module/fix_river.html"

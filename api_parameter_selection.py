@@ -36,8 +36,8 @@ from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.PyQt import uic, QtWidgets
 from qgis.core import (
     QgsProcessingAlgorithm,
-    QgsProject, 
-    QgsMapLayer, 
+    QgsProject,
+    QgsMapLayer,
     QgsVectorLayer,
     QgsWkbTypes
 )
@@ -69,23 +69,21 @@ class APIParameterSelectionAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return self.tr("""
-            This tool allows you to configure and select Active Pharmaceutical Ingredients (APIs) \
+            This tool allows you to configure and select Active Pharmaceutical Ingredients (APIs)\
             to be used in the emission load calculations.
-            
+
             Features:
             - Select APIs and their associated parameters from the consumption database
             - Customize consumption data, removal rates, and PNEC values
             - Create custom datasets specific to your study area
             - Configure a custom WWTP table for emission load calculations
-            
+
             Tabs:
             1. Consumption Data - Select APIs and their consumption rates
             2. Removal Rates - Configure technical class-specific removal rates
             3. PNEC Values - Set Predicted No Effect Concentrations for risk assessment
             4. WWTP locations - Create a custom WWTP table with your selected APIs
-            
-            
-            IMPORTANT: This tool must be run BEFORE using the '6 - Emission Loads' tool. \
+            IMPORTANT: This tool must be run BEFORE using the '6 - Emission Loads' tool.\
             The selections made here will be used by the emission loads calculation.
         """)
 
@@ -103,18 +101,18 @@ class APIParameterSelectionAlgorithm(QgsProcessingAlgorithm):
         try:
             # Get the main QGIS window
             from qgis.utils import iface
-            
+
             # Create and show the dialog (now in same file)
             dialog = ConsumptionSelectionDialog(iface.mainWindow())
-            result = dialog.exec_()
-            
+            dialog.exec_()
+
             feedback.pushInfo("API Parameter Selection tool opened and closed.")
-            
+
         except Exception as e:
             feedback.reportError(f"Error opening API Parameter Selection: {str(e)}")
             import traceback
             traceback.print_exc()
-        
+
         return {}
 
     def helpUrl(self):
@@ -309,11 +307,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # Auto-propagate substances across the three PNEC sub-tables
         self._propagate_pnec_substances()
         self.pnec_modified = False
-    
+
     def _propagate_pnec_substances(self):
         """
         Ensure every API name that appears in any PNEC sub-table also
-        appears in the other two (with empty values).  Does NOT touch
+        appears in the other two (with empty values). Does NOT touch
         Removal Rates or Consumption.
         """
         era_apis = set(self.df_ERA["API name"].unique())
@@ -322,9 +320,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         all_apis = era_apis | hh_apis | amr_apis
 
         changed = False
-        for df_attr, current_apis in [("df_ERA", era_apis),
-                                       ("df_HH", hh_apis),
-                                       ("df_AMR", amr_apis)]:
+        for df_attr, current_apis in [
+            ("df_ERA", era_apis),
+            ("df_HH", hh_apis),
+            ("df_AMR", amr_apis)
+        ]:
             missing = all_apis - current_apis
             if not missing:
                 continue
@@ -351,7 +351,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         self.save_current_tab()
         self.save_field_selection()
         self.close()
-    
+
     def get_dataset_path(self, original_filename, custom_filename):
         """
         Return the path to the dataset
@@ -366,7 +366,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             return custom_path, True    # True = custom file is being used
         else:
             return original_path, False
-        
+
     def load_selection_from_file(self):
         plugin_dir = os.path.dirname(__file__)
         file_path = os.path.join(plugin_dir, "user_selection.txt")
@@ -426,7 +426,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     def load_table(self, df, table_view):
         """
         Load dataframe to specified table view
-        
+
         df: pandas DataFrame
         table_view: Target QTableView object
         """
@@ -440,14 +440,13 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                     item = QStandardItem(str(val))
                     items.append(item)
                 model.appendRow(items)
-            
+
             # set the table model
             table_view.setModel(model)
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not load CSV data: {e}")
-    
-    
+
     def __init__(self, parent=None):
         """Constructor."""
         super(ConsumptionSelectionDialog, self).__init__(parent)
@@ -531,7 +530,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                 QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#consumption-data")
                 )
             )
-        
+
         # tab 2 - Removal rate
         self.addButton_tab2.clicked.connect(lambda: self.add_row_to_table(self.RRTableView))
         self.removeButton_tab2.clicked.connect(lambda: self.remove_selected_row(self.RRTableView))
@@ -608,10 +607,12 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # Tab 1 - Consumption export/import menu
         if hasattr(self, "exportMenuButton_tab1"):
             menu1 = QMenu(self)
-            menu1.addAction(QAction("Export table (for sharing only)", self,
+            menu1.addAction(QAction(
+                "Export table (for sharing only)", self,
                 triggered=lambda: self._export_table_for_sharing(
                     self.excelTableView, "consumption_sharing.csv")))
-            menu1.addAction(QAction("Import external consumption table", self,
+            menu1.addAction(QAction(
+                "Import external consumption table", self,
                 triggered=self._import_external_consumption))
             self.exportMenuButton_tab1.setMenu(menu1)
             self.exportMenuButton_tab1.setPopupMode(
@@ -621,10 +622,12 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # Tab 2 - Removal rate export/import menu
         if hasattr(self, "exportMenuButton_tab2"):
             menu2 = QMenu(self)
-            menu2.addAction(QAction("Export table (for sharing only)", self,
+            menu2.addAction(QAction(
+                "Export table (for sharing only)", self,
                 triggered=lambda: self._export_table_for_sharing(
                     self.RRTableView, "removal_rates_sharing.csv")))
-            menu2.addAction(QAction("Import external removal rate table", self,
+            menu2.addAction(QAction(
+                "Import external removal rate table", self,
                 triggered=self._import_external_rr))
             self.exportMenuButton_tab2.setMenu(menu2)
             self.exportMenuButton_tab2.setPopupMode(
@@ -648,9 +651,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # Restore saved field selections (layer + ID/Name/TC combos)
         self.load_field_selection()
-
-
-
 
     """
     Tab 1 - Consumption data
@@ -757,7 +757,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     def remove_selected_row(self, table_view):
         model = table_view.model()
         selection = table_view.selectionModel().selectedRows()
-        for index in sorted(selection, reverse = True):
+        for index in sorted(selection, reverse=True):
             model.removeRow(index.row())
         # Set modification flag based on which table was modified
         if table_view == self.excelTableView:
@@ -778,13 +778,13 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             row_data = [model.index(row, col).data() for col in range(model.columnCount())]
             data.append(row_data)
 
-        df = pd.DataFrame(data, columns = headers)
+        df = pd.DataFrame(data, columns=headers)
 
         # create a temp file and store path
         plugin_dir = os.path.dirname(__file__)
         custom_dir = os.path.join(plugin_dir, "datasets/custom_dataset")
         os.makedirs(custom_dir, exist_ok=True)
-        
+
         temp_file = os.path.join(custom_dir, f"{name}.csv")
         df.to_csv(temp_file, index=False)
         return temp_file
@@ -802,21 +802,16 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         try:
             # Extract current API names from consumption table (from self.df)
             consumption_apis = set(self.df["API name"].unique())
-            
+
             # Get API names from removal rates table
             removal_apis = set(self.df_RR["API name"].unique())
-            
-            # Get API names from PNEC tables
-            era_apis = set(self.df_ERA["API name"].unique())
-            hh_apis = set(self.df_HH["API name"].unique())
-            amr_apis = set(self.df_AMR["API name"].unique())
-            
+
             # APIs to add (in consumption but not in removal/PNEC)
             apis_to_add = consumption_apis - removal_apis
-            
+
             # APIs to remove from removal rates (not in consumption anymore)
             apis_to_remove_removal = removal_apis - consumption_apis
-            
+
             # Add missing APIs to removal rates table
             if apis_to_add:
                 for api_name in apis_to_add:
@@ -833,11 +828,11 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                             new_row[col] = ""
                     # Append to dataframe
                     self.df_RR = pd.concat([self.df_RR, pd.DataFrame([new_row])], ignore_index=True)
-            
+
             # Remove APIs from removal rates table
             if apis_to_remove_removal:
                 self.df_RR = self.df_RR[~self.df_RR["API name"].isin(apis_to_remove_removal)].reset_index(drop=True)
-            
+
             # Add only genuinely new APIs to all three PNEC tables
             # (use apis_to_add, not consumption - pnec, to avoid adding
             #  existing consumption substances that were never in a PNEC table)
@@ -852,7 +847,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                                 new_row[col] = ""
                         df_pnec = pd.concat([df_pnec, pd.DataFrame([new_row])], ignore_index=True)
                     setattr(self, df_attr, df_pnec)
-            
+
             # PNEC tables are NOT pruned — users may add PNEC-only substances
             # that don't appear in the consumption table.
 
@@ -866,7 +861,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                     if country and country not in existing_hh_countries:
                         self.df_HH[country] = ""
                         hh_changed = True
-            
+
             # Reload tables and persist propagated changes to CSV
             if apis_to_add or apis_to_remove_removal:
                 self.load_table(self.df_RR, self.RRTableView)
@@ -886,10 +881,10 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                     idx = self.CountrycomboBox.findText(current)
                     if idx >= 0:
                         self.CountrycomboBox.setCurrentIndex(idx)
-                
+
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Could not automatically propagate substances: {e}\nYou may need to manually add substances to Removal Rates and PNEC tables.")
-    
+
     def handle_save_consumption(self):
         # Validate mandatory fields before saving
         model = self.excelTableView.model()
@@ -924,7 +919,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # Reset modification flag
         self.consumption_modified = False
 
-
     def restore_original(self, original_filename, custom_filename, loader_func, table_view):
         """
         Delete custom dataset (if it exists) and reload the original.
@@ -957,7 +951,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
         QMessageBox.information(self, "Success", "Table restored to its original values.")
 
-    
     def save_selection_to_file(self):
         # get the plugin's directory path
         plugin_dir = os.path.dirname(__file__)
@@ -976,7 +969,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             for selection in selected_items:
                 file.write(f"{selection}\n")
 
-
     """
     Tab 2 - Removal rate
     """
@@ -986,7 +978,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         # Reset modification flag
         self.removal_modified = False
 
-    
     """
     Tab 3 - PNEC values
     """
@@ -994,11 +985,10 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     # ERA, HH, AMR table views are managed through the shared
     # add_row_to_table / remove_selected_row / restore_original methods.
 
-
     """
     Tab 4 - WWTP locations
     """
-    
+
     def populate_layer_combo(self):
         self.WWTPcomboBox.clear()
         layers = [layer for layer in QgsProject.instance().mapLayers().values() if layer.type() == QgsMapLayer.VectorLayer and layer.geometryType() == QgsWkbTypes.PointGeometry]
@@ -1034,14 +1024,13 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             id_field = self.IDcomboBox.currentText()
             name_field = self.NamecomboBox.currentText()
             tc_field = self.TCcomboBox.currentText()
-            
 
             if not id_field or not name_field or not tc_field:
                 QMessageBox.warning(self, "Missing Field", "Please select all fields.")
                 return
 
             model = QStandardItemModel()
-            
+
             # get all selected API combinations from the list widget in tab 1
             # format: "API name, year, country, region, Excreted emission value"
             selections = []
@@ -1074,7 +1063,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                     tech_class = None
                 tech_item = QStandardItem(str(tech_class))
                 api_items.append(tech_item)
-                
+
                 # add each API value from the stored selection
                 for sel in selections:
                     api_value = sel[4] if len(sel) > 4 else ""
@@ -1095,7 +1084,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                                 removal_val = ""
                     rr_item = QStandardItem(str(removal_val))
                     api_items.append(rr_item)
-                
+
                 for item in (id_item, name_item, tech_item):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 model.appendRow(api_items)
@@ -1255,7 +1244,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not export PNEC table:\n{e}")
 
-
     def _validate_csv_columns(self, df, required_cols, context_name):
         """Return (True, '') if df has all required_cols, else (False, error message)."""
         missing = [c for c in required_cols if c not in df.columns]
@@ -1355,7 +1343,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         This prevents users from accidentally losing their modifications.
         """
         modified_tabs = []
-        
+
         # Check which tabs have unsaved changes
         if self.consumption_modified:
             modified_tabs.append(("Consumption Data (Tab 1)", self.handle_save_consumption))
@@ -1363,7 +1351,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             modified_tabs.append(("Removal Rates (Tab 2)", self.handle_save_rr))
         if self.pnec_modified:
             modified_tabs.append(("PNEC Values (Tab 3)", self.handle_save_pnec))
-        
+
         # If there are unsaved changes, prompt user for each tab
         if modified_tabs:
             tabs_list = "\n".join([f"  \u2022 {tab[0]}" for tab in modified_tabs])
@@ -1375,7 +1363,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             msg_box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
             msg_box.setDefaultButton(QMessageBox.Save)
             reply = msg_box.exec_()
-            
+
             if reply == QMessageBox.Cancel:
                 # Cancel close event
                 event.ignore()
@@ -1395,9 +1383,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                         if error_reply == QMessageBox.No:
                             event.ignore()
                             return
-        
+
         # Persist field combo selections
         self.save_field_selection()
         # Allow close event to proceed
         event.accept()
-
