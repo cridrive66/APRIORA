@@ -59,7 +59,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
     OUTPUT = 'OUTPUT'
 
     def shortHelpString(self):
-        return self.tr(""" 
+        return self.tr("""
             This tool calculates the load of previously selected APIs (Active Pharmaceutical Ingredients) at each WWTP \
             (Waste Water Treatment Plant) within a catchment.
             IMPORTANT: Before using this tool, you MUST first run the '5 - API parameter selection' tool and click \
@@ -87,17 +87,17 @@ class EmissionLoads(QgsProcessingAlgorithm):
             QgsProcessingParameterField(
                 self.connInh,
                 self.tr("Connected inhabitant field"),
-                parentLayerParameterName = self.emissionPoints,  
-                type = QgsProcessingParameterField.Any,
+                parentLayerParameterName=self.emissionPoints,
+                type=QgsProcessingParameterField.Any,
             )
         )
-        
+
         self.addParameter(
             QgsProcessingParameterField(
                 self.WWTPflow,
                 self.tr("WWTP annual effluent flow [m³/a]"),
-                parentLayerParameterName = self.emissionPoints,
-                type = QgsProcessingParameterField.Any,
+                parentLayerParameterName=self.emissionPoints,
+                type=QgsProcessingParameterField.Any,
                 optional=True
             )
         )
@@ -108,7 +108,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
                 self.apiTable,
                 description=self.tr('API Parameters Table'),
                 types=[QgsProcessing.TypeVector],
-                defaultValue = QgsProject.instance().mapLayersByName("API_parameters")[0].id() if QgsProject.instance().mapLayersByName("API_parameters") else None
+                defaultValue=QgsProject.instance().mapLayersByName("API_parameters")[0].id() if QgsProject.instance().mapLayersByName("API_parameters") else None
             )
         )
 
@@ -235,8 +235,6 @@ class EmissionLoads(QgsProcessingAlgorithm):
 
         return {self.OUTPUT: dest_id}
 
-    
-    
     def name(self):
         return '6 - Emission Loads'
 
@@ -248,7 +246,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
 
     def groupId(self):
         return 'API emission'
-    
+
     def helpUrl(self):
         # Return a URL or local file path to your documentation
         return "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Emission_Load.html"
