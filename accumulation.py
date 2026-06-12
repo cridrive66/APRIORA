@@ -524,7 +524,7 @@ class Accumulation(QgsProcessingAlgorithm):
                     row_idx = np.where(DataArr[:, 4] == fid)[0]
                     if row_idx.size > 0:
                         DataArr[row_idx[0], 3] = val
-            DataArr[np.where(DataArr[:, 3] is None), 3] = 0
+            DataArr[np.equal(DataArr[:, 3], None), 3] = 0
             calc_column = np.copy(DataArr[:, 3]).astype(float)
             DataArr[:, 3] = 0.0
 
@@ -1487,7 +1487,7 @@ class Accumulation(QgsProcessingAlgorithm):
                     row_idx = np.where(DataArr[:, 4] == fid)[0]
                     if row_idx.size > 0:
                         DataArr[row_idx[0], 3] = val
-            DataArr[np.where(DataArr[:, 3] is None), 3] = 0
+            DataArr[np.equal(DataArr[:, 3], None), 3] = 0
             calc_column = np.copy(DataArr[:, 3]).astype(float)
             DataArr[:, 3] = 0.0
 
