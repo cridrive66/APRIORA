@@ -302,6 +302,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             'METHOD': method,
             'OUTPUT': 'TEMPORARY_OUTPUT'},
             context=context, feedback=feedback)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(subcatchments_layer_fixed)
 
         # extract all vertices from the subcatchments, then deduplicate
         feedback.setProgressText("\nExtracting vertices from the subcatchments...")
