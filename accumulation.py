@@ -205,8 +205,8 @@ class Accumulation(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_dil,
-                self.tr('Dilution Ratio (requires Q_WWTP in Emission Loads from Tool 6)'),
-                QgsProcessing.TypeVectorPoint,
+                self.tr('Dilution Ratio'),
+                QgsProcessing.TypeVectorAnyGeometry,
                 optional=True,
                 createByDefault=False))
 
@@ -690,7 +690,7 @@ class Accumulation(QgsProcessingAlgorithm):
         # Calculate dilution ratio
         dil_result = self.calculate_dilution_ratio(
             parameters, context, feedback,
-            load_original, waternet, id_field, acc_MQ_field,
+            load_original, waternet, id_field, to_field, acc_MQ_field,
             is_polygon_network=True
         )
 
@@ -1718,7 +1718,7 @@ class Accumulation(QgsProcessingAlgorithm):
         # Calculate dilution ratio
         dil_result = self.calculate_dilution_ratio(
             parameters, context, feedback,
-            load_original, waternet, id_field, acc_MQ_field,
+            load_original, waternet, id_field, to_field, acc_MQ_field,
             is_polygon_network=False
         )
 
@@ -1932,80 +1932,84 @@ class Accumulation(QgsProcessingAlgorithm):
             load_original,
             waternet,
             id_field,
+            to_field,
             acc_MQ_field,
             is_polygon_network):
         """
-        Calculate dilution ratio for each emission point that has a Q_WWTP value.
-        Dilu_Ratio = (Q_WWTP + Q_riv) / Q_WWTP
-        where Q_riv is the accumulated mean flow of the upstream river section.
+        Accumulate WWTP effluent (Q_WWTP) downstream along the river network
+        and compute a per-section dilution ratio:
 
-        For line networks: finds the two closest sections, picks the one with the
-        smaller suffix letter (i.e. the upstream half).
-        For polygon networks: finds the polygon containing the point and reads its flow.
+        DR = max(0, (acc_Mean_annual - acc_Q_WWTP) / acc_Q_WWTP)
+
+        where:
+        - acc_Mean_annual: accumulated natural mean river flow converted to m³/a
+        - acc_Q_WWTP: accumulated WWTP effluent (m³/a) from all upstream WWTPs
+
+        Output geometry matches the river network (line or polygon).
+        Output fields: NET_ID, NET_TO, acc_Q_WWTP, acc_Mean (m³/a), unit, DR.
+        Q_WWTP is optional — if absent the output is skipped entirely.
         """
-        # Check if Q_WWTP field exists in the emission load layer
+        # Skip if Q_WWTP field not present in emission loads
         load_field_names = [f.name() for f in load_original.fields()]
         if 'Q_WWTP' not in load_field_names:
             feedback.pushInfo(
-                "\nQ_WWTP field not found in Emission Loads layer. Skipping dilution ratio calculation.")
+                "\nQ_WWTP field not found in Emission Loads layer. "
+                "Skipping dilution ratio calculation.")
             return {}
 
         feedback.pushInfo("\n=== Calculating Dilution Ratio ===\n")
 
-        # Build output fields: all fields from emission loads + Q_riv +
-        # Dilu_Ratio
+        # Define output fields — river network geometry, not point geometry
         dil_fields = QgsFields()
-        for f in load_original.fields():
-            dil_fields.append(QgsField(f.name(), f.type()))
-        dil_fields.append(QgsField('Q_riv', QVariant.Double))
-        dil_fields.append(QgsField('Dilu_Ratio', QVariant.Double))
+        dil_fields.append(QgsField(id_field, waternet.fields().field(id_field).type()))
+        dil_fields.append(QgsField(to_field, waternet.fields().field(to_field).type()))
+        dil_fields.append(QgsField('acc_Q_WWTP', QVariant.Double))
+        dil_fields.append(QgsField('acc_Mean', QVariant.Double))
+        dil_fields.append(QgsField('unit', QVariant.String))
+        dil_fields.append(QgsField('DR', QVariant.Double))
 
         (dil_sink, dil_dest_id) = self.parameterAsSink(
             parameters, self.OUTPUT_dil, context,
-            dil_fields, load_original.wkbType(), load_original.sourceCrs()
+            dil_fields, waternet.wkbType(), waternet.sourceCrs()
         )
 
         if dil_sink is None:
             feedback.pushWarning(
-                "\nDilution Ratio output is set to 'Skip output'. Results will not be saved.\n"
-            )
+                "\nDilution Ratio output is set to 'Skip output'. "
+                "Results will not be saved.\n")
             return {}
 
-        # Build spatial index on waternet (same approach as monitoring
-        # stations)
-        tolerance = 500
+        # ---- STEP 1: Assign Q_WWTP from emission points to their nearest section ----
+        tolerance = 500  # metres
         water_index = QgsSpatialIndex(waternet.getFeatures())
-        waternet_feat_dict = {
-            feat.id(): feat for feat in waternet.getFeatures()}
+        waternet_feat_dict = {feat.id(): feat for feat in waternet.getFeatures()}
+
+        # feature-id -> total Q_WWTP (m³/a) assigned to that section
+        section_q_wwtp = {}
 
         for em_feat in load_original.getFeatures():
-            q_wwtp = em_feat['Q_WWTP']
-            if q_wwtp is None or isinstance(
-                    q_wwtp, QVariant) and q_wwtp.isNull():
-                feedback.pushWarning(
-                    f"Skipping emission point {
-                        em_feat[0]}: Q_WWTP is NULL")
+            q_wwtp_raw = em_feat['Q_WWTP']
+            if q_wwtp_raw is None or (
+                    isinstance(q_wwtp_raw, QVariant) and q_wwtp_raw.isNull()):
                 continue
-            q_wwtp = float(q_wwtp)
+            try:
+                q_wwtp = float(q_wwtp_raw)
+            except (TypeError, ValueError):
+                continue
             if q_wwtp == 0:
-                feedback.pushWarning(
-                    f"Skipping emission point {
-                        em_feat[0]}: Q_WWTP is 0")
                 continue
 
             em_geom = em_feat.geometry()
             if em_geom is None:
                 continue
 
-            q_riv = None
+            chosen_fid = None
 
             if is_polygon_network:
-                # Find the polygon containing or closest to the emission point
+                # Polygon network: find the polygon containing or nearest to the point
                 search_rect = em_geom.boundingBox().buffered(tolerance)
                 candidate_ids = water_index.intersects(search_rect)
-
-                chosen_feat = None
-                min_distance = float('inf')
+                min_dist = float('inf')
 
                 for fid in candidate_ids:
                     wfeat = waternet_feat_dict.get(fid)
@@ -2013,30 +2017,37 @@ class Accumulation(QgsProcessingAlgorithm):
                         continue
                     wgeom = wfeat.geometry()
                     if wgeom.contains(em_geom):
-                        chosen_feat = wfeat
+                        chosen_fid = fid
                         break
                     dist = wgeom.distance(em_geom)
-                    if dist < min_distance and dist <= tolerance:
-                        min_distance = dist
-                        chosen_feat = wfeat
+                    if dist < min_dist and dist <= tolerance:
+                        min_dist = dist
+                        chosen_fid = fid
 
-                if chosen_feat is not None:
-                    q_riv = chosen_feat[acc_MQ_field]
+                if chosen_fid is None:
+                    try:
+                        nn_ids = water_index.nearestNeighbor(em_geom.asPoint(), 1)
+                        if nn_ids:
+                            wfeat = waternet_feat_dict.get(nn_ids[0])
+                            if wfeat and wfeat.geometry().distance(em_geom) <= tolerance:
+                                chosen_fid = nn_ids[0]
+                    except Exception:  # nosec B110
+                        pass  # nearest-neighbour lookup is best-effort
 
             else:
-                # Line network: find the two closest sections, pick the upstream one
-                # (smaller suffix letter = upstream half, same logic as monitoring stations)
+                # Line network: find the two closest sections and pick the downstream one
+                # (larger suffix letter = section starting at the discharge point)
                 search_rect = em_geom.boundingBox().buffered(tolerance)
                 candidate_ids = water_index.intersects(search_rect)
 
                 if len(candidate_ids) < 2:
                     try:
                         nn = water_index.nearestNeighbor(em_geom.asPoint(), 2)
+                        for x in nn:
+                            if x not in candidate_ids:
+                                candidate_ids.append(x)
                     except Exception:
-                        nn = []
-                    for x in nn:
-                        if x not in candidate_ids:
-                            candidate_ids.append(x)
+                        pass
 
                 candidates = []
                 for fid in candidate_ids:
@@ -2051,58 +2062,137 @@ class Accumulation(QgsProcessingAlgorithm):
 
                 if candidates:
                     candidates = sorted(candidates, key=lambda x: x[1])
-
-                    chosen_fid = None
                     if len(candidates) == 1:
                         chosen_fid = candidates[0][0]
                     else:
-                        f1 = waternet_feat_dict[candidates[0][0]]
-                        f2 = waternet_feat_dict[candidates[1][0]]
-                        id1 = str(f1[id_field])
-                        id2 = str(f2[id_field])
-                        base1 = ''.join(filter(str.isdigit, id1))
-                        base2 = ''.join(filter(str.isdigit, id2))
-                        if base1 == base2:
-                            # Same base section split at emission point -> pick
-                            # upstream (smaller suffix)
-                            suf1 = id1.replace(base1, "")
-                            suf2 = id2.replace(base2, "")
-                            chosen_fid = candidates[0][0] if suf1 <= suf2 else candidates[1][0]
+                        f1 = waternet_feat_dict.get(candidates[0][0])
+                        f2 = waternet_feat_dict.get(candidates[1][0])
+                        if f1 and f2:
+                            id1 = str(f1[id_field])
+                            id2 = str(f2[id_field])
+                            base1 = ''.join(filter(str.isdigit, id1))
+                            base2 = ''.join(filter(str.isdigit, id2))
+                            if base1 == base2:
+                                # Split section: pick downstream (larger suffix = after discharge)
+                                suf1 = id1.replace(base1, "")
+                                suf2 = id2.replace(base2, "")
+                                chosen_fid = (
+                                    candidates[0][0] if suf1 > suf2
+                                    else candidates[1][0])
+                            else:
+                                chosen_fid = candidates[0][0]
                         else:
                             chosen_fid = candidates[0][0]
 
-                    if chosen_fid is not None:
-                        chosen_feat = waternet_feat_dict[chosen_fid]
-                        q_riv = chosen_feat[acc_MQ_field]
-
-            if q_riv is None or (
-                isinstance(
-                    q_riv,
-                    QVariant) and q_riv.isNull()) or q_riv == 0:
-                feedback.pushWarning(
-                    f"No valid Q_riv for emission point {
-                        em_feat[0]}, skipping dilution ratio.")
-                q_riv_val = None
-                dilu_ratio = None
-            else:
-                q_riv_val = float(q_riv)
-                # Convert Q_riv from m³/s to m³/a to match Q_WWTP units
-                q_riv_annual = q_riv_val * 365.25 * 24 * 3600
-                dilu_ratio = (q_wwtp + q_riv_annual) / q_wwtp
+            if chosen_fid is not None:
+                section_q_wwtp[chosen_fid] = (
+                    section_q_wwtp.get(chosen_fid, 0.0) + q_wwtp)
                 feedback.pushInfo(
-                    f"Emission {em_feat[0]}: Q_WWTP={q_wwtp:.2f} m³/a, "
-                    f"Q_riv={q_riv_val:.4f} m³/s ({q_riv_annual:.2f} m³/a), "
-                    f"Dilu_Ratio={dilu_ratio:.4f}"
-                )
+                    f"Q_WWTP={q_wwtp:.2f} m³/a assigned to section "
+                    f"{waternet_feat_dict[chosen_fid][id_field]}")
 
-            # Create output feature with all emission fields + Q_riv +
-            # Dilu_Ratio
+        # ---- STEP 2: Build DataArr for downstream accumulation ----
+        idxId = waternet.fields().indexFromName(id_field)
+        idxTo = waternet.fields().indexFromName(to_field)
+
+        Data = []
+        for f in waternet.getFeatures():
+            fid = f.id()
+            q = float(section_q_wwtp.get(fid, 0.0))
+            Data.append([
+                str(f.attribute(idxId)),
+                str(f.attribute(idxId)),
+                str(f.attribute(idxTo)),
+                q,
+                fid
+            ])
+        DataArr = np.array(Data, dtype='object')
+        DataArr[np.equal(DataArr[:, 3], None), 3] = 0
+
+        calc_column = np.copy(DataArr[:, 3]).astype(float)
+        DataArr[:, 3] = 0.0
+        calc_segm = np.where(calc_column != 0)[0].tolist()
+
+        # ---- STEP 3: Accumulation functions ----
+        def nextFtsDR(marker):
+            rows = np.where(DataArr[:, 0] == marker)[0].tolist()
+            if not rows:
+                return []
+            vtx_to = DataArr[rows[0], 2]
+            return np.where(DataArr[:, 0] == vtx_to)[0].tolist()
+
+        def FlowPathDR(start_row, fp_amount):
+            marker = DataArr[start_row, 0]
+            weg = [start_row]
+            i = 0
+            while i != len(DataArr):
+                next_rows = nextFtsDR(marker)
+                if len(next_rows) > 1:
+                    calc_column[start_row] = 0
+                    calc_column[next_rows] = (
+                        calc_column[next_rows] + fp_amount / len(next_rows))
+                    out = [weg, next_rows]
+                    break
+                if len(next_rows) == 1:
+                    weg = weg + next_rows
+                    marker = DataArr[next_rows[0], 0]
+                if len(next_rows) == 0:
+                    out = [weg]
+                    break
+                i = i + 1
+            return out
+
+        # ---- STEP 4: Run downstream accumulation loop ----
+        total2 = len(calc_segm)
+        max_iterations = 10000
+        iteration = 0
+        while len(calc_segm) > 0 and iteration < max_iterations:
+            iteration += 1
+            if feedback.isCanceled():
+                break
+            start_row = calc_segm[0]
+            amount = calc_column[start_row]
+            calc_column[start_row] = 0
+            fl_pth = FlowPathDR(start_row, amount)
+            if len(fl_pth) == 2:
+                calc_segm = calc_segm + fl_pth[1]
+            DataArr[fl_pth[0], 3] = DataArr[fl_pth[0], 3] + amount
+            calc_segm = calc_segm[1:]
+            calc_segm = list(set(calc_segm))
+            if total2 > 0:
+                feedback.setProgress(int((1 - len(calc_segm) / total2) * 100))
+
+        # DataArr[:, 3] now holds accumulated Q_WWTP (m³/a) for each section
+
+        # ---- STEP 5: Write one output feature per river section ----
+        seconds_per_year = 365.25 * 24 * 3600
+        idx_acc_mean = waternet.fields().indexOf(acc_MQ_field)
+
+        for i, feat in enumerate(waternet.getFeatures()):
+            acc_q_wwtp = float(DataArr[i, 3])
+
+            # Convert acc_Mean from m³/s to m³/a
+            acc_mean_raw = feat[idx_acc_mean]
+            if acc_mean_raw is None or (
+                    isinstance(acc_mean_raw, QVariant) and acc_mean_raw.isNull()):
+                acc_mean_annual = None
+            else:
+                acc_mean_annual = float(acc_mean_raw) * seconds_per_year
+
+            # DR = max(0, (acc_Mean_annual − acc_Q_WWTP) / acc_Q_WWTP)
+            if acc_q_wwtp > 0 and acc_mean_annual is not None:
+                dr = max(0.0, (acc_mean_annual - acc_q_wwtp) / acc_q_wwtp)
+            else:
+                dr = None
+
             new_feat = QgsFeature(dil_fields)
-            new_feat.setGeometry(em_feat.geometry())
-            for f in load_original.fields():
-                new_feat[f.name()] = em_feat[f.name()]
-            new_feat['Q_riv'] = q_riv_val
-            new_feat['Dilu_Ratio'] = dilu_ratio
+            new_feat.setGeometry(feat.geometry())
+            new_feat[id_field] = feat[id_field]
+            new_feat[to_field] = feat[to_field]
+            new_feat['acc_Q_WWTP'] = acc_q_wwtp if acc_q_wwtp > 0 else None
+            new_feat['acc_Mean'] = acc_mean_annual
+            new_feat['unit'] = 'm\u00b3/a'
+            new_feat['DR'] = dr
             dil_sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
 
         feedback.pushInfo("Dilution ratio calculation completed.")
