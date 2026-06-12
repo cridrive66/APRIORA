@@ -26,19 +26,13 @@ __author__ = 'Cristiano Guidi'
 __date__ = '2024-06-13'
 __copyright__ = '(C) 2024 by Cristiano Guidi'
 
-"""
-* Part of this file is adapted from WaterNetAnalyzer QGIS plugin
-* Copyright (C) 2020 by Jannik Schilling
-* Licensed under the GNU General Public License v2.0
-"""
-
 # This will get replaced with a git SHA1 when you do a git archive
 
 __revision__ = '$Format:%H$'
 
+import processing
 import numpy as np
 import string
-import processing
 
 from qgis.core import (QgsFeature,
                        QgsFeatureRequest,
@@ -57,6 +51,12 @@ from qgis.core import (QgsFeature,
                        QgsVectorLayer,
                        QgsWkbTypes)
 from qgis.PyQt.QtCore import QCoreApplication, QVariant
+
+"""
+* Part of this file is adapted from WaterNetAnalyzer QGIS plugin
+* Copyright (C) 2020 by Jannik Schilling
+* Licensed under the GNU General Public License v2.0
+"""
 
 
 class Accumulation(QgsProcessingAlgorithm):
@@ -283,6 +283,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 'INPUT': load_original,
                 'TARGET_CRS': river_crs,
                 'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+            context.temporaryLayerStore().addMapLayer(load_original)
 
         # check if there are monitoring station points
         mon_field_names = []
@@ -297,6 +298,7 @@ class Accumulation(QgsProcessingAlgorithm):
                     'INPUT': mon_point,
                     'TARGET_CRS': river_crs,
                     'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+                context.temporaryLayerStore().addMapLayer(mon_point)
 
             load_field_names = set(f.name() for f in load_original.fields())
             mon_field_names = [
@@ -375,10 +377,8 @@ class Accumulation(QgsProcessingAlgorithm):
                             if dist <= tolerance:
                                 nearest_polygon = polygon_feat
                                 min_distance = dist
-                except Exception:
-                    pass
-
-            # Validate distance
+                except Exception:  # nosec B110
+                    pass  # nearest-neighbour lookup is best-effort; failure is non-fatal
             if nearest_polygon is None or (
                     min_distance > tolerance and not is_inside):
                 point_id = point_feat[0]
@@ -787,8 +787,8 @@ class Accumulation(QgsProcessingAlgorithm):
                                 dist = wfeat.geometry().distance(mon_geom)
                                 if dist <= tolerance:
                                     chosen_feat = wfeat
-                    except Exception:
-                        pass
+                    except Exception:  # nosec B110
+                        pass  # nearest-neighbour lookup is best-effort; failure is non-fatal
 
                 if chosen_feat is None:
                     feedback.pushWarning(
@@ -880,6 +880,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 'INPUT': load_original,
                 'TARGET_CRS': river_crs,
                 'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+            context.temporaryLayerStore().addMapLayer(load_original)
 
         # check if there are monitoring station points
         # if there are, they are merged with emission load points and snapped
@@ -897,6 +898,7 @@ class Accumulation(QgsProcessingAlgorithm):
                     'INPUT': mon_point,
                     'TARGET_CRS': river_crs,
                     'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+                context.temporaryLayerStore().addMapLayer(mon_point)
 
             # capture monitoring field names (those unique to monitoring layer)
             load_field_names = set(f.name() for f in load_original.fields())
