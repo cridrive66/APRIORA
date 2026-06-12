@@ -163,6 +163,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
         fields.append(QgsField(name_col, QVariant.String))
         if wwtp_flow_field:
             fields.append(QgsField('Q_WWTP', QVariant.Double))
+            fields.append(QgsField('unit', QVariant.String))
         for api in api_names:
             fields.append(QgsField(f"{api[:4]}[kg/a]", QVariant.Double))
 
@@ -205,6 +206,7 @@ class EmissionLoads(QgsProcessingAlgorithm):
             new_attrs = [feature[id_field], wwtp_name]
             if wwtp_flow_field:
                 new_attrs.append(wwtp_flow_val)
+                new_attrs.append('m\u00b3/a')
 
             for api in api_names:
                 try:
