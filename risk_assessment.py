@@ -381,10 +381,46 @@ class RiskAssessment(QgsProcessingAlgorithm):
         if sink_layer:
             # Choose style based on geometry type
             if sink_layer.geometryType() == QgsWkbTypes.PolygonGeometry:
-                style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_CCRI_polygon.qml')
+                style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_ERA_polygon.qml')
             else:
-                style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_CCRI_line.qml')
+                style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_ERA_line.qml')
             sink_layer.loadNamedStyle(style_path)
+
+            # Detect which field to drive the graduated renderer with.
+            # Priority: era_ > amr_ > hhra_ > eraL_ > amrL_ > hhraL_
+            field_names = [f.name() for f in sink_layer.fields()]
+            target_field = None
+            for prefix, exclude in [
+                ('era_', 'eraL_'),
+                ('amr_', 'amrL_'),
+                ('hhra_',  'hhraL_'),
+                ('eraL_', None),
+                ('amrL_', None),
+                ('hhraL_',  None),
+            ]:
+                candidates = [
+                    n for n in field_names
+                    if n.startswith(prefix) and (exclude is None or not n.startswith(exclude))
+                ]
+                if candidates:
+                    target_field = candidates[0]
+                    break
+
+            # Replace the renderer's class attribute so Layer Properties shows
+            # a plain field name (e.g. "era_Dicl") instead of the formula
+            if target_field:
+                renderer = sink_layer.renderer()
+                if hasattr(renderer, 'setClassAttribute'):
+                    renderer.setClassAttribute(target_field)
+                    sink_layer.setRenderer(renderer)
+                    feedback.pushInfo(f"Graduated style applied using field: {target_field}")
+                else:
+                    feedback.pushWarning(
+                        "Renderer is not graduated; field could not be set automatically.")
+            else:
+                feedback.pushWarning(
+                    "No era_/amr_/hhra_ field found; style loaded with default expression.")
+
             sink_layer.triggerRepaint()
 
         return {self.OUTPUT: self.dest_id}
