@@ -350,7 +350,6 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             'INPUT': parameters[self.DGM],
             'Z_FACTOR': 1,
             'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
-        context.temporaryLayerStore().addMapLayer(slope)
 
         # Calculates zonal statistics based on the slope raster
         feedback.setProgressText("\nCalculate slope statistics...")
@@ -402,27 +401,31 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 attrs = {idxRND: 0, idxPWA: 0, idxFS: 0, idxSS: 0, idxRN_Sum: 0, idxWA_Sum: 0, idxFA_Sum: 0, idxSA_Sum: 0}
                 JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id(): attrs})
                 continue
-            if feature["RivNe_sum"] is not None:
-                calcRND = (feature["RivNe_sum"] / area_sc) * 100
-                RNsum = feature["RivNe_sum"]
+            RNval = feature["RivNe_sum"]
+            if RNval is not None and not isinstance(RNval, QVariant):
+                calcRND = (RNval / area_sc) * 100
+                RNsum = RNval
             else:
                 calcRND = 0
                 RNsum = 0
-            if feature["WatAr_sum"] is not None:
-                calcPWA = (feature["WatAr_sum"] / area_sc) * 100
-                WAsum = feature["WatAr_sum"]
+            WAval = feature["WatAr_sum"]
+            if WAval is not None and not isinstance(WAval, QVariant):
+                calcPWA = (WAval / area_sc) * 100
+                WAsum = WAval
             else:
                 calcPWA = 0
                 WAsum = 0
-            if feature["ForAr_sum"] is not None:
-                calcFS = (feature["ForAr_sum"] / area_sc) * 100
-                FAsum = feature["ForAr_sum"]
+            FAval = feature["ForAr_sum"]
+            if FAval is not None and not isinstance(FAval, QVariant):
+                calcFS = (FAval / area_sc) * 100
+                FAsum = FAval
             else:
                 calcFS = 0
                 FAsum = 0
-            if feature["SettAr_sum"] is not None:
-                calcSS = (feature["SettAr_sum"] / area_sc) * 100
-                SAsum = feature["SettAr_sum"]
+            SAval = feature["SettAr_sum"]
+            if SAval is not None and not isinstance(SAval, QVariant):
+                calcSS = (SAval / area_sc) * 100
+                SAsum = SAval
             else:
                 calcSS = 0
                 SAsum = 0
@@ -576,7 +579,10 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             'STATISTICS': [2],  # mean
             'OUTPUT': 'TEMPORARY_OUTPUT'
             }, context=context)['OUTPUT']
-        context.temporaryLayerStore().addMapLayer(precipitation_yearly_ungauged) = processing.run("native:zonalstatisticsfb", {
+        context.temporaryLayerStore().addMapLayer(precipitation_yearly_ungauged)
+
+        feedback.setProgressText("\nStart the zonal statistic of dry month precipitation")
+        finalLayer_ungauged = processing.run("native:zonalstatisticsfb", {
             'INPUT_RASTER': precipitationDryLayer,
             'RASTER_BAND': 1,
             'INPUT': precipitation_yearly_ungauged,
@@ -712,27 +718,31 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
                 attrs = {idxRND: 0, idxPWA: 0, idxFS: 0, idxSS: 0, idxRN_Sum: 0, idxWA_Sum: 0, idxFA_Sum: 0, idxSA_Sum: 0}
                 JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id(): attrs})
                 continue
-            if feature["RivNe_sum"] is not None:
-                calcRND = (feature["RivNe_sum"] / area_sc) * 100
-                RNsum = feature["RivNe_sum"]
+            RNval = feature["RivNe_sum"]
+            if RNval is not None and not isinstance(RNval, QVariant):
+                calcRND = (RNval / area_sc) * 100
+                RNsum = RNval
             else:
                 calcRND = 0
                 RNsum = 0
-            if feature["WatAr_sum"] is not None:
-                calcPWA = (feature["WatAr_sum"] / area_sc) * 100
-                WAsum = feature["WatAr_sum"]
+            WAval = feature["WatAr_sum"]
+            if WAval is not None and not isinstance(WAval, QVariant):
+                calcPWA = (WAval / area_sc) * 100
+                WAsum = WAval
             else:
                 calcPWA = 0
                 WAsum = 0
-            if feature["ForAr_sum"] is not None:
-                calcFS = (feature["ForAr_sum"] / area_sc) * 100
-                FAsum = feature["ForAr_sum"]
+            FAval = feature["ForAr_sum"]
+            if FAval is not None and not isinstance(FAval, QVariant):
+                calcFS = (FAval / area_sc) * 100
+                FAsum = FAval
             else:
                 calcFS = 0
                 FAsum = 0
-            if feature["SettAr_sum"] is not None:
-                calcSS = (feature["SettAr_sum"] / area_sc) * 100
-                SAsum = feature["SettAr_sum"]
+            SAval = feature["SettAr_sum"]
+            if SAval is not None and not isinstance(SAval, QVariant):
+                calcSS = (SAval / area_sc) * 100
+                SAsum = SAval
             else:
                 calcSS = 0
                 SAsum = 0
@@ -758,7 +768,10 @@ class CalculateGeofactors(QgsProcessingAlgorithm):
             'STATISTICS': [2],  # mean
             'OUTPUT': 'TEMPORARY_OUTPUT'
             }, context=context)['OUTPUT']
-        context.temporaryLayerStore().addMapLayer(precipitation_yearly_gauged) = processing.run("native:zonalstatisticsfb", {
+        context.temporaryLayerStore().addMapLayer(precipitation_yearly_gauged)
+
+        feedback.setProgressText("\nStart the zonal statistic of dry month precipitation")
+        finalLayer_gauged = processing.run("native:zonalstatisticsfb", {
             'INPUT_RASTER': precipitationDryLayer,
             'RASTER_BAND': 1,
             'INPUT': precipitation_yearly_gauged,
