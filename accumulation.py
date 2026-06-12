@@ -26,27 +26,20 @@ __author__ = 'Cristiano Guidi'
 __date__ = '2024-06-13'
 __copyright__ = '(C) 2024 by Cristiano Guidi'
 
-"""
-* Part of this file is adapted from WaterNetAnalyzer QGIS plugin 
-* Copyright (C) 2020 by Jannik Schilling
-* Licensed under the GNU General Public License v2.0
-"""
-
 # This will get replaced with a git SHA1 when you do a git archive
 
 __revision__ = '$Format:%H$'
 
 import processing
-import string
 import numpy as np
-from qgis.PyQt.QtCore import QCoreApplication, QVariant
+import string
+
 from qgis.core import (QgsFeature,
                        QgsFeatureRequest,
                        QgsFeatureSink,
                        QgsField,
                        QgsFields,
                        QgsGeometry,
-                       QgsPointXY,
                        QgsProcessing,
                        QgsProcessingAlgorithm,
                        QgsProcessingException,
@@ -57,6 +50,13 @@ from qgis.core import (QgsFeature,
                        QgsSpatialIndex,
                        QgsVectorLayer,
                        QgsWkbTypes)
+from qgis.PyQt.QtCore import QCoreApplication, QVariant
+
+"""
+* Part of this file is adapted from WaterNetAnalyzer QGIS plugin
+* Copyright (C) 2020 by Jannik Schilling
+* Licensed under the GNU General Public License v2.0
+"""
 
 
 class Accumulation(QgsProcessingAlgorithm):
@@ -77,18 +77,18 @@ class Accumulation(QgsProcessingAlgorithm):
     monPoint = "MonPoint"
     OUTPUT = 'OUTPUT'
     OUTPUT_mon = 'OUTPUT_mon'
-    OUTPUT_dil ='OUTPUT_dil'
+    OUTPUT_dil = 'OUTPUT_dil'
 
     def shortHelpString(self):
         return self.tr(
-            """ 
-            This tool combines the output of '4 - Flow Estimation' with the output of '6 - Emission Loads'. In this part, the load of the \
+            """
+            This tool combines the output of '4 - Flow Estimation' with the output of '6 - Emission Loads'. In this part, the load of the\
             selected APIs is transferred to the river network and the concentration for mean flow and mean low flow condition is calculated.
-            
+
             The tool supports two types of river network inputs:
             - **Line geometry**: Standard river network (e.g., output of '4 - Flow Estimation'). The tool will split river sections at emission points and create sub-sections.
             - **Polygon geometry**: Subcatchment-based flow data (e.g., Finnish hydrological model output). Emission points are connected to the closest polygon without splitting. Points can be inside or near polygons (within 500m).
-            
+
             Workflow:
             1. Choose 'emission_loads.shp' as input for 'API load'
             2. Select the fields contanining APIs to accumulate. This selection should include only columns containing load of APIs in kg/a.
@@ -99,9 +99,8 @@ class Accumulation(QgsProcessingAlgorithm):
                 - Acc. Mean Flow -> acc_Mean
                 - Acc. Mean Low Flow -> acc_M_Low
             5. Click on 'Run'
-            
+
             Note for polygon networks: The polygon layer must have NET_ID and NET_TO fields defining the connectivity between subcatchments.
-            
             """)
 
     def initAlgorithm(self, config):
@@ -110,7 +109,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.APIload,
                 self.tr('API Load'),
                 [QgsProcessing.TypeVectorPoint],
-                defaultValue = QgsProject.instance().mapLayersByName("Emission Loads")[0].id() if QgsProject.instance().mapLayersByName("Emission Loads") else None
+                defaultValue=QgsProject.instance().mapLayersByName("Emission Loads")[0].id() if QgsProject.instance().mapLayersByName("Emission Loads") else None
             )
         )
 
@@ -118,8 +117,8 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterField(
                 self.selectedAPI,
                 self.tr('Select APIs to accumulate'),
-                parentLayerParameterName = self.APIload,
-                allowMultiple = True,
+                parentLayerParameterName=self.APIload,
+                allowMultiple=True,
                 type=QgsProcessingParameterField.Any,
                 defaultValue=[
                     f.name() for f in QgsProject.instance().mapLayersByName("Emission Loads")[0].fields() if f.name().endswith("[kg/a]")
@@ -132,7 +131,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.riverNetwork,
                 self.tr('River network'),
                 [QgsProcessing.TypeVectorLine, QgsProcessing.TypeVectorPolygon],
-                defaultValue = QgsProject.instance().mapLayersByName("River level")[0].id() if QgsProject.instance().mapLayersByName("River level") else None
+                defaultValue=QgsProject.instance().mapLayersByName("River level")[0].id() if QgsProject.instance().mapLayersByName("River level") else None
             )
         )
 
@@ -140,9 +139,9 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterField(
                 self.fieldID,
                 self.tr("ID Field"),
-                parentLayerParameterName = self.riverNetwork,
-                defaultValue = 'NET_ID',   
-                type = QgsProcessingParameterField.Any,
+                parentLayerParameterName=self.riverNetwork,
+                defaultValue='NET_ID',
+                type=QgsProcessingParameterField.Any,
             )
         )
 
@@ -150,9 +149,9 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterField(
                 self.fieldNext,
                 self.tr("Next Field"),
-                parentLayerParameterName = self.riverNetwork,
-                defaultValue = 'NET_TO',
-                type = QgsProcessingParameterField.Any,
+                parentLayerParameterName=self.riverNetwork,
+                defaultValue='NET_TO',
+                type=QgsProcessingParameterField.Any,
             )
         )
 
@@ -160,9 +159,9 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterField(
                 self.accmeanFlow,
                 self.tr("Acc. Mean Flow"),
-                parentLayerParameterName = self.riverNetwork,
-                defaultValue = 'acc_Mean',
-                type = QgsProcessingParameterField.Any,
+                parentLayerParameterName=self.riverNetwork,
+                defaultValue='acc_Mean',
+                type=QgsProcessingParameterField.Any,
             )
         )
 
@@ -170,9 +169,9 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterField(
                 self.accMNQ,
                 self.tr("Acc. Mean Low Flow"),
-                parentLayerParameterName = self.riverNetwork,
-                defaultValue = 'acc_M_Low',
-                type = QgsProcessingParameterField.Any,
+                parentLayerParameterName=self.riverNetwork,
+                defaultValue='acc_M_Low',
+                type=QgsProcessingParameterField.Any,
             )
         )
 
@@ -184,7 +183,6 @@ class Accumulation(QgsProcessingAlgorithm):
                 optional=True
             )
         )
-
 
         self.addParameter(
             QgsProcessingParameterFeatureSink(
@@ -207,34 +205,39 @@ class Accumulation(QgsProcessingAlgorithm):
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_dil,
-                self.tr('Dilution Ratio (requires Q_WWTP in Emission Loads from Tool 6)'),
-                QgsProcessing.TypeVectorPoint,
+                self.tr('Dilution Ratio'),
+                QgsProcessing.TypeVectorAnyGeometry,
                 optional=True,
-                createByDefault=False
-            )
-        )
-
+                createByDefault=False))
 
     def processAlgorithm(self, parameters, context, feedback):
         try:
-            selected_api_fields = self.parameterAsStrings(parameters, self.selectedAPI, context)
+            selected_api_fields = self.parameterAsStrings(
+                parameters, self.selectedAPI, context)
         except AttributeError:
-            selected_api_fields = self.parameterAsFields(parameters, self.selectedAPI, context)
-        load_original = self.parameterAsVectorLayer(parameters, self.APIload, context)
-        river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+            selected_api_fields = self.parameterAsFields(
+                parameters, self.selectedAPI, context)
+        load_original = self.parameterAsVectorLayer(
+            parameters, self.APIload, context)
+        river_layer = self.parameterAsVectorLayer(
+            parameters, self.riverNetwork, context)
         id_field = self.parameterAsString(parameters, self.fieldID, context)
         to_field = self.parameterAsString(parameters, self.fieldNext, context)
-        acc_MQ_field = self.parameterAsString(parameters, self.accmeanFlow, context)
-        acc_MNQ_field = self.parameterAsString(parameters, self.accMNQ, context)
-        mon_point = self.parameterAsVectorLayer(parameters, self.monPoint, context)
+        acc_MQ_field = self.parameterAsString(
+            parameters, self.accmeanFlow, context)
+        acc_MNQ_field = self.parameterAsString(
+            parameters, self.accMNQ, context)
+        mon_point = self.parameterAsVectorLayer(
+            parameters, self.monPoint, context)
 
         # Detect geometry type of river network
         river_geom_type = river_layer.geometryType()
         is_polygon_network = (river_geom_type == QgsWkbTypes.PolygonGeometry)
-        
+
         if is_polygon_network:
             feedback.pushInfo("\n=== POLYGON RIVER NETWORK DETECTED ===")
-            feedback.pushInfo("Using simplified polygon-based accumulation workflow.\n")
+            feedback.pushInfo(
+                "Using simplified polygon-based accumulation workflow.\n")
             return self.processPolygonNetwork(
                 parameters, context, feedback,
                 selected_api_fields, load_original, river_layer,
@@ -242,44 +245,64 @@ class Accumulation(QgsProcessingAlgorithm):
             )
         else:
             feedback.pushInfo("\n=== LINE RIVER NETWORK DETECTED ===")
-            feedback.pushInfo("Using standard line-based accumulation workflow.\n")
+            feedback.pushInfo(
+                "Using standard line-based accumulation workflow.\n")
             return self.processLineNetwork(
                 parameters, context, feedback,
                 selected_api_fields, load_original, river_layer,
                 id_field, to_field, acc_MQ_field, acc_MNQ_field, mon_point
             )
 
-    def processPolygonNetwork(self, parameters, context, feedback,
-                               selected_api_fields, load_original, river_layer,
-                               id_field, to_field, acc_MQ_field, acc_MNQ_field, mon_point):
+    def processPolygonNetwork(
+            self,
+            parameters,
+            context,
+            feedback,
+            selected_api_fields,
+            load_original,
+            river_layer,
+            id_field,
+            to_field,
+            acc_MQ_field,
+            acc_MNQ_field,
+            mon_point):
         """
         Process accumulation for polygon-based river networks (e.g., Finnish subcatchments).
         No splitting of polygons, simplified point-to-polygon connection.
         """
         tolerance = 500  # 500m distance limit
         river_crs = river_layer.crs()
-        
+
         # Reproject emission load layer if CRS doesn't match river network
         if load_original.crs().authid() != river_crs.authid():
-            feedback.pushInfo(f"Reprojecting emission load layer from {load_original.crs().authid()} to {river_crs.authid()}...")
+            feedback.pushInfo(
+                f"Reprojecting emission load layer from {
+                    load_original.crs().authid()} to {
+                    river_crs.authid()}...")
             load_original = processing.run("native:reprojectlayer", {
                 'INPUT': load_original,
                 'TARGET_CRS': river_crs,
                 'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
-        
+            context.temporaryLayerStore().addMapLayer(load_original)
+
         # check if there are monitoring station points
         mon_field_names = []
         if mon_point is not None and mon_point.featureCount() > 0:
             # Reproject monitoring points if CRS doesn't match
             if mon_point.crs().authid() != river_crs.authid():
-                feedback.pushInfo(f"Reprojecting monitoring point layer from {mon_point.crs().authid()} to {river_crs.authid()}...")
+                feedback.pushInfo(
+                    f"Reprojecting monitoring point layer from {
+                        mon_point.crs().authid()} to {
+                        river_crs.authid()}...")
                 mon_point = processing.run("native:reprojectlayer", {
                     'INPUT': mon_point,
                     'TARGET_CRS': river_crs,
                     'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
-            
+                context.temporaryLayerStore().addMapLayer(mon_point)
+
             load_field_names = set(f.name() for f in load_original.fields())
-            mon_field_names = [f.name() for f in mon_point.fields() if f.name() not in load_field_names]
+            mon_field_names = [
+                f.name() for f in mon_point.fields() if f.name() not in load_field_names]
             load_file = processing.run("native:mergevectorlayers", {
                 'LAYERS': [load_original, mon_point],
                 'CRS': river_crs,
@@ -287,7 +310,8 @@ class Accumulation(QgsProcessingAlgorithm):
         else:
             load_file = load_original
             if mon_point is not None:
-                feedback.pushWarning("Monitoring point layer provided but has no features, ignoring it...")
+                feedback.pushWarning(
+                    "Monitoring point layer provided but has no features, ignoring it...")
 
         # Create a working copy of the river layer (polygon network)
         feedback.pushInfo("Creating working copy of polygon network...")
@@ -297,14 +321,17 @@ class Accumulation(QgsProcessingAlgorithm):
             'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
 
         # Build spatial index for polygon network
-        feedback.pushInfo(f"\nConnecting emission points to the closest polygon within {tolerance} m...")
+        feedback.pushInfo(
+            f"\nConnecting emission points to the closest polygon within {tolerance} m...")
         feedback.pushInfo(f"Emission points CRS: {load_file.crs().authid()}")
         feedback.pushInfo(f"Polygon network CRS: {waternet.crs().authid()}")
         polygon_index = QgsSpatialIndex(waternet.getFeatures())
-        polygon_feat_dict = {feat.id(): feat for feat in waternet.getFeatures()}
+        polygon_feat_dict = {
+            feat.id(): feat for feat in waternet.getFeatures()}
 
         # Dictionary to store which polygons receive which loads
-        polygon_to_loads = {}  # polygon NET_ID -> list of (point_feat, api_values)
+        # polygon NET_ID -> list of (point_feat, api_values)
+        polygon_to_loads = {}
         too_far_points = []
 
         # Connect each emission point to the closest polygon
@@ -324,14 +351,14 @@ class Accumulation(QgsProcessingAlgorithm):
             for fid in candidate_ids:
                 polygon_feat = polygon_feat_dict[fid]
                 polygon_geom = polygon_feat.geometry()
-                
+
                 # Check if point is inside the polygon
                 if polygon_geom.contains(point_geom):
                     nearest_polygon = polygon_feat
                     min_distance = 0
                     is_inside = True
                     break
-                
+
                 # Otherwise calculate distance
                 dist = polygon_geom.distance(point_geom)
                 if dist < min_distance:
@@ -341,7 +368,8 @@ class Accumulation(QgsProcessingAlgorithm):
             # If no candidates from bounding box, try nearest neighbor
             if nearest_polygon is None:
                 try:
-                    nn_ids = polygon_index.nearestNeighbor(point_geom.asPoint(), 1)
+                    nn_ids = polygon_index.nearestNeighbor(
+                        point_geom.asPoint(), 1)
                     if nn_ids:
                         polygon_feat = polygon_feat_dict.get(nn_ids[0])
                         if polygon_feat:
@@ -349,11 +377,10 @@ class Accumulation(QgsProcessingAlgorithm):
                             if dist <= tolerance:
                                 nearest_polygon = polygon_feat
                                 min_distance = dist
-                except Exception:
-                    pass
-
-            # Validate distance
-            if nearest_polygon is None or (min_distance > tolerance and not is_inside):
+                except Exception:  # nosec B110
+                    pass  # nearest-neighbour lookup is best-effort; failure is non-fatal
+            if nearest_polygon is None or (
+                    min_distance > tolerance and not is_inside):
                 point_id = point_feat[0]
                 if mon_field_names:
                     for field_name in mon_field_names:
@@ -363,18 +390,26 @@ class Accumulation(QgsProcessingAlgorithm):
                             break
                 # Add debug information about the actual distance found
                 if nearest_polygon is not None:
-                    feedback.pushWarning(f"Warning: Point {point_id} is {min_distance:.2f}m from nearest polygon (limit: {tolerance}m)")
+                    feedback.pushWarning(
+                        f"Warning: Point {point_id} is {
+                            min_distance:.2f}m from nearest polygon (limit: {tolerance}m)")
                 else:
-                    feedback.pushWarning(f"Warning: no polygon found for point {point_id}")
+                    feedback.pushWarning(
+                        f"Warning: no polygon found for point {point_id}")
                 too_far_points.append(point_id)
                 continue
 
             # Store the connection
             polygon_net_id = nearest_polygon[id_field]
             if is_inside:
-                feedback.pushInfo(f"Point {point_feat[0]} is INSIDE polygon {polygon_net_id}")
+                feedback.pushInfo(
+                    f"Point {
+                        point_feat[0]} is INSIDE polygon {polygon_net_id}")
             else:
-                feedback.pushInfo(f"Point {point_feat[0]} is {min_distance:.2f}m from polygon {polygon_net_id}")
+                feedback.pushInfo(
+                    f"Point {
+                        point_feat[0]} is {
+                        min_distance:.2f}m from polygon {polygon_net_id}")
 
             if polygon_net_id not in polygon_to_loads:
                 polygon_to_loads[polygon_net_id] = []
@@ -382,7 +417,7 @@ class Accumulation(QgsProcessingAlgorithm):
 
         # Report unconnected points
         if too_far_points:
-            error_message = f"The following emission points are too far from the closest polygon: \n"
+            error_message = "The following emission points are too far from the closest polygon: \n"
             for point_id in too_far_points:
                 error_message += f"- Point {point_id}\n"
             error_message += f"Please edit the emission point to be within a distance of {tolerance} m."
@@ -399,7 +434,8 @@ class Accumulation(QgsProcessingAlgorithm):
             waternet.dataProvider().addAttributes(fields_to_add)
             waternet.updateFields()
 
-        # Transfer API loads to polygons (sum if multiple points connect to same polygon)
+        # Transfer API loads to polygons (sum if multiple points connect to
+        # same polygon)
         feedback.pushInfo("\nTransferring API loads to polygons...")
         waternet.startEditing()
         for feat in waternet.getFeatures():
@@ -419,14 +455,15 @@ class Accumulation(QgsProcessingAlgorithm):
 
         """POLYGON ACCUMULATION FUNCTION"""
         feedback.setProgressText("\n=== Starting Polygon Accumulation ===\n")
-        
+
         # Load network data
         idxId = waternet.fields().indexFromName(id_field)
         idxTo = waternet.fields().indexFromName(to_field)
 
         # Build data structure for accumulation
         # DataArr columns: [NET_ID, NET_ID, NET_TO, fid]
-        # Column 1 duplicates column 0 (NET_ID used as both id and "from" field)
+        # Column 1 duplicates column 0 (NET_ID used as both id and "from"
+        # field)
         feedback.setProgressText("Loading polygon network data...\n")
         Data = [[
             str(f.attribute(idxId)),
@@ -440,8 +477,10 @@ class Accumulation(QgsProcessingAlgorithm):
         # Function to find next features (downstream) in the network
         def nextFtsCalcPolygon(marker):
             """Find downstream features: those whose NET_TO matches the marker's NET_TO target"""
-            vtx_to = DataArr[np.where(DataArr[:, 0] == marker)[0].tolist(), 2][0]  # NET_TO of actual segment
-            rows_to = np.where(DataArr[:, 0] == vtx_to)[0].tolist()  # Find rows where NET_ID matches vtx_to
+            vtx_to = DataArr[np.where(DataArr[:, 0] == marker)[
+                0].tolist(), 2][0]  # NET_TO of actual segment
+            # Find rows where NET_ID matches vtx_to
+            rows_to = np.where(DataArr[:, 0] == vtx_to)[0].tolist()
             return rows_to
 
         # Flow path function for polygons
@@ -454,7 +493,8 @@ class Accumulation(QgsProcessingAlgorithm):
                 next_rows = nextFtsCalcPolygon(marker)
                 if len(next_rows) > 1:  # Dividing flow path
                     calc_column[start_row] = 0
-                    calc_column[next_rows] = calc_column[next_rows] + fp_amount / len(next_rows)
+                    calc_column[next_rows] = calc_column[next_rows] + \
+                        fp_amount / len(next_rows)
                     out = [weg, next_rows]
                     break
                 if len(next_rows) == 1:  # Continuing flow path
@@ -484,14 +524,15 @@ class Accumulation(QgsProcessingAlgorithm):
                     row_idx = np.where(DataArr[:, 4] == fid)[0]
                     if row_idx.size > 0:
                         DataArr[row_idx[0], 3] = val
-            DataArr[np.where(DataArr[:, 3] == None), 3] = 0
+            DataArr[np.where(DataArr[:, 3] is None), 3] = 0
             calc_column = np.copy(DataArr[:, 3]).astype(float)
             DataArr[:, 3] = 0.0
 
             calc_segm = np.where(calc_column != 0)[0].tolist()
 
             total2 = len(calc_segm)
-            feedback.pushInfo(f"Found {total2} polygons with load for {calc_field}")
+            feedback.pushInfo(
+                f"Found {total2} polygons with load for {calc_field}")
 
             iteration = 0
             max_iterations = 10000
@@ -508,12 +549,15 @@ class Accumulation(QgsProcessingAlgorithm):
                 last_segments.append(calc_segm[0] if calc_segm else None)
 
                 if len(set(last_segments)) < 10 and len(last_segments) == 100:
-                    feedback.reportError(f"Stuck loop detected! Repeated segments: {set(last_segments)}")
+                    feedback.reportError(
+                        f"Stuck loop detected! Repeated segments: {
+                            set(last_segments)}")
                     net_ids_debug = []
                     for feature_id in set(last_segments):
                         net_id_debug = DataArr[feature_id, 0]
                         net_ids_debug.append(net_id_debug)
-                    feedback.reportError(f"Corresponding NET_IDs: {net_ids_debug}")
+                    feedback.reportError(
+                        f"Corresponding NET_IDs: {net_ids_debug}")
                     break
 
                 StartRow = calc_segm[0]
@@ -525,7 +569,8 @@ class Accumulation(QgsProcessingAlgorithm):
                 DataArr[Fl_pth[0], 3] = DataArr[Fl_pth[0], 3] + amount
                 calc_segm = calc_segm[1:]
                 calc_segm = list(set(calc_segm))
-                feedback.setProgress((1 - (len(calc_segm) / max(total2, 1))) * 100)
+                feedback.setProgress(
+                    (1 - (len(calc_segm) / max(total2, 1))) * 100)
 
             if iteration >= max_iterations:
                 max_iterations_flag = True
@@ -534,12 +579,14 @@ class Accumulation(QgsProcessingAlgorithm):
             api_short = calc_field[:4]
             new_field_name = f'acc_{api_short}'
             if new_field_name not in [f.name() for f in waternet.fields()]:
-                waternet.dataProvider().addAttributes([QgsField(new_field_name, QVariant.Double)])
+                waternet.dataProvider().addAttributes(
+                    [QgsField(new_field_name, QVariant.Double)])
                 waternet.updateFields()
 
             field_idx = waternet.fields().indexOf(new_field_name)
             if field_idx == -1:
-                feedback.reportError(f"Error: field {new_field_name} not found")
+                feedback.reportError(
+                    f"Error: field {new_field_name} not found")
                 continue
 
             waternet.startEditing()
@@ -553,10 +600,12 @@ class Accumulation(QgsProcessingAlgorithm):
             feedback.setProgressText(f"{new_field_name} written successfully")
 
         if max_iterations_flag:
-            feedback.reportError(f"Emergency break: exceeded {max_iterations} iterations")
+            feedback.reportError(
+                f"Emergency break: exceeded {max_iterations} iterations")
 
         # Add acc_unit column right after all acc_ fields
-        waternet.dataProvider().addAttributes([QgsField('acc_unit', QVariant.String)])
+        waternet.dataProvider().addAttributes(
+            [QgsField('acc_unit', QVariant.String)])
         waternet.updateFields()
         waternet.startEditing()
         for feature in waternet.getFeatures():
@@ -616,7 +665,8 @@ class Accumulation(QgsProcessingAlgorithm):
         waternet.commitChanges()
 
         # Add conc_unit column right after all conc_ / conL_ fields
-        waternet.dataProvider().addAttributes([QgsField('conc_unit', QVariant.String)])
+        waternet.dataProvider().addAttributes(
+            [QgsField('conc_unit', QVariant.String)])
         waternet.updateFields()
         waternet.startEditing()
         for feature in waternet.getFeatures():
@@ -640,13 +690,14 @@ class Accumulation(QgsProcessingAlgorithm):
         # Calculate dilution ratio
         dil_result = self.calculate_dilution_ratio(
             parameters, context, feedback,
-            load_original, waternet, id_field, acc_MQ_field,
+            load_original, waternet, id_field, to_field, acc_MQ_field,
             is_polygon_network=True
         )
 
         # Handle monitoring points for polygon network
         if mon_point is not None and mon_point.featureCount() > 0:
-            feedback.pushInfo("\n=== Processing Monitoring Points (Polygon Network) ===\n")
+            feedback.pushInfo(
+                "\n=== Processing Monitoring Points (Polygon Network) ===\n")
             load_crs = load_original.crs()
 
             if mon_point.crs().authid() != load_crs.authid():
@@ -659,7 +710,8 @@ class Accumulation(QgsProcessingAlgorithm):
             else:
                 crs = mon_point.crs().authid()
                 geom_type = QgsWkbTypes.displayString(mon_point.wkbType())
-                mon_point_copy = QgsVectorLayer(f"{geom_type}?crs={crs}", "mon_point_copy", "memory")
+                mon_point_copy = QgsVectorLayer(
+                    f"{geom_type}?crs={crs}", "mon_point_copy", "memory")
                 mon_provider = mon_point_copy.dataProvider()
                 mon_provider.addAttributes(mon_point.fields())
                 mon_point_copy.updateFields()
@@ -691,7 +743,8 @@ class Accumulation(QgsProcessingAlgorithm):
 
             # Build spatial index on polygon network
             water_index = QgsSpatialIndex(waternet.getFeatures())
-            waternet_feat_dict = {feat.id(): feat for feat in waternet.getFeatures()}
+            waternet_feat_dict = {
+                feat.id(): feat for feat in waternet.getFeatures()}
 
             mon_point_copy.startEditing()
             for mon_feat in mon_point_copy.getFeatures():
@@ -711,13 +764,13 @@ class Accumulation(QgsProcessingAlgorithm):
                     if wfeat is None:
                         continue
                     wgeom = wfeat.geometry()
-                    
+
                     # Check if inside polygon
                     if wgeom.contains(mon_geom):
                         chosen_feat = wfeat
                         min_distance = 0
                         break
-                    
+
                     dist = wgeom.distance(mon_geom)
                     if dist < min_distance and dist <= tolerance:
                         min_distance = dist
@@ -726,18 +779,20 @@ class Accumulation(QgsProcessingAlgorithm):
                 # Try nearest neighbor if no candidates
                 if chosen_feat is None:
                     try:
-                        nn_ids = water_index.nearestNeighbor(mon_geom.asPoint(), 1)
+                        nn_ids = water_index.nearestNeighbor(
+                            mon_geom.asPoint(), 1)
                         if nn_ids:
                             wfeat = waternet_feat_dict.get(nn_ids[0])
                             if wfeat:
                                 dist = wfeat.geometry().distance(mon_geom)
                                 if dist <= tolerance:
                                     chosen_feat = wfeat
-                    except Exception:
-                        pass
+                    except Exception:  # nosec B110
+                        pass  # nearest-neighbour lookup is best-effort; failure is non-fatal
 
                 if chosen_feat is None:
-                    feedback.pushWarning(f"No polygon found within {tolerance}m for monitoring point")
+                    feedback.pushWarning(
+                        f"No polygon found within {tolerance}m for monitoring point")
                     continue
 
                 # Copy concentration and accumulated load values
@@ -747,12 +802,24 @@ class Accumulation(QgsProcessingAlgorithm):
                     conc_low = f"conL_{api_short}"
                     acc_load = f"acc_{api_short}"
 
-                    if conc_mean in [f.name() for f in waternet.fields()] and conc_mean in [f.name() for f in mon_point_copy.fields()]:
-                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_mean), chosen_feat[conc_mean])
-                    if conc_low in [f.name() for f in waternet.fields()] and conc_low in [f.name() for f in mon_point_copy.fields()]:
-                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_low), chosen_feat[conc_low])
-                    if acc_load in [f.name() for f in waternet.fields()] and acc_load in [f.name() for f in mon_point_copy.fields()]:
-                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(acc_load), chosen_feat[acc_load])
+                    if conc_mean in [
+                            f.name() for f in waternet.fields()] and conc_mean in [
+                            f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(
+                            mon_point_copy.fields().indexFromName(conc_mean),
+                            chosen_feat[conc_mean])
+                    if conc_low in [
+                            f.name() for f in waternet.fields()] and conc_low in [
+                            f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(
+                            mon_point_copy.fields().indexFromName(conc_low),
+                            chosen_feat[conc_low])
+                    if acc_load in [
+                            f.name() for f in waternet.fields()] and acc_load in [
+                            f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(
+                            mon_point_copy.fields().indexFromName(acc_load),
+                            chosen_feat[acc_load])
 
                 mon_point_copy.updateFeature(mon_feat)
             mon_point_copy.commitChanges()
@@ -785,70 +852,96 @@ class Accumulation(QgsProcessingAlgorithm):
         result.update(dil_result)
         return result
 
-    def processLineNetwork(self, parameters, context, feedback,
-                            selected_api_fields, load_original, river_layer,
-                            id_field, to_field, acc_MQ_field, acc_MNQ_field, mon_point):
+    def processLineNetwork(
+            self,
+            parameters,
+            context,
+            feedback,
+            selected_api_fields,
+            load_original,
+            river_layer,
+            id_field,
+            to_field,
+            acc_MQ_field,
+            acc_MNQ_field,
+            mon_point):
         """
         Original processing logic for line-based river networks.
         """
         river_crs = river_layer.crs()
-        
+
         # Reproject emission load layer if CRS doesn't match river network
         if load_original.crs().authid() != river_crs.authid():
-            feedback.pushInfo(f"Reprojecting emission load layer from {load_original.crs().authid()} to {river_crs.authid()}...")
+            feedback.pushInfo(
+                f"Reprojecting emission load layer from {
+                    load_original.crs().authid()} to {
+                    river_crs.authid()}...")
             load_original = processing.run("native:reprojectlayer", {
                 'INPUT': load_original,
                 'TARGET_CRS': river_crs,
                 'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+            context.temporaryLayerStore().addMapLayer(load_original)
 
         # check if there are monitoring station points
-        # if there are, they are merged with emission load points and snapped together to the river section
+        # if there are, they are merged with emission load points and snapped
+        # together to the river section
         mon_field_names = []  # store monitoring-specific field names for later identification
-        if mon_point is not None and mon_point.featureCount() > 0:  # be sure layer exist and is not null
+        if mon_point is not None and mon_point.featureCount(
+        ) > 0:  # be sure layer exist and is not null
             # Reproject monitoring points if CRS doesn't match
             if mon_point.crs().authid() != river_crs.authid():
-                feedback.pushInfo(f"Reprojecting monitoring point layer from {mon_point.crs().authid()} to {river_crs.authid()}...")
+                feedback.pushInfo(
+                    f"Reprojecting monitoring point layer from {
+                        mon_point.crs().authid()} to {
+                        river_crs.authid()}...")
                 mon_point = processing.run("native:reprojectlayer", {
                     'INPUT': mon_point,
                     'TARGET_CRS': river_crs,
                     'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
-            
+                context.temporaryLayerStore().addMapLayer(mon_point)
+
             # capture monitoring field names (those unique to monitoring layer)
             load_field_names = set(f.name() for f in load_original.fields())
-            mon_field_names = [f.name() for f in mon_point.fields() if f.name() not in load_field_names]
+            mon_field_names = [
+                f.name() for f in mon_point.fields() if f.name() not in load_field_names]
             # merge the shapefiles
             load_file = processing.run("native:mergevectorlayers", {
-                'LAYERS':[load_original, mon_point],
-                'CRS':river_crs,
-                'OUTPUT':'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
-            
+                'LAYERS': [load_original, mon_point],
+                'CRS': river_crs,
+                'OUTPUT': 'TEMPORARY_OUTPUT'}, context=context, feedback=feedback)['OUTPUT']
+
         else:
             load_file = load_original
-            if mon_point is not None: # layer exists but is empty
-                feedback.pushWarning("Monitoring point layer provided but has no features, ignoring it...")
-        
-        # snapping function that connects the emission load points to the river section
-        tolerance = 500 # 500m
-        feedback.pushInfo(f"\nSnapping the emission point to the closest river section within {tolerance} m.")
+            if mon_point is not None:  # layer exists but is empty
+                feedback.pushWarning(
+                    "Monitoring point layer provided but has no features, ignoring it...")
+
+        # snapping function that connects the emission load points to the river
+        # section
+        tolerance = 500  # 500m
+        feedback.pushInfo(
+            f"\nSnapping the emission point to the closest river section within {tolerance} m.")
         load = processing.run("native:snapgeometries", {
-            'INPUT':load_file,
-            'REFERENCE_LAYER':river_layer,
-            'TOLERANCE':tolerance,
-            'BEHAVIOR':1,
-            'OUTPUT':'TEMPORARY_OUTPUT'})["OUTPUT"]
-        
+            'INPUT': load_file,
+            'REFERENCE_LAYER': river_layer,
+            'TOLERANCE': tolerance,
+            'BEHAVIOR': 1,
+            'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
+
         # find the closest river section for each emission point
         # create a spatial index for river sections
         river_index = QgsSpatialIndex(river_layer.getFeatures())
-        river_feat_dict = {feat.id(): feat for feat in river_layer.getFeatures()}
+        river_feat_dict = {
+            feat.id(): feat for feat in river_layer.getFeatures()}
 
         # dictionary to store
         section_to_points = {}
         # list to store not connected points
         too_far_points = []
-        
-        feedback.pushInfo("\nChecking if snapping was successfull for all emission points.")
-        
+
+        feedback.pushInfo(
+            "\nChecking if snapping was successfull for all emission points.")
+
         # go through each emission point
         for point_feat in load.getFeatures():
             point_geom = point_feat.geometry()
@@ -858,7 +951,7 @@ class Accumulation(QgsProcessingAlgorithm):
 
             # use spatial index to get candidate IDs
             candidate_ids = river_index.intersects(search_rect)
-            
+
             nearest_river = None
             min_distance = float('inf')
 
@@ -870,10 +963,11 @@ class Accumulation(QgsProcessingAlgorithm):
                 if dist < min_distance:
                     min_distance = dist
                     nearest_river = river_feat
-            
+
             # check if a river is found
             if not nearest_river:
-                # try to identify if it's a monitoring point by checking first non-NULL monitoring field
+                # try to identify if it's a monitoring point by checking first
+                # non-NULL monitoring field
                 point_id = point_feat[0]
                 if mon_field_names:
                     for field_name in mon_field_names:
@@ -882,17 +976,26 @@ class Accumulation(QgsProcessingAlgorithm):
                             point_id = f"{field_name}: {val}"
                             break
                 too_far_points.append(point_id)
-                feedback.pushWarning(f"Warning: no river section found within {tolerance}m for point {point_id}")
+                feedback.pushWarning(
+                    f"Warning: no river section found within {tolerance}m for point {point_id}")
                 continue
 
             river_geom = nearest_river.geometry()
-            feedback.pushInfo("\nChecking if the snapping process was successfull and each emission point is assigned to the closest river section.")
-            feedback.pushInfo(f"DEBUG: point ID {point_feat[0]} is at a distance {river_geom.distance(point_geom): .6f} from river section {nearest_river[id_field]}")
+            feedback.pushInfo(
+                "\nChecking if the snapping process was successfull and each emission point is assigned to the closest river section.")
+            feedback.pushInfo(
+                f"DEBUG: point ID {
+                    point_feat[0]} is at a distance {
+                    river_geom.distance(point_geom): .6f} from river section {
+                    nearest_river[id_field]}")
 
             # double check intersection or proximity
-            if river_geom.intersects(point_geom) or river_geom.distance(point_geom) < 1e-6:
+            if river_geom.intersects(
+                    point_geom) or river_geom.distance(point_geom) < 1e-6:
                 section_id = nearest_river[id_field]
-                section_to_points.setdefault(section_id, []).append((point_feat, river_geom))
+                section_to_points.setdefault(
+                    section_id, []).append(
+                    (point_feat, river_geom))
             else:
                 # raise error if point too far after the snapping
                 # try to identify if it's a monitoring point
@@ -907,16 +1010,15 @@ class Accumulation(QgsProcessingAlgorithm):
                     f"Point {point_id} is too far from the closest river section.\n"
                     f"Please edit this point to be within a distance of {tolerance} m."
                 )
-        
+
         # report unconnected points
         if too_far_points:
-            error_message = f"The following emission points are too far from the closest river section: \n"
+            error_message = "The following emission points are too far from the closest river section: \n"
             for point_id in too_far_points:
                 error_message += f"- Point {point_id}\n"
             error_message += f"Please edit the emission point to be within a distance of {tolerance} m."
 
             raise QgsProcessingException(error_message)
-            
 
         # simple version to print
         for section_id, features in section_to_points.items():
@@ -929,14 +1031,15 @@ class Accumulation(QgsProcessingAlgorithm):
         for section_id, point_data in section_to_points.items():
             feedback.pushInfo(f"\nProcessing river section: {section_id}")
 
-            # all point_data contain the same river_geom for a section so we take only the first one
+            # all point_data contain the same river_geom for a section so we
+            # take only the first one
             river_geom = point_data[0][1]
 
             # skip non-line geometries
             if river_geom.type() != QgsWkbTypes.LineGeometry:
-                feedback.pushInfo(f"Skipping section {section_id}: not a line geometry")
+                feedback.pushInfo(
+                    f"Skipping section {section_id}: not a line geometry")
                 continue
-                
 
             results = []
 
@@ -944,7 +1047,8 @@ class Accumulation(QgsProcessingAlgorithm):
                 point_geom = point_feat.geometry()
 
                 # snap point to the closest segment on the river
-                snapped_point = river_geom.closestSegmentWithContext(point_geom.asPoint())[1]
+                snapped_point = river_geom.closestSegmentWithContext(point_geom.asPoint())[
+                    1]
                 snapped_geom = QgsGeometry.fromPointXY(snapped_point)
 
                 # distance along river (from its start)
@@ -953,19 +1057,21 @@ class Accumulation(QgsProcessingAlgorithm):
                 results.append((point_feat.id(), river_distance))
 
             # sort all points in this section by river distance
-            sorted_results = sorted(results, key=lambda x:x[1])
+            sorted_results = sorted(results, key=lambda x: x[1])
             sorted_distances[section_id] = sorted_results
 
             # print results
-            feedback.pushInfo(f"River section {section_id} sorted emission points:")
+            feedback.pushInfo(
+                f"River section {section_id} sorted emission points:")
             for emission_id, distance in sorted_results:
-                feedback.pushInfo(f"Emission {emission_id} -> {distance:.2f} meters")
-
+                feedback.pushInfo(
+                    f"Emission {emission_id} -> {distance:.2f} meters")
 
         # Split river sections at emission point locations using curveSubstring
         # This directly extracts line substrings at the known distances, avoiding
         # the splitwithlines vertex explosion problem
-        feedback.setProgressText("\nSplitting river sections at emission point locations...")
+        feedback.setProgressText(
+            "\nSplitting river sections at emission point locations...")
 
         split_fields = river_layer.fields()
         geom_type_str = QgsWkbTypes.displayString(river_layer.wkbType())
@@ -1024,24 +1130,29 @@ class Accumulation(QgsProcessingAlgorithm):
         split_provider.addFeatures(new_features)
         non_null_geom_layer.updateExtents()
 
-        feedback.pushInfo(f"Number of features after splitting: {non_null_geom_layer.featureCount()}")
-        
-        # We create new river sections at each emission point. We need to update the name of the section (NET_ID) and 
+        feedback.pushInfo(
+            f"Number of features after splitting: {
+                non_null_geom_layer.featureCount()}")
+
+        # We create new river sections at each emission point. We need to update the name of the section (NET_ID) and
         # the relationship with the other river sections (NET_TO). We create a new naming system where if section 1001
-        # has multiple emission points, it is divided and renamed in 1001A, 1001B, 1001C, ...
-        
-        new_ids_by_feature = {} # store new NET_ID
+        # has multiple emission points, it is divided and renamed in 1001A,
+        # 1001B, 1001C, ...
+
+        new_ids_by_feature = {}  # store new NET_ID
         used_emission_ids = set()
-        emission_to_letter = {} # assign letter to emission points
+        emission_to_letter = {}  # assign letter to emission points
 
         for section_id, sorted_results in sorted_distances.items():
             if not sorted_results:
                 continue
 
             # get all features split from this river section
-            section_feats = [f for f in non_null_geom_layer.getFeatures() if f[id_field] == section_id]
+            section_feats = [
+                f for f in non_null_geom_layer.getFeatures() if f[id_field] == section_id]
 
-            # assign a letter based on which emission points is closest to its downstream vertex
+            # assign a letter based on which emission points is closest to its
+            # downstream vertex
             for feat in section_feats:
                 geom = feat.geometry()
 
@@ -1068,10 +1179,11 @@ class Accumulation(QgsProcessingAlgorithm):
                     em_geom = QgsGeometry.fromPointXY(em_point)
 
                     dist = end_geom.distance(em_geom)
-                    if dist < 5: # 5 meters tolerance
-                        letter = string.ascii_uppercase[i] #A, B, C..
+                    if dist < 5:  # 5 meters tolerance
+                        letter = string.ascii_uppercase[i]  # A, B, C..
                         new_ids_by_feature[feat.id()] = f"{section_id}{letter}"
-                        emission_to_letter[em_id] = (str(section_id), string.ascii_uppercase[i+1])
+                        emission_to_letter[em_id] = (
+                            str(section_id), string.ascii_uppercase[i + 1])
                         used_emission_ids.add(em_id)
                         assigned = True
                         break
@@ -1080,15 +1192,15 @@ class Accumulation(QgsProcessingAlgorithm):
                     # assign final (n+1)th letter if no match found
                     letter = string.ascii_uppercase[len(sorted_results)]
                     new_ids_by_feature[feat.id()] = f"{section_id}{letter}"
-        
+
         # 1. update NET_ID
         non_null_geom_layer.startEditing()
-        
+
         for feat in non_null_geom_layer.getFeatures():
             if feat.id() in new_ids_by_feature:
                 feat.setAttribute(id_field, new_ids_by_feature[feat.id()])
                 non_null_geom_layer.updateFeature(feat)
-                    
+
         # 2. create a mapping with original NET_ID, feature and new NET_ID
         grouped = {}
 
@@ -1096,21 +1208,22 @@ class Accumulation(QgsProcessingAlgorithm):
             fid = feat.id()
             if fid in new_ids_by_feature:
                 new_id = new_ids_by_feature[fid]
-                base_id =''.join(filter(str.isdigit, new_id)) #e.g., from '1001A'-->'1001'
+                # e.g., from '1001A'-->'1001'
+                base_id = ''.join(filter(str.isdigit, new_id))
 
                 if base_id not in grouped:
                     grouped[base_id] = []
 
                 grouped[base_id].append((feat, new_id))
-        
+
         # 3. update NET_TO fields
         for base_id in grouped:
             # sort by the new_id
             sorted_feats = sorted(grouped[base_id], key=lambda x: x[1])
 
             for i, (feat, new_id) in enumerate(sorted_feats):
-                if i < len(sorted_feats) -1:
-                    next_id = sorted_feats[i+1][1]
+                if i < len(sorted_feats) - 1:
+                    next_id = sorted_feats[i + 1][1]
                     feat.setAttribute(to_field, next_id)
                 # last one keep its original NET_TO
                 non_null_geom_layer.updateFeature(feat)
@@ -1133,7 +1246,6 @@ class Accumulation(QgsProcessingAlgorithm):
             # # set NET_FROM to NET_ID
             # feat.setAttribute('NET_FROM', net_id)
             non_null_geom_layer.updateFeature(feat)
-        
 
         # 5. after building the correct river section relationships, we need to update the flow estimation and scale it
         # based on the section_length/total_section_length
@@ -1155,13 +1267,16 @@ class Accumulation(QgsProcessingAlgorithm):
             acc_mean_val = f[acc_MQ_field] if f[acc_MQ_field] is not None else 0.0
             acc_low_val = f[acc_MNQ_field] if f[acc_MNQ_field] is not None else 0.0
             upstream_children = children_map.get(net_id_val, [])
-            sum_up_acc = sum([c[acc_MQ_field] if c[acc_MQ_field] is not None else 0.0 for c in upstream_children])
-            sum_up_low = sum([c[acc_MNQ_field] if c[acc_MNQ_field] is not None else 0.0 for c in upstream_children])
+            sum_up_acc = sum([c[acc_MQ_field] if c[acc_MQ_field]
+                             is not None else 0.0 for c in upstream_children])
+            sum_up_low = sum([c[acc_MNQ_field] if c[acc_MNQ_field]
+                             is not None else 0.0 for c in upstream_children])
             # computed mean for this exact NET_ID string
             computed_mean[net_id_val] = acc_mean_val - sum_up_acc
             computed_low[net_id_val] = acc_low_val - sum_up_low
         # group split features by base section ID
-        # define per-section (non-accumulated) field names and ensure they exist
+        # define per-section (non-accumulated) field names and ensure they
+        # exist
         MQ_field = 'Mean_Flow'
         MNQ_field = 'M_Low_Flow'
 
@@ -1176,7 +1291,9 @@ class Accumulation(QgsProcessingAlgorithm):
             provider.addAttributes(fields_to_add)
             non_null_geom_layer.updateFields()
 
-        split_groups = {}       # it is collecting ALL the features instead of only the ones that have been split, change it
+        # it is collecting ALL the features instead of only the ones that have
+        # been split, change it
+        split_groups = {}
         original_flows = {}
 
         for feat in non_null_geom_layer.getFeatures():
@@ -1193,7 +1310,8 @@ class Accumulation(QgsProcessingAlgorithm):
             # save the original (computed) flow values using accumulated inputs
             if base_id not in original_flows:
                 # prefer computed per-NET_ID values; fallback to feature attribute if missing
-                # QgsFeature doesn't have .get(); use item access which returns attribute by name
+                # QgsFeature doesn't have .get(); use item access which returns
+                # attribute by name
                 mean_fallback = feat[acc_MQ_field] if feat[acc_MQ_field] is not None else 0.0
                 low_fallback = feat[acc_MNQ_field] if feat[acc_MNQ_field] is not None else 0.0
                 mean_val = computed_mean.get(net_id, mean_fallback)
@@ -1202,15 +1320,14 @@ class Accumulation(QgsProcessingAlgorithm):
                     'mean_flow': mean_val,
                     'acc_mean_flow': feat[acc_MQ_field] if feat[acc_MQ_field] is not None else 0.0,
                     'mean_low_flow': low_val,
-                    'acc_mean_low_flow': feat[acc_MNQ_field] if feat[acc_MNQ_field] is not None else 0.0
-                }
-        
+                    'acc_mean_low_flow': feat[acc_MNQ_field] if feat[acc_MNQ_field] is not None else 0.0}
+
         # update flow using proportional length
         for base_id, parts in split_groups.items():
             # skip if not split
             if len(parts) == 1:
                 continue
-            
+
             # sort by NET_ID
             parts = sorted(parts, key=lambda x: x[2])
 
@@ -1234,8 +1351,8 @@ class Accumulation(QgsProcessingAlgorithm):
             for feat_id, part_length, net_id in parts:
                 feat = non_null_geom_layer.getFeature(feat_id)
                 cumulative += part_length
-                ratio = cumulative/total_length
-                percentage = part_length/total_length
+                ratio = cumulative / total_length
+                percentage = part_length / total_length
 
                 # new flow values
                 feat[MQ_field] = percentage * mean_total
@@ -1245,18 +1362,20 @@ class Accumulation(QgsProcessingAlgorithm):
 
                 # same process for low flow values
                 cumulative_low += part_length
-                ratio_low = cumulative_low/total_length
-                percentage_low = part_length/total_length
+                ratio_low = cumulative_low / total_length
+                percentage_low = part_length / total_length
 
                 # new flow values
                 feat[MNQ_field] = percentage_low * mean_low_total
-                feat[acc_MNQ_field] = acc_low_start + (mean_low_total * ratio_low)
+                feat[acc_MNQ_field] = acc_low_start + \
+                    (mean_low_total * ratio_low)
                 non_null_geom_layer.updateFeature(feat)
 
         # 6. transfer the API load to the river section
         # first add the selected_api_fields to the layer
         provider = non_null_geom_layer.dataProvider()
-        existing_fields = [field.name() for field in non_null_geom_layer.fields()]
+        existing_fields = [field.name()
+                           for field in non_null_geom_layer.fields()]
 
         for field_name in selected_api_fields:
             if field_name not in existing_fields:
@@ -1280,10 +1399,10 @@ class Accumulation(QgsProcessingAlgorithm):
                 for field in selected_api_fields:
                     feat[field] = em_feat[field]
                 non_null_geom_layer.updateFeature(feat)
-    
+
         non_null_geom_layer.commitChanges()
-        
-        #QgsProject.instance().addMapLayer(non_null_geom_layer)
+
+        # QgsProject.instance().addMapLayer(non_null_geom_layer)
 
         """ACCUMULATION FUNCTION"""
         waternet = non_null_geom_layer
@@ -1292,7 +1411,8 @@ class Accumulation(QgsProcessingAlgorithm):
         idxTo = waternet.fields().indexFromName(to_field)
 
         # DataArr columns: [NET_ID, NET_ID, NET_TO, fid]
-        # Column 1 duplicates column 0 (NET_ID used as both id and "from" field)
+        # Column 1 duplicates column 0 (NET_ID used as both id and "from"
+        # field)
         feedback.setProgressText(self.tr("Loading network layer\n "))
         Data = [[
             str(f.attribute(idxId)),
@@ -1301,43 +1421,52 @@ class Accumulation(QgsProcessingAlgorithm):
             f.id()
         ] for f in waternet.getFeatures()]
         DataArr_static = np.array(Data, dtype='object')
-        feedback.setProgressText(self.tr("Data loaded \n Calculating flow paths \n"))
+        feedback.setProgressText(
+            self.tr("Data loaded \n Calculating flow paths \n"))
 
         def nextFtsCalc(MARKER2):
-            vtx_to = DataArr[np.where(DataArr[:,0] == MARKER2)[0].tolist(),2][0]  # NET_TO of actual segment
-            rows_to = np.where(DataArr[:,1] == vtx_to)[0].tolist()  # rows with matching NET_ID
-            unconnected_errors = [DataArr[x, 4] for x in rows_to if DataArr[x, 2]=='unconnected']
+            vtx_to = DataArr[np.where(DataArr[:, 0] == MARKER2)[
+                0].tolist(), 2][0]  # NET_TO of actual segment
+            rows_to = np.where(DataArr[:, 1] == vtx_to)[
+                0].tolist()  # rows with matching NET_ID
+            unconnected_errors = [DataArr[x, 4]
+                                  for x in rows_to if DataArr[x, 2] == 'unconnected']
             if len(unconnected_errors) > 0:
                 waternet.removeSelection()
-                waternet.selectByIds(unconnected_errors, waternet.SelectBehavior(1))
+                waternet.selectByIds(
+                    unconnected_errors,
+                    waternet.SelectBehavior(1))
                 raise QgsProcessingException(
-                    'The selected features in the flow are marked as \'unconnected\' '
-                    + '(most likely because of manual editing). Please delete the columns with the network information ('
-                    + to_field
-                    + ', '
-                    + id_field
-                    + ') and run tool 1 \"Water Network Constructor\" again.'
-                )
+                    'The selected features in the flow are marked as \'unconnected\' ' +
+                    '(most likely because of manual editing). Please delete the columns with the network information (' +
+                    to_field +
+                    ', ' +
+                    id_field +
+                    ') and run tool 1 \"Water Network Constructor\" again.')
             return rows_to
 
         def FlowPath(Start_Row, fp_amount):
-            MARKER=DataArr[Start_Row,0] #set MARKER to ID of the first segment
-            Weg = [Start_Row]    
-            i=0
-            while i!=len(DataArr):
+            # set MARKER to ID of the first segment
+            MARKER = DataArr[Start_Row, 0]
+            Weg = [Start_Row]
+            i = 0
+            while i != len(DataArr):
                 next_rows = nextFtsCalc(MARKER)
-                if len(next_rows) > 1: # dividing flow path
+                if len(next_rows) > 1:  # dividing flow path
                     calc_column[Start_Row] = 0
-                    calc_column[next_rows] = calc_column[next_rows]+fp_amount/len(next_rows) # this can be changed to weighted separation later
+                    # this can be changed to weighted separation later
+                    calc_column[next_rows] = calc_column[next_rows] + \
+                        fp_amount / len(next_rows)
                     out = [Weg, next_rows]
                     break
-                if len(next_rows) == 1: # continuing flow path
+                if len(next_rows) == 1:  # continuing flow path
                     Weg = Weg + next_rows
-                    MARKER=DataArr[next_rows[0],0] # change MARKER to Id of next segment 
-                if len(next_rows) == 0: # end point
+                    # change MARKER to Id of next segment
+                    MARKER = DataArr[next_rows[0], 0]
+                if len(next_rows) == 0:  # end point
                     out = [Weg]
                     break
-                i=i+1
+                i = i + 1
             return (out)
 
         # loop through all selected substances
@@ -1355,54 +1484,63 @@ class Accumulation(QgsProcessingAlgorithm):
                 val = f.attribute(idxCalc)
                 if val is not None:
                     fid = f.id()
-                    row_idx = np.where(DataArr[:,4] == fid)[0]
+                    row_idx = np.where(DataArr[:, 4] == fid)[0]
                     if row_idx.size > 0:
                         DataArr[row_idx[0], 3] = val
-            DataArr[np.where(DataArr[:,3] == None), 3] = 0
+            DataArr[np.where(DataArr[:, 3] is None), 3] = 0
             calc_column = np.copy(DataArr[:, 3]).astype(float)
             DataArr[:, 3] = 0.0
 
             calc_segm = np.where(calc_column != 0)[0].tolist()
-            calc_segm = [i for i in calc_segm if (DataArr[i, 1] != 'unconnected' and DataArr[i,2] != 'unconnected')]
+            calc_segm = [i for i in calc_segm if (
+                DataArr[i, 1] != 'unconnected' and DataArr[i, 2] != 'unconnected')]
 
             total2 = len(calc_segm)
 
             iteration = 0
-            max_iterations = 10000 #safety limit
+            max_iterations = 10000  # safety limit
             max_iterations_flag = False
-            last_segments = [] #track recent segments to detect stuck loops
+            last_segments = []  # track recent segments to detect stuck loops
 
             while len(calc_segm) > 0 and iteration < max_iterations:
                 iteration += 1
                 if feedback.isCanceled():
                     break
 
-                # detection if it is stuck, if it is processing the same segment repeatedly
+                # detection if it is stuck, if it is processing the same
+                # segment repeatedly
                 if len(last_segments) > 100:    # keep last 100 segments
                     last_segments.pop(0)
                 last_segments.append(calc_segm[0] if calc_segm else None)
 
                 # check if it stuck on the same segment
                 if len(set(last_segments)) < 10 and len(last_segments) == 100:
-                    feedback.reportError(f"Stuck loop detected! Repeated segments: {set(last_segments)}")
+                    feedback.reportError(
+                        f"Stuck loop detected! Repeated segments: {
+                            set(last_segments)}")
                     # convert feature IDs to NET_IDs for selection
                     net_ids_debug = []
                     for feature_id in set(last_segments):
                         net_id_debug = DataArr[feature_id, 0]
                         net_ids_debug.append(net_id_debug)
-                    feedback.reportError(f"Corresponding NET_IDs to select: {net_ids_debug}")
+                    feedback.reportError(
+                        f"Corresponding NET_IDs to select: {net_ids_debug}")
                     break
 
                 StartRow = calc_segm[0]
-                amount = calc_column[StartRow] # amount to add to flow path
-                calc_column[StartRow] = 0 #"delete" calculated amount from list (set 0)
-                Fl_pth = FlowPath(StartRow, amount) # get flow path of StartRow 
-                if len(Fl_pth)== 2:
-                    calc_segm = calc_segm + Fl_pth[1] # if flow path devides add new segments to calc_segm
-                DataArr[Fl_pth[0],3] = DataArr[Fl_pth[0],3]+amount # Add the amount to the calculated flow path
-                calc_segm = calc_segm[1:] # delete used segment
-                calc_segm = list(set(calc_segm)) #delete duplicate values
-                feedback.setProgress((1-(len(calc_segm)/total2))*100)
+                amount = calc_column[StartRow]  # amount to add to flow path
+                # "delete" calculated amount from list (set 0)
+                calc_column[StartRow] = 0
+                # get flow path of StartRow
+                Fl_pth = FlowPath(StartRow, amount)
+                if len(Fl_pth) == 2:
+                    # if flow path devides add new segments to calc_segm
+                    calc_segm = calc_segm + Fl_pth[1]
+                DataArr[Fl_pth[0], 3] = DataArr[Fl_pth[0], 3] + \
+                    amount  # Add the amount to the calculated flow path
+                calc_segm = calc_segm[1:]  # delete used segment
+                calc_segm = list(set(calc_segm))  # delete duplicate values
+                feedback.setProgress((1 - (len(calc_segm) / total2)) * 100)
 
             if iteration >= max_iterations:
                 max_iterations_flag = True
@@ -1412,12 +1550,14 @@ class Accumulation(QgsProcessingAlgorithm):
             api_short = calc_field[:4]
             new_field_name = f'acc_{api_short}'
             if new_field_name not in [f.name() for f in waternet.fields()]:
-                waternet.dataProvider().addAttributes([QgsField(new_field_name, QVariant.Double)])
+                waternet.dataProvider().addAttributes(
+                    [QgsField(new_field_name, QVariant.Double)])
                 waternet.updateFields()
-            
+
             field_idx = waternet.fields().indexOf(new_field_name)
             if field_idx == -1:
-                feedback.reportError(f"Error: field {new_field_name} not found in waternet")
+                feedback.reportError(
+                    f"Error: field {new_field_name} not found in waternet")
                 continue
 
             waternet.startEditing()
@@ -1431,13 +1571,16 @@ class Accumulation(QgsProcessingAlgorithm):
                 feature.setAttribute(field_idx, value_to_set)
                 waternet.updateFeature(feature)
             waternet.commitChanges()
-            feedback.setProgressText(self.tr(f"{new_field_name} written successfully"))
+            feedback.setProgressText(
+                self.tr(f"{new_field_name} written successfully"))
 
         if max_iterations_flag:
-            feedback.reportError(f"Emergency break: exceeded {max_iterations} iterations")
+            feedback.reportError(
+                f"Emergency break: exceeded {max_iterations} iterations")
 
             # check for duplicate NET_ID values that might be causing the loop
-            feedback.reportError(f"Checking for duplicate {id_field} that might cause infinite loops...")
+            feedback.reportError(
+                f"Checking for duplicate {id_field} that might cause infinite loops...")
 
             # collect all NET_ID values
             values = {}
@@ -1447,15 +1590,16 @@ class Accumulation(QgsProcessingAlgorithm):
                     values[cid].append(f.id())
                 else:
                     values[cid] = [f.id()]
-            
+
             # report duplicates
             for cid, fids in values.items():
                 if len(fids) > 1:
-                    feedback.reportError(f"Duplicate NET_ID {cid} found in features {fids}")
-                    
+                    feedback.reportError(
+                        f"Duplicate NET_ID {cid} found in features {fids}")
 
         # Add acc_unit column right after all acc_ fields
-        waternet.dataProvider().addAttributes([QgsField('acc_unit', QVariant.String)])
+        waternet.dataProvider().addAttributes(
+            [QgsField('acc_unit', QVariant.String)])
         waternet.updateFields()
         waternet.startEditing()
         for feature in waternet.getFeatures():
@@ -1469,11 +1613,11 @@ class Accumulation(QgsProcessingAlgorithm):
 
         # conversion factor: from kg/year and m^3/s to ng/L
         # convert m^3/s in L/a
-        conversion_flow = 1000*31_536_000 # L in 1 m^3 and second in a year
+        conversion_flow = 1000 * 31_536_000  # L in 1 m^3 and second in a year
         # convert kg/a in ng/a
         conversion_load = 1_000_000_000_000
         # total conversion
-        conversion_factor = conversion_load / conversion_flow 
+        conversion_factor = conversion_load / conversion_flow
 
         # prepare indices
         idx_mean_flow = waternet.fields().indexOf(acc_MQ_field)
@@ -1506,28 +1650,31 @@ class Accumulation(QgsProcessingAlgorithm):
                 api_short = api_field[:4]
                 acc_field = f"acc_{api_short}"
                 acc_value = feature[acc_field]
-                
+
                 if acc_value is None:
                     continue
 
                 conc_field_mean = f"conc_{api_short}"
                 conc_field_low = f"conL_{api_short}"
 
-                # Calculate mean concentration only if flow_mean is valid and non-zero
+                # Calculate mean concentration only if flow_mean is valid and
+                # non-zero
                 if flow_mean is not None and flow_mean != 0:
-                    conc_mean = (acc_value * conversion_factor)/flow_mean
+                    conc_mean = (acc_value * conversion_factor) / flow_mean
                     feature.setAttribute(conc_field_mean, conc_mean)
-                
-                # Calculate low concentration only if flow_low is valid and non-zero
+
+                # Calculate low concentration only if flow_low is valid and
+                # non-zero
                 if flow_low is not None and flow_low != 0:
-                    conc_low = (acc_value * conversion_factor)/flow_low
+                    conc_low = (acc_value * conversion_factor) / flow_low
                     feature.setAttribute(conc_field_low, conc_low)
 
             waternet.updateFeature(feature)
         waternet.commitChanges()
 
         # Add conc_unit column right after all conc_ / conL_ fields
-        waternet.dataProvider().addAttributes([QgsField('conc_unit', QVariant.String)])
+        waternet.dataProvider().addAttributes(
+            [QgsField('conc_unit', QVariant.String)])
         waternet.updateFields()
         waternet.startEditing()
         for feature in waternet.getFeatures():
@@ -1536,8 +1683,11 @@ class Accumulation(QgsProcessingAlgorithm):
         waternet.commitChanges()
 
         # prepare the output sink
-        # exclude internal per-section fields (MQ_field, MNQ_field) from final output
-        export_field_names = [f.name() for f in waternet.fields() if f.name() not in (MQ_field, MNQ_field)]
+        # exclude internal per-section fields (MQ_field, MNQ_field) from final
+        # output
+        export_field_names = [
+            f.name() for f in waternet.fields() if f.name() not in (
+                MQ_field, MNQ_field)]
         export_fields = QgsFields()
         for f in waternet.fields():
             if f.name() in export_field_names:
@@ -1568,29 +1718,31 @@ class Accumulation(QgsProcessingAlgorithm):
         # Calculate dilution ratio
         dil_result = self.calculate_dilution_ratio(
             parameters, context, feedback,
-            load_original, waternet, id_field, acc_MQ_field,
+            load_original, waternet, id_field, to_field, acc_MQ_field,
             is_polygon_network=False
         )
 
-        if mon_point is not None and mon_point.featureCount() > 0:  # be sure layer exist and is not null
+        if mon_point is not None and mon_point.featureCount(
+        ) > 0:  # be sure layer exist and is not null
             # get the CRS from load_original layer
             load_crs = load_original.crs()
             # create a new layer, copy of the monitoring station points
-            
+
             if mon_point.crs().authid() != load_crs.authid():
                 mon_point_copy = processing.run("native:reprojectlayer", {
-                    'INPUT':mon_point,
-                    'TARGET_CRS':load_crs,
-                    'CONVERT_CURVED_GEOMETRIES':False,
-                    'OPERATION':'+proj=noop',
-                    'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
-                
+                    'INPUT': mon_point,
+                    'TARGET_CRS': load_crs,
+                    'CONVERT_CURVED_GEOMETRIES': False,
+                    'OPERATION': '+proj=noop',
+                    'OUTPUT': 'TEMPORARY_OUTPUT'})['OUTPUT']
+
             else:
                 # get CRS and geometry type
                 crs = mon_point.crs().authid()
                 geom_type = QgsWkbTypes.displayString(mon_point.wkbType())
                 # create memory layer
-                mon_point_copy = QgsVectorLayer(f"{geom_type}?crs={crs}", "mon_point_copy", "memory")
+                mon_point_copy = QgsVectorLayer(
+                    f"{geom_type}?crs={crs}", "mon_point_copy", "memory")
                 provider = mon_point_copy.dataProvider()
                 # copy all fields
                 provider.addAttributes(mon_point.fields())
@@ -1604,7 +1756,8 @@ class Accumulation(QgsProcessingAlgorithm):
                 mon_point_copy.updateExtents()
 
             # --- Copy concentration values from nearest waternet segments ---
-            # Ensure the monitoring layer has concentration and accumulated load fields
+            # Ensure the monitoring layer has concentration and accumulated
+            # load fields
             mon_provider = mon_point_copy.dataProvider()
             existing_mon_fields = [f.name() for f in mon_point_copy.fields()]
             new_mon_fields = []
@@ -1623,7 +1776,8 @@ class Accumulation(QgsProcessingAlgorithm):
                 mon_provider.addAttributes(new_mon_fields)
                 mon_point_copy.updateFields()
 
-            # Build spatial index on the (final) river network with concentrations
+            # Build spatial index on the (final) river network with
+            # concentrations
             tolerance = 500  # meters
             water_index = QgsSpatialIndex(waternet.getFeatures())
 
@@ -1688,7 +1842,8 @@ class Accumulation(QgsProcessingAlgorithm):
                     if base1 == base2:
                         suf1 = id1.replace(base1, "")
                         suf2 = id2.replace(base2, "")
-                        # lexicographic compare (empty suffix sorts before letters)
+                        # lexicographic compare (empty suffix sorts before
+                        # letters)
                         if suf1 <= suf2:
                             chosen_fid = fid1
                         else:
@@ -1701,7 +1856,8 @@ class Accumulation(QgsProcessingAlgorithm):
 
                 chosen_feat = waternet.getFeature(chosen_fid)
 
-                # Copy concentration and accumulated load attributes for each selected API
+                # Copy concentration and accumulated load attributes for each
+                # selected API
                 for api_field in selected_api_fields:
                     api_short = api_field[:4]
                     conc_mean = f"conc_{api_short}"
@@ -1709,12 +1865,24 @@ class Accumulation(QgsProcessingAlgorithm):
                     acc_load = f"acc_{api_short}"
 
                     # only set if both source and dest fields exist
-                    if conc_mean in [f.name() for f in waternet.fields()] and conc_mean in [f.name() for f in mon_point_copy.fields()]:
-                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_mean), chosen_feat[conc_mean])
-                    if conc_low in [f.name() for f in waternet.fields()] and conc_low in [f.name() for f in mon_point_copy.fields()]:
-                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(conc_low), chosen_feat[conc_low])
-                    if acc_load in [f.name() for f in waternet.fields()] and acc_load in [f.name() for f in mon_point_copy.fields()]:
-                        mon_feat.setAttribute(mon_point_copy.fields().indexFromName(acc_load), chosen_feat[acc_load])
+                    if conc_mean in [
+                            f.name() for f in waternet.fields()] and conc_mean in [
+                            f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(
+                            mon_point_copy.fields().indexFromName(conc_mean),
+                            chosen_feat[conc_mean])
+                    if conc_low in [
+                            f.name() for f in waternet.fields()] and conc_low in [
+                            f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(
+                            mon_point_copy.fields().indexFromName(conc_low),
+                            chosen_feat[conc_low])
+                    if acc_load in [
+                            f.name() for f in waternet.fields()] and acc_load in [
+                            f.name() for f in mon_point_copy.fields()]:
+                        mon_feat.setAttribute(
+                            mon_point_copy.fields().indexFromName(acc_load),
+                            chosen_feat[acc_load])
 
                 mon_point_copy.updateFeature(mon_feat)
             mon_point_copy.commitChanges()
@@ -1733,8 +1901,7 @@ class Accumulation(QgsProcessingAlgorithm):
             if mon_sink is None:
                 feedback.pushWarning(
                     "\nMonitoring output is set to 'Skip output'. Monitoring point results will not be saved. "
-                    "Choose 'Save to temporary layer' or provide a file to store monitoring results.\n"
-                )
+                    "Choose 'Save to temporary layer' or provide a file to store monitoring results.\n")
                 # return only the river output
                 result = {self.OUTPUT: dest_id}
                 result.update(dil_result)
@@ -1747,81 +1914,102 @@ class Accumulation(QgsProcessingAlgorithm):
                           self.OUTPUT: dest_id}
                 result.update(dil_result)
                 return result
-            
+
         else:
-            if mon_point is not None: # layer exists but is empty
-                feedback.pushWarning("\nMonitoring point layer provided but has no features, ignoring it...\n")
+            if mon_point is not None:  # layer exists but is empty
+                feedback.pushWarning(
+                    "\nMonitoring point layer provided but has no features, ignoring it...\n")
 
         result = {self.OUTPUT: dest_id}
         result.update(dil_result)
         return result
 
-    def calculate_dilution_ratio(self, parameters, context, feedback,
-                                  load_original, waternet, id_field, acc_MQ_field,
-                                  is_polygon_network):
+    def calculate_dilution_ratio(
+            self,
+            parameters,
+            context,
+            feedback,
+            load_original,
+            waternet,
+            id_field,
+            to_field,
+            acc_MQ_field,
+            is_polygon_network):
         """
-        Calculate dilution ratio for each emission point that has a Q_WWTP value.
-        Dilu_Ratio = (Q_WWTP + Q_riv) / Q_WWTP
-        where Q_riv is the accumulated mean flow of the upstream river section.
+        Accumulate WWTP effluent (Q_WWTP) downstream along the river network
+        and compute a per-section dilution ratio:
 
-        For line networks: finds the two closest sections, picks the one with the
-        smaller suffix letter (i.e. the upstream half).
-        For polygon networks: finds the polygon containing the point and reads its flow.
+        DR = max(0, (acc_Mean_annual - acc_Q_WWTP) / acc_Q_WWTP)
+
+        where:
+        - acc_Mean_annual: accumulated natural mean river flow converted to m³/a
+        - acc_Q_WWTP: accumulated WWTP effluent (m³/a) from all upstream WWTPs
+
+        Output geometry matches the river network (line or polygon).
+        Output fields: NET_ID, NET_TO, acc_Q_WWTP, acc_Mean (m³/a), unit, DR.
+        Q_WWTP is optional — if absent the output is skipped entirely.
         """
-        # Check if Q_WWTP field exists in the emission load layer
+        # Skip if Q_WWTP field not present in emission loads
         load_field_names = [f.name() for f in load_original.fields()]
         if 'Q_WWTP' not in load_field_names:
-            feedback.pushInfo("\nQ_WWTP field not found in Emission Loads layer. Skipping dilution ratio calculation.")
+            feedback.pushInfo(
+                "\nQ_WWTP field not found in Emission Loads layer. "
+                "Skipping dilution ratio calculation.")
             return {}
 
         feedback.pushInfo("\n=== Calculating Dilution Ratio ===\n")
 
-        # Build output fields: all fields from emission loads + Q_riv + Dilu_Ratio
+        # Define output fields — river network geometry, not point geometry
         dil_fields = QgsFields()
-        for f in load_original.fields():
-            dil_fields.append(QgsField(f.name(), f.type()))
-        dil_fields.append(QgsField('Q_riv', QVariant.Double))
-        dil_fields.append(QgsField('Dilu_Ratio', QVariant.Double))
+        dil_fields.append(QgsField(id_field, waternet.fields().field(id_field).type()))
+        dil_fields.append(QgsField(to_field, waternet.fields().field(to_field).type()))
+        dil_fields.append(QgsField('acc_Q_WWTP', QVariant.Double))
+        dil_fields.append(QgsField('acc_Mean', QVariant.Double))
+        dil_fields.append(QgsField('unit', QVariant.String))
+        dil_fields.append(QgsField('DR', QVariant.Double))
 
         (dil_sink, dil_dest_id) = self.parameterAsSink(
             parameters, self.OUTPUT_dil, context,
-            dil_fields, load_original.wkbType(), load_original.sourceCrs()
+            dil_fields, waternet.wkbType(), waternet.sourceCrs()
         )
 
         if dil_sink is None:
             feedback.pushWarning(
-                "\nDilution Ratio output is set to 'Skip output'. Results will not be saved.\n"
-            )
+                "\nDilution Ratio output is set to 'Skip output'. "
+                "Results will not be saved.\n")
             return {}
 
-        # Build spatial index on waternet (same approach as monitoring stations)
-        tolerance = 500
+        # ---- STEP 1: Assign Q_WWTP from emission points to their nearest section ----
+        tolerance = 500  # metres
         water_index = QgsSpatialIndex(waternet.getFeatures())
         waternet_feat_dict = {feat.id(): feat for feat in waternet.getFeatures()}
 
+        # feature-id -> total Q_WWTP (m³/a) assigned to that section
+        section_q_wwtp = {}
+
         for em_feat in load_original.getFeatures():
-            q_wwtp = em_feat['Q_WWTP']
-            if q_wwtp is None or isinstance(q_wwtp, QVariant) and q_wwtp.isNull():
-                feedback.pushWarning(f"Skipping emission point {em_feat[0]}: Q_WWTP is NULL")
+            q_wwtp_raw = em_feat['Q_WWTP']
+            if q_wwtp_raw is None or (
+                    isinstance(q_wwtp_raw, QVariant) and q_wwtp_raw.isNull()):
                 continue
-            q_wwtp = float(q_wwtp)
+            try:
+                q_wwtp = float(q_wwtp_raw)
+            except (TypeError, ValueError):
+                continue
             if q_wwtp == 0:
-                feedback.pushWarning(f"Skipping emission point {em_feat[0]}: Q_WWTP is 0")
                 continue
 
             em_geom = em_feat.geometry()
             if em_geom is None:
                 continue
 
-            q_riv = None
+            chosen_fid = None
 
             if is_polygon_network:
-                # Find the polygon containing or closest to the emission point
+                # Polygon network: find the polygon containing or nearest to the point
                 search_rect = em_geom.boundingBox().buffered(tolerance)
                 candidate_ids = water_index.intersects(search_rect)
-
-                chosen_feat = None
-                min_distance = float('inf')
+                min_dist = float('inf')
 
                 for fid in candidate_ids:
                     wfeat = waternet_feat_dict.get(fid)
@@ -1829,30 +2017,37 @@ class Accumulation(QgsProcessingAlgorithm):
                         continue
                     wgeom = wfeat.geometry()
                     if wgeom.contains(em_geom):
-                        chosen_feat = wfeat
+                        chosen_fid = fid
                         break
                     dist = wgeom.distance(em_geom)
-                    if dist < min_distance and dist <= tolerance:
-                        min_distance = dist
-                        chosen_feat = wfeat
+                    if dist < min_dist and dist <= tolerance:
+                        min_dist = dist
+                        chosen_fid = fid
 
-                if chosen_feat is not None:
-                    q_riv = chosen_feat[acc_MQ_field]
+                if chosen_fid is None:
+                    try:
+                        nn_ids = water_index.nearestNeighbor(em_geom.asPoint(), 1)
+                        if nn_ids:
+                            wfeat = waternet_feat_dict.get(nn_ids[0])
+                            if wfeat and wfeat.geometry().distance(em_geom) <= tolerance:
+                                chosen_fid = nn_ids[0]
+                    except Exception:  # nosec B110
+                        pass  # nearest-neighbour lookup is best-effort
 
             else:
-                # Line network: find the two closest sections, pick the upstream one
-                # (smaller suffix letter = upstream half, same logic as monitoring stations)
+                # Line network: find the two closest sections and pick the downstream one
+                # (larger suffix letter = section starting at the discharge point)
                 search_rect = em_geom.boundingBox().buffered(tolerance)
                 candidate_ids = water_index.intersects(search_rect)
 
                 if len(candidate_ids) < 2:
                     try:
                         nn = water_index.nearestNeighbor(em_geom.asPoint(), 2)
+                        for x in nn:
+                            if x not in candidate_ids:
+                                candidate_ids.append(x)
                     except Exception:
-                        nn = []
-                    for x in nn:
-                        if x not in candidate_ids:
-                            candidate_ids.append(x)
+                        pass
 
                 candidates = []
                 for fid in candidate_ids:
@@ -1867,58 +2062,142 @@ class Accumulation(QgsProcessingAlgorithm):
 
                 if candidates:
                     candidates = sorted(candidates, key=lambda x: x[1])
-
-                    chosen_fid = None
                     if len(candidates) == 1:
                         chosen_fid = candidates[0][0]
                     else:
-                        f1 = waternet_feat_dict[candidates[0][0]]
-                        f2 = waternet_feat_dict[candidates[1][0]]
-                        id1 = str(f1[id_field])
-                        id2 = str(f2[id_field])
-                        base1 = ''.join(filter(str.isdigit, id1))
-                        base2 = ''.join(filter(str.isdigit, id2))
-                        if base1 == base2:
-                            # Same base section split at emission point -> pick upstream (smaller suffix)
-                            suf1 = id1.replace(base1, "")
-                            suf2 = id2.replace(base2, "")
-                            chosen_fid = candidates[0][0] if suf1 <= suf2 else candidates[1][0]
+                        f1 = waternet_feat_dict.get(candidates[0][0])
+                        f2 = waternet_feat_dict.get(candidates[1][0])
+                        if f1 and f2:
+                            id1 = str(f1[id_field])
+                            id2 = str(f2[id_field])
+                            base1 = ''.join(filter(str.isdigit, id1))
+                            base2 = ''.join(filter(str.isdigit, id2))
+                            if base1 == base2:
+                                # Split section: pick downstream (larger suffix = after discharge)
+                                suf1 = id1.replace(base1, "")
+                                suf2 = id2.replace(base2, "")
+                                chosen_fid = (
+                                    candidates[0][0] if suf1 > suf2
+                                    else candidates[1][0])
+                            else:
+                                chosen_fid = candidates[0][0]
                         else:
                             chosen_fid = candidates[0][0]
 
-                    if chosen_fid is not None:
-                        chosen_feat = waternet_feat_dict[chosen_fid]
-                        q_riv = chosen_feat[acc_MQ_field]
-
-            if q_riv is None or (isinstance(q_riv, QVariant) and q_riv.isNull()) or q_riv == 0:
-                feedback.pushWarning(f"No valid Q_riv for emission point {em_feat[0]}, skipping dilution ratio.")
-                q_riv_val = None
-                dilu_ratio = None
-            else:
-                q_riv_val = float(q_riv)
-                # Convert Q_riv from m³/s to m³/a to match Q_WWTP units
-                q_riv_annual = q_riv_val * 365.25 * 24 * 3600
-                dilu_ratio = (q_wwtp + q_riv_annual) / q_wwtp
+            if chosen_fid is not None:
+                section_q_wwtp[chosen_fid] = (
+                    section_q_wwtp.get(chosen_fid, 0.0) + q_wwtp)
                 feedback.pushInfo(
-                    f"Emission {em_feat[0]}: Q_WWTP={q_wwtp:.2f} m³/a, "
-                    f"Q_riv={q_riv_val:.4f} m³/s ({q_riv_annual:.2f} m³/a), "
-                    f"Dilu_Ratio={dilu_ratio:.4f}"
-                )
+                    f"Q_WWTP={q_wwtp:.2f} m³/a assigned to section "
+                    f"{waternet_feat_dict[chosen_fid][id_field]}")
 
-            # Create output feature with all emission fields + Q_riv + Dilu_Ratio
+        # ---- STEP 2: Build DataArr for downstream accumulation ----
+        idxId = waternet.fields().indexFromName(id_field)
+        idxTo = waternet.fields().indexFromName(to_field)
+
+        Data = []
+        for f in waternet.getFeatures():
+            fid = f.id()
+            q = float(section_q_wwtp.get(fid, 0.0))
+            Data.append([
+                str(f.attribute(idxId)),
+                str(f.attribute(idxId)),
+                str(f.attribute(idxTo)),
+                q,
+                fid
+            ])
+        DataArr = np.array(Data, dtype='object')
+        DataArr[np.equal(DataArr[:, 3], None), 3] = 0
+
+        calc_column = np.copy(DataArr[:, 3]).astype(float)
+        DataArr[:, 3] = 0.0
+        calc_segm = np.where(calc_column != 0)[0].tolist()
+
+        # ---- STEP 3: Accumulation functions ----
+        def nextFtsDR(marker):
+            rows = np.where(DataArr[:, 0] == marker)[0].tolist()
+            if not rows:
+                return []
+            vtx_to = DataArr[rows[0], 2]
+            return np.where(DataArr[:, 0] == vtx_to)[0].tolist()
+
+        def FlowPathDR(start_row, fp_amount):
+            marker = DataArr[start_row, 0]
+            weg = [start_row]
+            i = 0
+            while i != len(DataArr):
+                next_rows = nextFtsDR(marker)
+                if len(next_rows) > 1:
+                    calc_column[start_row] = 0
+                    calc_column[next_rows] = (
+                        calc_column[next_rows] + fp_amount / len(next_rows))
+                    out = [weg, next_rows]
+                    break
+                if len(next_rows) == 1:
+                    weg = weg + next_rows
+                    marker = DataArr[next_rows[0], 0]
+                if len(next_rows) == 0:
+                    out = [weg]
+                    break
+                i = i + 1
+            return out
+
+        # ---- STEP 4: Run downstream accumulation loop ----
+        total2 = len(calc_segm)
+        max_iterations = 10000
+        iteration = 0
+        while len(calc_segm) > 0 and iteration < max_iterations:
+            iteration += 1
+            if feedback.isCanceled():
+                break
+            start_row = calc_segm[0]
+            amount = calc_column[start_row]
+            calc_column[start_row] = 0
+            fl_pth = FlowPathDR(start_row, amount)
+            if len(fl_pth) == 2:
+                calc_segm = calc_segm + fl_pth[1]
+            DataArr[fl_pth[0], 3] = DataArr[fl_pth[0], 3] + amount
+            calc_segm = calc_segm[1:]
+            calc_segm = list(set(calc_segm))
+            if total2 > 0:
+                feedback.setProgress(int((1 - len(calc_segm) / total2) * 100))
+
+        # DataArr[:, 3] now holds accumulated Q_WWTP (m³/a) for each section
+
+        # ---- STEP 5: Write one output feature per river section ----
+        seconds_per_year = 365.25 * 24 * 3600
+        idx_acc_mean = waternet.fields().indexOf(acc_MQ_field)
+
+        for i, feat in enumerate(waternet.getFeatures()):
+            acc_q_wwtp = float(DataArr[i, 3])
+
+            # Convert acc_Mean from m³/s to m³/a
+            acc_mean_raw = feat[idx_acc_mean]
+            if acc_mean_raw is None or (
+                    isinstance(acc_mean_raw, QVariant) and acc_mean_raw.isNull()):
+                acc_mean_annual = None
+            else:
+                acc_mean_annual = float(acc_mean_raw) * seconds_per_year
+
+            # DR = max(0, (acc_Mean_annual − acc_Q_WWTP) / acc_Q_WWTP)
+            if acc_q_wwtp > 0 and acc_mean_annual is not None:
+                dr = max(0.0, (acc_mean_annual - acc_q_wwtp) / acc_q_wwtp)
+            else:
+                dr = None
+
             new_feat = QgsFeature(dil_fields)
-            new_feat.setGeometry(em_feat.geometry())
-            for f in load_original.fields():
-                new_feat[f.name()] = em_feat[f.name()]
-            new_feat['Q_riv'] = q_riv_val
-            new_feat['Dilu_Ratio'] = dilu_ratio
+            new_feat.setGeometry(feat.geometry())
+            new_feat[id_field] = feat[id_field]
+            new_feat[to_field] = feat[to_field]
+            new_feat['acc_Q_WWTP'] = acc_q_wwtp if acc_q_wwtp > 0 else None
+            new_feat['acc_Mean'] = acc_mean_annual
+            new_feat['unit'] = 'm\u00b3/a'
+            new_feat['DR'] = dr
             dil_sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
 
         feedback.pushInfo("Dilution ratio calculation completed.")
         return {self.OUTPUT_dil: dil_dest_id}
 
-    
-    
     def name(self):
         return '7 - Accumulation'
 
@@ -1930,7 +2209,7 @@ class Accumulation(QgsProcessingAlgorithm):
 
     def groupId(self):
         return 'API emission'
-    
+
     def helpUrl(self):
         # Return a URL or local file path to your documentation
         return "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Accumulation.html"
