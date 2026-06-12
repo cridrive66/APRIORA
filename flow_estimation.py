@@ -581,7 +581,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             f.id()
         ] for f in waternet.getFeatures()]
         DataArr = np.array(Data, dtype='object')
-        DataArr[np.where(DataArr[:, 3], None), 3] = 0
+        DataArr[np.equal(DataArr[:, 3], None), 3] = 0
         feedback.setProgressText(self.tr("Data loaded \n Calculating flow paths \n"))
 
         '''segments with numbers'''
