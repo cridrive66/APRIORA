@@ -1,51 +1,51 @@
-Excreted emission (mg/inh./a) (*),API name (*),CAS No.,year (*),country (*),region (*),data source,integrated excretion rate (%),ATC-Codes included
-26.28,Carbamazepine,298-46-4,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),5,N03AF01
-27.2,Clarithromycin,81103-11-9,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),34,more than 1
-369.65,Diclofenac,15307-86-5,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),1 (o); 94 (t),tbd
-0,Estrone (E1),53-16-7,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),n.d.,tbd
-6.61,Fluconazole,86386-73-4,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),80,tbd
-100.22,Metoprolol,37350-58-6,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),10,tbd
-39.02,Primidone,125-33-7,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),40,tbd
-44.29,Sulfamethoxazole,129378-89-8,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),20,tbd
-38.59,Trimethoprim,738-70-5,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),80,tbd
-17.37,Venlafaxine,93413-69-5,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),5,tbd
-24.92,Carbamazepine,298-46-4,2023,Finland,-,fimea (www.fimea.fi),5,tbd
-5.88,Clarithromycin,81103-11-9,2023,Finland,-,fimea (www.fimea.fi),34,tbd
-273.67,Diclofenac,15307-86-5,2023,Finland,-,fimea (www.fimea.fi),1 (o); 94 (t),tbd
-0,Estrone (E1),53-16-7,2023,Finland,-,fimea (www.fimea.fi),n.d.,tbd
-18.72,Fluconazole,86386-73-4,2023,Finland,-,fimea (www.fimea.fi),80,tbd
-47.63,Metoprolol,37350-58-6,2023,Finland,-,fimea (www.fimea.fi),10,tbd
-2.12,Primidone,125-33-7,2023,Finland,-,fimea (www.fimea.fi),40,tbd
-21.14,Sulfamethoxazole,129378-89-8,2023,Finland,-,fimea (www.fimea.fi),20,tbd
-127.83,Trimethoprim,738-70-5,2023,Finland,-,fimea (www.fimea.fi),80,tbd
-23.73,Venlafaxine,93413-69-5,2023,Finland,-,fimea (www.fimea.fi),5,tbd
-39.06,Carbamazepine,298-46-4,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,5,tbd
-91.89,Clarithromycin,81103-11-9,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,34,tbd
-287.73,Diclofenac,15307-86-5,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,1 (o); 94 (t),tbd
-0,Estrone (E1),53-16-7,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,n.d.,tbd
-10.69,Fluconazole,86386-73-4,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,80,tbd
-21.31,Metoprolol,37350-58-6,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,10,tbd
-0.94,Primidone,125-33-7,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,40,tbd
-64.74,Sulfamethoxazole,129378-89-8,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,20,tbd
-52.77,Trimethoprim,738-70-5,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,80,tbd
-4.08,Venlafaxine,93413-69-5,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,5,tbd
-44.02,Carbamazepine,298-46-4,2023,Poland,Pomerania,tbd,5,tbd
-68.74,Clarithromycin,81103-11-9,2023,Poland,Pomerania,tbd,34,tbd
-1.90,Diclofenac,15307-86-5,2023,Poland,Pomerania,tbd,1 (o); 94 (t),tbd
-n.d.,Estrone (E1),53-16-7,2023,Poland,Pomerania,tbd,n.d.,tbd
-21.37,Fluconazole,86386-73-4,2023,Poland,Pomerania,tbd,80,tbd
-7.41,Metoprolol,37350-58-6,2023,Poland,Pomerania,tbd,10,tbd
-n.d.,Primidone,125-33-7,2023,Poland,Pomerania,tbd,40,tbd
-26.28,Sulfamethoxazole,129378-89-8,2023,Poland,Pomerania,tbd,20,tbd
-21.02,Trimethoprim,738-70-5,2023,Poland,Pomerania,tbd,80,tbd
-n.d.,Venlafaxine,93413-69-5,2023,Poland,Pomerania,tbd,5,tbd
-n.d.,Carbamazepine,298-46-4,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),5,tbd
-n.d.,Clarithromycin,81103-11-9,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),34,tbd
-134.05,Diclofenac,15307-86-5,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),1 (o); 65 (t),tbd
-n.d.,Estrone (E1),53-16-7,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),n.d.,tbd
-13.40,Fluconazole,86386-73-4,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),80,tbd
-104.57,Metoprolol,37350-58-6,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),10,tbd
-n.d.,Primidone,125-33-7,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),40,tbd
-48.08,Sulfamethoxazole,129378-89-8,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),20,tbd
-65.18,Trimethoprim,738-70-5,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),80,tbd
-18.94,Venlafaxine,93413-69-5,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),5,tbd
+API name (*),CAS No.,Excreted emission (mg/inh./a) (*),integrated excretion rate (%),year (*),country (*),region (*),data source,ATC-Codes included
+Carbamazepine,298-46-4,26.28,5,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),N03AF01
+Clarithromycin,81103-11-9,27.2,34,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),more than 1
+Diclofenac,15307-86-5,369.65,1 (o); 94 (t),2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),tbd
+Estrone (E1),53-16-7,0,n.d.,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),tbd
+Fluconazole,86386-73-4,6.61,80,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),tbd
+Metoprolol,37350-58-6,100.22,10,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),tbd
+Primidone,125-33-7,39.02,40,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),tbd
+Sulfamethoxazole,129378-89-8,44.29,20,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),tbd
+Trimethoprim,738-70-5,38.59,80,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),tbd
+Venlafaxine,93413-69-5,17.37,5,2023,Germany,Mecklenburg-Vorpommern,WIdO (www.wido.de),tbd
+Carbamazepine,298-46-4,24.92,5,2023,Finland,-,fimea (www.fimea.fi),tbd
+Clarithromycin,81103-11-9,5.88,34,2023,Finland,-,fimea (www.fimea.fi),tbd
+Diclofenac,15307-86-5,273.67,1 (o); 94 (t),2023,Finland,-,fimea (www.fimea.fi),tbd
+Estrone (E1),53-16-7,0,n.d.,2023,Finland,-,fimea (www.fimea.fi),tbd
+Fluconazole,86386-73-4,18.72,80,2023,Finland,-,fimea (www.fimea.fi),tbd
+Metoprolol,37350-58-6,47.63,10,2023,Finland,-,fimea (www.fimea.fi),tbd
+Primidone,125-33-7,2.12,40,2023,Finland,-,fimea (www.fimea.fi),tbd
+Sulfamethoxazole,129378-89-8,21.14,20,2023,Finland,-,fimea (www.fimea.fi),tbd
+Trimethoprim,738-70-5,127.83,80,2023,Finland,-,fimea (www.fimea.fi),tbd
+Venlafaxine,93413-69-5,23.73,5,2023,Finland,-,fimea (www.fimea.fi),tbd
+Carbamazepine,298-46-4,39.06,5,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Clarithromycin,81103-11-9,91.89,34,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Diclofenac,15307-86-5,287.73,1 (o); 94 (t),2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Estrone (E1),53-16-7,0,n.d.,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Fluconazole,86386-73-4,10.69,80,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Metoprolol,37350-58-6,21.31,10,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Primidone,125-33-7,0.94,40,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Sulfamethoxazole,129378-89-8,64.74,20,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Trimethoprim,738-70-5,52.77,80,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Venlafaxine,93413-69-5,4.08,5,2023,Latvia,-,www.zva.gov.lv/en/publications-and-statistics/statistics-medicines-consumption-ddd,tbd
+Carbamazepine,298-46-4,44.02,5,2023,Poland,Pomerania,tbd,tbd
+Clarithromycin,81103-11-9,68.74,34,2023,Poland,Pomerania,tbd,tbd
+Diclofenac,15307-86-5,1.9,1 (o); 94 (t),2023,Poland,Pomerania,tbd,tbd
+Estrone (E1),53-16-7,n.d.,n.d.,2023,Poland,Pomerania,tbd,tbd
+Fluconazole,86386-73-4,21.37,80,2023,Poland,Pomerania,tbd,tbd
+Metoprolol,37350-58-6,7.41,10,2023,Poland,Pomerania,tbd,tbd
+Primidone,125-33-7,n.d.,40,2023,Poland,Pomerania,tbd,tbd
+Sulfamethoxazole,129378-89-8,26.28,20,2023,Poland,Pomerania,tbd,tbd
+Trimethoprim,738-70-5,21.02,80,2023,Poland,Pomerania,tbd,tbd
+Venlafaxine,93413-69-5,n.d.,5,2023,Poland,Pomerania,tbd,tbd
+Carbamazepine,298-46-4,n.d.,5,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
+Clarithromycin,81103-11-9,n.d.,34,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
+Diclofenac,15307-86-5,134.05,1 (o); 94 (t),2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
+Estrone (E1),53-16-7,n.d.,n.d.,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
+Fluconazole,86386-73-4,13.4,80,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
+Metoprolol,37350-58-6,104.57,10,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
+Primidone,125-33-7,n.d.,40,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
+Sulfamethoxazole,129378-89-8,48.08,20,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
+Trimethoprim,738-70-5,65.18,80,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
+Venlafaxine,93413-69-5,18.94,5,2023,Sweden,-,E-hälsomyndigheten (www.scb.se),tbd
