@@ -7,7 +7,7 @@ name=APRIORA
 qgisMinimumVersion=3.18
 qgisMaximumVersion=3.99
 description=Estimation of flow and concentration of Active Pharmaceutical Ingredients (API) in a catchment.
-version=1.1.0
+version=1.1.1
 author=Cristiano Guidi
 email=cristiano.guidi2@uni-rostock.de
 
@@ -29,8 +29,10 @@ repository=https://github.com/cridrive66/APRIORA
 # Recommended items:
 
 hasProcessingProvider=yes
-changelog=1.1.0 - dilution ratio formula changed and now calculated for each river section. Risk Assessment final output has now the style of one of the risk categories selected (ERA, HHRA or AMR-RA)
+changelog= 1.1.1 - fixed error in "subcatchment_level.shp" of "Flow Estimation" tool.
+    1.1.0 - dilution ratio formula changed and now calculated for each river section. Risk Assessment final output has now the style of one of the risk categories selected (ERA, HHRA or AMR-RA)
     1.0.1 - updated metadata.txt file and consumption values for Sweden
+    1.0.0 - initial release
 
 # Tags are comma separated with spaces allowed
 tags=water, catchment, flow estimation, river, pollutants, risk assessment, concentration, pharmaceutical
