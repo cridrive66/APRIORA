@@ -267,6 +267,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 # create dataframe
                 gaug_stat_df = pd.DataFrame(data, columns=field_names)
 
+                # Convert all columns to numeric to handle QVariant objects from QGIS
+                for col in gaug_stat_df.columns:
+                    gaug_stat_df[col] = pd.to_numeric(gaug_stat_df[col], errors='coerce')
+
                 # filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PrecYearly', 'PrecAugust']
                 # select number of features (predictors) and dependent variable
                 x = gaug_stat_df.filter(items=selected_geofactors)
@@ -403,6 +407,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
             # create dataframe
             warnow_subcatch_gf_df = pd.DataFrame(data, columns=field_names)
+
+            # Convert all columns to numeric to handle QVariant objects from QGIS
+            for col in warnow_subcatch_gf_df.columns:
+                warnow_subcatch_gf_df[col] = pd.to_numeric(warnow_subcatch_gf_df[col], errors='coerce')
 
             # select the geofactors for prediction
             x_catch = warnow_subcatch_gf_df.filter(items=selected_geofactors)
@@ -613,6 +621,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             MARKER = DataArr[Start_Row, 0]  # set MARKER to ID of the first segment  # noqa: F821
             Weg = [Start_Row]
             i = 0
+            out = [Weg]  # default: end point (no downstream segments)
             while i != len(DataArr):  # noqa: F821
                 next_rows = nextFtsCalc(MARKER)  # noqa: F821
                 if len(next_rows) > 1:  # deviding flow path
@@ -786,71 +795,42 @@ class CalculateFlow(QgsProcessingAlgorithm):
             sink_river.addFeature(out_feat, QgsFeatureSink.FastInsert)
 
         """
-        Accumulate Mean Flow and Mean Low Flow at subcatchment level
+        Transfer accumulated flow from river sections to subcatchment level.
+        For each CATCH_ID, take the maximum acc_Mean / acc_M_Low across all river
+        sections that belong to it — the section with the highest accumulated value
+        represents the subcatchment outlet, ensuring consistency with the river output.
         """
-        feedback.setProgressText(self.tr("Accumulating flow at subcatchment level...\n"))
+        feedback.setProgressText(self.tr("Transferring accumulated flow to subcatchment level...\n"))
 
-        # build ordered CATCH_ID list from the geofactors layer
-        subcatch_order = []
-        for f in warnow_subcatch_gf.getFeatures():
-            subcatch_order.append(str(f["CATCH_ID"]))
+        acc_mean_by_catch = {}
+        acc_mlow_by_catch = {}
+        for f in waternet.getFeatures():
+            cid = f["CATCH_ID"]
+            if cid is None:
+                continue
+            cid = str(cid)
+            val_mean = f["acc_Mean"]
+            val_mlow = f["acc_M_Low"]
+            if val_mean is not None:
+                acc_mean_by_catch[cid] = max(acc_mean_by_catch.get(cid, 0.0), float(val_mean))
+            if val_mlow is not None:
+                acc_mlow_by_catch[cid] = max(acc_mlow_by_catch.get(cid, 0.0), float(val_mlow))
 
-        # fill in "Out" for any subcatchments not yet in catch_to_lookup
-        for cid in subcatch_order:
-            catch_to_lookup.setdefault(cid, "Out")
+        final_output.startEditing()
+        existing_fields = [field.name() for field in final_output.fields()]
+        if "acc_Mean" not in existing_fields:
+            final_output.addAttribute(QgsField("acc_Mean", QVariant.Double))
+        if "acc_M_Low" not in existing_fields:
+            final_output.addAttribute(QgsField("acc_M_Low", QVariant.Double))
+        final_output.updateFields()
+        for feature in final_output.getFeatures():
+            cid = str(feature["CATCH_ID"])
+            feature.setAttribute("acc_Mean", acc_mean_by_catch.get(cid, 0.0))
+            feature.setAttribute("acc_M_Low", acc_mlow_by_catch.get(cid, 0.0))
+            final_output.updateFeature(feature)
+        final_output.commitChanges()
 
-        for flow_field, acc_field in [("Mean_Flow", "acc_Mean"), ("M_Low_Flow", "acc_M_Low")]:
-            # build per-subcatchment flow lookup from final_output
-            flow_lookup = {}
-            for f in final_output.getFeatures():
-                cid = str(f["CATCH_ID"])
-                val = f[flow_field]
-                flow_lookup[cid] = val if val is not None else 0
-
-            # build DataArr: [CATCH_ID, CATCH_ID (prev=id), CATCH_TO, flow, row_index]
-            Data_catch = [[
-                cid,
-                cid,
-                catch_to_lookup.get(cid, "Out"),
-                flow_lookup.get(cid, 0),
-                i
-            ] for i, cid in enumerate(subcatch_order)]
-            DataArr = np.array(Data_catch, dtype='object')
-            DataArr[np.equal(DataArr[:, 3], None), 3] = 0
-
-            calc_column = np.copy(DataArr[:, 3])
-            calc_segm = np.where(calc_column > 0)[0].tolist()
-            calc_segm = [i for i in calc_segm if DataArr[i, 2] != 'unconnected']
-            DataArr[:, 3] = 0
-
-            total2 = len(calc_segm)
-            while len(calc_segm) > 0:
-                if feedback.isCanceled():
-                    break
-                StartRow = calc_segm[0]
-                amount = calc_column[StartRow]
-                calc_column[StartRow] = 0
-                Fl_pth = FlowPath(StartRow, amount)
-                if len(Fl_pth) == 2:
-                    calc_segm = calc_segm + Fl_pth[1]
-                DataArr[Fl_pth[0], 3] = DataArr[Fl_pth[0], 3] + amount
-                calc_segm = calc_segm[1:]
-                calc_segm = list(set(calc_segm))
-                feedback.setProgress(int((1 - (len(calc_segm) / total2)) * 100))
-
-            # write accumulated values back to final_output
-            final_output.startEditing()
-            if acc_field not in [f.name() for f in final_output.fields()]:
-                final_output.addAttribute(QgsField(acc_field, QVariant.Double))
-            final_output.updateFields()
-            acc_by_catch = {subcatch_order[i]: float(DataArr[i, 3]) for i in range(len(subcatch_order))}
-            for feature in final_output.getFeatures():
-                cid = str(feature["CATCH_ID"])
-                feature.setAttribute(acc_field, acc_by_catch.get(cid, 0.0))
-                final_output.updateFeature(feature)
-            final_output.commitChanges()
-
-        del nextFtsCalc, FlowPath, DataArr
+        del nextFtsCalc, FlowPath
 
         final_output_acc = final_output
 
