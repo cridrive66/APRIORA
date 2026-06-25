@@ -204,6 +204,21 @@ class UpstreamDownstream(QgsProcessingAlgorithm):
         subcat_layer = subcatch_fixed
         feedback.pushInfo(f"\nNumber of features in the subcat_layer: {subcat_layer.featureCount()}")
 
+        # Identify CRS of subcatchment layer
+        subcat_crs = subcat_layer.crs()
+        feedback.pushInfo(f"Subcatchment layer CRS: {subcat_crs.authid()}")
+
+        # Reproject gauging station layer to match subcatchment CRS
+        gaug_reprojected = processing.run("native:reprojectlayer", {
+            'INPUT': gaug_stat,
+            'TARGET_CRS': subcat_crs,
+            'CONVERT_CURVED_GEOMETRIES': False,
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+        })
+        gaug_stat = gaug_reprojected["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(gaug_stat)
+        feedback.pushInfo(f"Gauging stations reprojected to CRS: {gaug_stat.crs().authid()}")
+
         # we do the same with the gauging stations. So we have the same IDs to identify river network, gauging stations and subcatchments
         gaug_result = processing.run("native:joinattributesbylocation", {
             'INPUT': gaug_stat,
