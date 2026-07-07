@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>RiskAssessmentDialogBase</class>
+ <widget class="QDialog" name="RiskAssessmentDialogBase">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>690</width>
+    <height>530</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>5 - Risk Assessment</string>
+  </property>
+  <layout class="QGridLayout" name="gridLayout_2">
+   <item row="0" column="0" colspan="6">
+    <widget class="QTabWidget" name="tabWidget">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QWidget" name="tab_2">
+      <attribute name="title">
+       <string>Risk Assessment</string>
+      </attribute>
+      <layout class="QGridLayout" name="gridLayout">
+       <item row="12" column="0">
+        <widget class="QPushButton" name="RiskAssessmentpushButton">
+         <property name="font">
+          <font>
+           <pointsize>12</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>Calculate Risk Assessment</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="0">
+        <widget class="QLabel" name="label_ERA_title_3">
+         <property name="text">
+          <string>River accumulation</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1" rowspan="13">
+        <widget class="Line" name="line">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="2" rowspan="13">
+        <widget class="QTextEdit" name="textEdit">
+         <property name="maximumSize">
+          <size>
+           <width>300</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+         <property name="html">
+          <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'MS Shell Dlg 2'; font-size:8pt; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:12pt; font-weight:600;&quot;&gt;5 - Risk Assessment&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; color:#666666;&quot;&gt;This tool calculates the final risk of different APIs for each river section. In addition to individual Risk Quotient calculations, a Component Cumulative Risk Index (CCRI) is calculated to provide an overall assessment when multiple APIs are selected. This single value summarizes the combined risk from all tested substances in each river section, giving the user a quick, comprehensive view of the situation.&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; color:#666666;&quot;&gt;The tool supports both line-based river networks and polygon-based subcatchment networks.&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; color:#666666;&quot;&gt;Workflow:&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; color:#666666;&quot;&gt;1. Choose river_accumulation.shp (or polygon accumulation output) as input for River accumulation&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; color:#666666;&quot;&gt;2. Select the fields containing the concentration of APIs for the risk assessment. This selection should include only columns containing concentrations in ng/L.&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; color:#666666;&quot;&gt;3. If you want to browse or change PNEC values, check the &amp;quot;PNEC database&amp;quot; window where all the values used for assessing the risk are stored.&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; color:#666666;&quot;&gt;4. Select the type of risk that you want to calculate (multiple selection is allowed).&lt;/span&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; color:#666666;&quot;&gt;4. Click on &amp;quot;Calculate Risk Assessment&amp;quot;&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+         </property>
+        </widget>
+       </item>
+       <item row="9" column="0">
+        <widget class="QCheckBox" name="ERAcheckBox">
+         <property name="text">
+          <string>ERA (Environmental)</string>
+         </property>
+        </widget>
+       </item>
+       <item row="11" column="0">
+        <widget class="QCheckBox" name="AMRRAcheckBox">
+         <property name="text">
+          <string>AMR-RA (Antimicrobial Resistance)</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QComboBox" name="RiverAccumulationcomboBox">
+         <property name="maximumSize">
+          <size>
+           <width>175</width>
+           <height>16777215</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="10" column="0">
+        <widget class="QCheckBox" name="HHRAcheckBox">
+         <property name="text">
+          <string>HHRA (Human Health)</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_ERA_title_4">
+         <property name="text">
+          <string>Select APIs for risk assessment</string>
+         </property>
+        </widget>
+       </item>
+       <item row="6" column="0">
+        <widget class="QComboBox" name="ID_fieldcomboBox">
+         <property name="maximumSize">
+          <size>
+           <width>100</width>
+           <height>16777215</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QListWidget" name="APIListWidget">
+         <property name="maximumSize">
+          <size>
+           <width>16777215</width>
+           <height>175</height>
+          </size>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::MultiSelection</enum>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="0">
+        <widget class="QLabel" name="label_ERA_title_5">
+         <property name="text">
+          <string>ID Field</string>
+         </property>
+        </widget>
+       </item>
+       <item row="8" column="0">
+        <widget class="QLabel" name="label_ERA_title_6">
+         <property name="text">
+          <string>Select risk assessment type(s)</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tab_3">
+      <attribute name="title">
+       <string>PNEC database</string>
+      </attribute>
+      <layout class="QGridLayout" name="gridLayout_6">
+       <item row="1" column="0" colspan="3">
+        <widget class="QTabWidget" name="tabWidget_PNEC">
+         <property name="currentIndex">
+          <number>0</number>
+         </property>
+         <widget class="QWidget" name="ERAtab">
+          <attribute name="title">
+           <string>ERA</string>
+          </attribute>
+          <layout class="QGridLayout" name="gridLayout_5">
+           <item row="0" column="5">
+            <widget class="QPushButton" name="addButton_ERA">
+             <property name="maximumSize">
+              <size>
+               <width>25</width>
+               <height>23</height>
+              </size>
+             </property>
+             <property name="toolTip">
+              <string>Add new row</string>
+             </property>
+             <property name="text">
+              <string>+</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_ERA_title_7">
+             <property name="text">
+              <string>PNEC values for Environmental Risk Assessment (ERA)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="6">
+            <widget class="QPushButton" name="restoreButton_ERA">
+             <property name="maximumSize">
+              <size>
+               <width>100</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>Restore original</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0" colspan="8">
+            <widget class="QTableView" name="ERATableView">
+             <attribute name="horizontalHeaderVisible">
+              <bool>true</bool>
+             </attribute>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QToolButton" name="ExportERAtoolButton">
+             <property name="text">
+              <string>...</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="4">
+            <widget class="QPushButton" name="removeButton_ERA">
+             <property name="maximumSize">
+              <size>
+               <width>25</width>
+               <height>23</height>
+              </size>
+             </property>
+             <property name="toolTip">
+              <string>Remove row</string>
+             </property>
+             <property name="text">
+              <string>-</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="HHtab">
+          <attribute name="title">
+           <string>HHRA</string>
+          </attribute>
+          <layout class="QGridLayout" name="gridLayout_HH_2">
+           <item row="3" column="0" colspan="7">
+            <widget class="QTableView" name="HHTableView">
+             <attribute name="horizontalHeaderVisible">
+              <bool>true</bool>
+             </attribute>
+            </widget>
+           </item>
+           <item row="0" column="6">
+            <widget class="QPushButton" name="restoreButton_HH">
+             <property name="maximumSize">
+              <size>
+               <width>100</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>Restore original</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="4">
+            <widget class="QPushButton" name="removeButton_HH">
+             <property name="maximumSize">
+              <size>
+               <width>25</width>
+               <height>23</height>
+              </size>
+             </property>
+             <property name="toolTip">
+              <string>Remove row</string>
+             </property>
+             <property name="text">
+              <string>-</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="0">
+            <widget class="QLabel" name="label_HH_title">
+             <property name="text">
+              <string>PNEC values for Human Health Risk Assessment (HHRA)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="0" colspan="7">
+            <widget class="QLabel" name="label_HH_ref">
+             <property name="text">
+              <string>Values calculated following the approach suggested in Duarte, D.J., Oldenkamp, R. and Ragas, A.M.J. (2022), Human health risk assessment of pharmaceuticals in the European Vecht River. Integr Environ Assess Manag, 18: 1639-1654.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QToolButton" name="ExportHHtoolButton">
+             <property name="text">
+              <string>...</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="5">
+            <widget class="QPushButton" name="addButton_HH">
+             <property name="maximumSize">
+              <size>
+               <width>25</width>
+               <height>23</height>
+              </size>
+             </property>
+             <property name="toolTip">
+              <string>Add new row</string>
+             </property>
+             <property name="text">
+              <string>+</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="label_HH_country">
+             <property name="maximumSize">
+              <size>
+               <width>150</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>Select a country</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0">
+            <widget class="QComboBox" name="CountrycomboBox">
+             <property name="maximumSize">
+              <size>
+               <width>150</width>
+               <height>150</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="AMRtab">
+          <attribute name="title">
+           <string>AMR-RA</string>
+          </attribute>
+          <layout class="QGridLayout" name="gridLayout_AMR_2">
+           <item row="0" column="0" colspan="2">
+            <widget class="QLabel" name="label_AMR_title">
+             <property name="text">
+              <string>PNEC values for Antimicrobial Resistance Risk Assessment (AMR-RA)</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="2">
+            <widget class="QToolButton" name="ExportAMRtoolButton">
+             <property name="text">
+              <string>...</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0" colspan="9">
+            <widget class="QTableView" name="AMRTableView">
+             <attribute name="horizontalHeaderVisible">
+              <bool>true</bool>
+             </attribute>
+            </widget>
+           </item>
+           <item row="0" column="8">
+            <widget class="QPushButton" name="restoreButton_AMR">
+             <property name="minimumSize">
+              <size>
+               <width>100</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>100</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>Restore original</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="7">
+            <widget class="QPushButton" name="addButton_AMR">
+             <property name="maximumSize">
+              <size>
+               <width>25</width>
+               <height>23</height>
+              </size>
+             </property>
+             <property name="toolTip">
+              <string>Add new row</string>
+             </property>
+             <property name="text">
+              <string>+</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="6">
+            <widget class="QPushButton" name="removeButton_AMR">
+             <property name="maximumSize">
+              <size>
+               <width>25</width>
+               <height>23</height>
+              </size>
+             </property>
+             <property name="toolTip">
+              <string>Remove row</string>
+             </property>
+             <property name="text">
+              <string>-</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item row="1" column="5">
+    <widget class="QPushButton" name="cancelButton">
+     <property name="text">
+      <string>Close</string>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="4">
+    <widget class="QPushButton" name="help_ERA">
+     <property name="text">
+      <string>Help</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
