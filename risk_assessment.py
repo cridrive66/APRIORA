@@ -278,7 +278,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
         if hasattr(self, "help_ERA"):
             self.help_ERA.clicked.connect(
                 lambda: QDesktopServices.openUrl(QUrl(
-                    "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#pnec-values"
+                    "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Risk_assessment.html"
                 ))
             )
 
@@ -290,12 +290,6 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
             self.restoreButton_HH.clicked.connect(
                 lambda: self._restore_original("PNEC HHRA.csv", "PNEC_HH_.csv", self.HHTableView)
             )
-        if hasattr(self, "help_HH"):
-            self.help_HH.clicked.connect(
-                lambda: QDesktopServices.openUrl(QUrl(
-                    "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#pnec-values"
-                ))
-            )
 
         if hasattr(self, "addButton_AMR"):
             self.addButton_AMR.clicked.connect(lambda: self._add_row(self.AMRTableView))
@@ -304,12 +298,6 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
         if hasattr(self, "restoreButton_AMR"):
             self.restoreButton_AMR.clicked.connect(
                 lambda: self._restore_original("PNEC AMR-RA.csv", "PNEC_AMR_.csv", self.AMRTableView)
-            )
-        if hasattr(self, "help_AMR"):
-            self.help_AMR.clicked.connect(
-                lambda: QDesktopServices.openUrl(QUrl(
-                    "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#pnec-values"
-                ))
             )
 
         # PNEC tab navigation

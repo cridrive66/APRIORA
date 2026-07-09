@@ -118,7 +118,7 @@ class EmissionLoadsAlgorithm(QgsProcessingAlgorithm):
         return {}
 
     def helpUrl(self):
-        return "https://hosting-apriora-manual.readthedocs.io/en/latest/Consumption.html"
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Emission_Load.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
@@ -617,7 +617,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         )
         self.help_tab1.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#consumption-data")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Emission_Load.html#consumption-data")
                 )
             )
 
@@ -631,7 +631,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         )
         self.help_tab2.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#removal-rate")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Emission_Load.html#removal-rate")
                 )
             )
 
@@ -644,7 +644,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             self.EmissionLoadspushButton_3.clicked.connect(self._calculate_emission_loads)
         self.help_tab3.clicked.connect(
             lambda: QDesktopServices.openUrl(
-                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/API_param_selection.html#emission-loads")
+                QUrl("https://hosting-apriora-manual.readthedocs.io/en/latest/api_emission/Emission_Load.html#emission-loads-window")
                 )
             )
         if hasattr(self, "printButton"):
