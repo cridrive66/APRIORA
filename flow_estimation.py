@@ -92,9 +92,9 @@ class FlowEstimation(QgsProcessingAlgorithm):
     OUTPUTungauged = 'OUTPUTungauged'
 
     # mapping: display name -> file prefix used in "hydrological model parameters" folder
-    # 'Estimate from gauged_subcatch_geofactors.shp' means: train the model on the spot from the provided gauged subcatchments
+    # 'Estimate from gauging stations data' means: train the model on the spot from the provided gauged subcatchments
     REGION_OPTIONS = [
-        'Estimate from gauged_subcatch_geofactors.shp',
+        'Estimate from gauging stations data',
         '[Pre-trained] Warnow catchment (Germany)',
         # '[Pre-trained] Łeba catchment (Poland)',
         # '[Pre-trained] Kyroenjoki catchment (Finland)',
@@ -1266,7 +1266,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
 
         def flow_estimation(flow, final_output):
 
-            if selected_region == 'Estimate from gauged_subcatch_geofactors.shp':
+            if selected_region == 'Estimate from gauging stations data':
                 # FIRST PART OF THE MODEL
                 # Selecting input (predictors) and output
                 # In this part of the code, we select the number of predictors that will be used in the model and drop
@@ -1419,7 +1419,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             feedback.setProgressText(f"\nDatabase columns: {x_catch.columns} ")
 
             # scale the data and predict
-            if selected_region != 'Estimate from gauged_subcatch_geofactors.shp' and _avg_bundles is not None:
+            if selected_region != 'Estimate from gauging stations data' and _avg_bundles is not None:
                 # average predictions from all available regional models
                 all_preds = []
                 for name, m, s in _avg_bundles:
@@ -1915,7 +1915,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
 
     def helpUrl(self):
         # Return a URL or local file path to your documentation
-        return "https://hosting-apriora-manual.readthedocs.io/en/latest/hydro_module/contributing_area.html"
+        return "https://hosting-apriora-manual.readthedocs.io/en/latest/hydro_module/flow_estimation_model.html"
 
     def tr(self, string):
         return QCoreApplication.translate('Processing', string)
