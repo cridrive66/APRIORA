@@ -33,12 +33,9 @@ __revision__ = '$Format:%H$'
 import os
 from qgis.core import QgsProcessingProvider
 from PyQt5.QtGui import QIcon
-from .api_parameter_selection import APIParameterSelectionAlgorithm
-from .calculate_geofactors import CalculateGeofactors
-from .flow_estimation import CalculateFlow
+from .emission_loads import EmissionLoadsAlgorithm
 from .fix_river_network import FixRiverNetwork
-from .contributing_area import UpstreamDownstream
-from .emission_loads import EmissionLoads
+from .flow_estimation import FlowEstimation
 from .accumulation import Accumulation
 from .risk_assessment import RiskAssessment
 
@@ -61,12 +58,9 @@ class APRIORAProvider(QgsProcessingProvider):
         """
         Loads all algorithms belonging to this provider.
         """
-        self.addAlgorithm(APIParameterSelectionAlgorithm())
-        self.addAlgorithm(CalculateGeofactors())
-        self.addAlgorithm(CalculateFlow())
+        self.addAlgorithm(EmissionLoadsAlgorithm())
         self.addAlgorithm(FixRiverNetwork())
-        self.addAlgorithm(UpstreamDownstream())
-        self.addAlgorithm(EmissionLoads())
+        self.addAlgorithm(FlowEstimation())
         self.addAlgorithm(Accumulation())
         self.addAlgorithm(RiskAssessment())
         # add additional algorithms here
