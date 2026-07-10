@@ -30,24 +30,39 @@ __copyright__ = '(C) 2024 by Cristiano Guidi'
 
 __revision__ = '$Format:%H$'
 
-import os
-import pandas as pd
-import numpy as np
+from qgis.PyQt.QtCore import QCoreApplication, QDir
 from PyQt5.QtCore import QVariant
-from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessing,
                        QgsProcessingException,
-                       QgsFeature,
-                       QgsField,
-                       QgsFields,
                        QgsFeatureSink,
-                       QgsProject,
+                       QgsProcessingParameterBoolean,
                        QgsProcessingParameterDefinition,
                        QgsProcessingParameterEnum,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink,
-                       QgsVectorLayer)
+                       QgsProcessingParameterField,
+                       QgsProcessingParameterFile,
+                       QgsProcessingParameterNumber,
+                       QgsProcessingParameterRasterLayer,
+                       QgsRasterLayer,
+                       QgsVectorLayer,
+                       QgsProject,
+                       QgsCoordinateReferenceSystem,
+                       QgsFields,
+                       QgsField,
+                       QgsFeature,
+                       QgsGeometry,
+                       QgsSpatialIndex,
+                       edit,
+                       Qgis)
+import processing
+import numpy as np
+import pandas as pd
+import os
+import math
+from osgeo import gdal
+gdal.UseExceptions()
 
 """
 * Part of this file is adapted from WaterNetAnalyzer QGIS plugin
@@ -56,22 +71,30 @@ from qgis.core import (QgsProcessingAlgorithm,
 """
 
 
-class CalculateFlow(QgsProcessingAlgorithm):
-
-    # Constants used to refer to parameters and outputs.
-
+class FlowEstimation(QgsProcessingAlgorithm):
+    riverNetwork = "RiverNetwork"
+    catchmentAreas = 'CatchmentAreas'
+    gaugingStations = "GaugingStations"
+    meanFlow = "MeanFlow"
+    MNQ = "MNQ"
+    DGM = 'DGM'
+    waterArea = 'WaterArea'
+    forestArea = 'ForestArea'
+    settlementArea = 'SettlementArea'
+    precipitationData = 'PrecipitationData'
+    aggregated = 'Aggregated'
+    dryMonth = 'DryMonth'
+    selectedGeofactors = 'selected_geofactors'
+    regionSelection = 'regionSelection'
     OUTPUT_catch = 'OUTPUT_catch'
     OUTPUT_river = "OUTPUT_river"
-    gaugedSubcatchments = 'GaugedSubcatchments'
-    ungaugedSubcatchments = 'UngaugedSubcatchments'
-    riverNetwork = "RiverNetwork"
-    selectedGeofactors = "selected_geofactors"
-    regionSelection = 'regionSelection'
+    OUTPUTgauged = 'OUTPUTgauged'
+    OUTPUTungauged = 'OUTPUTungauged'
 
     # mapping: display name -> file prefix used in "hydrological model parameters" folder
-    # 'Estimate from gauged_subcatch_geofactors.shp' means: train the model on the spot from the provided gauged subcatchments
+    # 'Estimate from gauging stations data' means: train the model on the spot from the provided gauged subcatchments
     REGION_OPTIONS = [
-        'Estimate from gauged_subcatch_geofactors.shp',
+        'Estimate from gauging stations data',
         '[Pre-trained] Warnow catchment (Germany)',
         # '[Pre-trained] Łeba catchment (Poland)',
         # '[Pre-trained] Kyroenjoki catchment (Finland)',
@@ -90,57 +113,43 @@ class CalculateFlow(QgsProcessingAlgorithm):
     def shortHelpString(self):
         return self.tr(
             """
-            This tool estimates Mean Flow and Mean Low Flow for each ungauged subcatchment \
-            using a Random Forest model trained on the geofactors of gauged subcatchments. \
-            Results are produced at subcatchment level and distributed to river sections.
+            This tool processes gauging stations data, calculates geofactors and applies a Random \
+            Forest machine learning model to estimate Mean Flow and Mean Low Flow for ungauged \
+            subcatchments and river sections.
 
-            Steps performed:
-            1. Train (or load a pre-trained) Random Forest model using gauged-subcatchmentc \
-                geofactors as predictors and area-normalised flow as target.
-            2. Apply the model to ungauged subcatchments to predict flows.
-            3. Distribute the predicted flow from subcatchments to individual river \
-                sections proportionally to section length.
-            4. Accumulate flow downstream along the network for both river and subcatchment outputs.
+            Steps:
+            1. Delineate gauged subcatchments: matches gaugign stations to the nearest river section, \
+            identifies the upstream contributing subcatchments and dissolves them into a single polygon \
+            per station containing flow data.
+            2. Calculate geofactors: calculates spatial statistis for both gauged and ungauged subcatchments \
+            including: elevation, geometric features, river network density, land-use shares and mean precipitation.
+            3. Flow estimation: trains a Random Forest model (or loads a pre-trained one) using gauged subcatchments \
+            as a trining data (geofactors as predictors), then predicts flows for ungauged subcatchments.
 
             Inputs:
-            - Gauged subcatchments with geofactors (output of Tool 3).
-            - Ungauged subcatchments with geofactors (output of Tool 3).
-            - Fixed river network (output of Tool 1).
-            - Model parameter estimation source: choose a pre-trained regional model or \
-                'Estimate from gauged_subcatch_geofactors.shp' to train on your local data using the values calculated in tool 3.
-            - Geofactors selection (advanced): which geofactors to use as predictors.
+            - Ungauged subcatchments and Fixed river network: outputs of Tool 1.
+            - Gauging stations: point layer with Mean Flow and Mean Low Flow columns.
+            - DEM, Water area, Forest area, Settlement area: raster/polygon layers.
+            - Precipitation data: folder with NetCDF (.nc) files (either multiple annual files or a single \
+            aggregated time-series file).
+            - Driest month (1-12) for dry month precipitation average (default: August=8).
+            - Model source: pre-trained regional model or train from your gauged data.
 
             Outputs:
-            - Subcatchment level: polygon layer with Mean_Flow, M_Low_Flow, accumulated \
-                flows (acc_Mean, acc_M_Low), CATCH_TO, and flow_unit.
-            - River level: line layer with the same flow fields distributed and accumulated per river section.
+            - Subcatchment level and River level: flow estimates (always produced).
+            - Ungauged / Gauged subcatch geofactors: optional intermediate outputs.
 
-            Note: scikit-learn must be installed in the QGIS Python environment.
+            Note: scikit-learn must be installed. The river network must contain \
+            NET_ID, NET_TO and CATCH_ID fields (produced by Tool 1).
             """)
 
     def initAlgorithm(self, config):
-        """
-        Here we define the inputs and output of the algorithm, along
-        with some other properties.
-        """
-
-        # We add the input vector features source. It can have any kind of
-        # geometry.
         self.addParameter(
             QgsProcessingParameterFeatureSource(
-                self.gaugedSubcatchments,
-                self.tr('Gauged subcatchments with geofactors'),
+                self.catchmentAreas,
+                self.tr('Ungauged subcatchments'),
                 [QgsProcessing.TypeVectorPolygon],
-                defaultValue=QgsProject.instance().mapLayersByName("Gauged subcatch geofactors")[0].id() if QgsProject.instance().mapLayersByName("Gauged subcatch geofactors") else None
-            )
-        )
-
-        self.addParameter(
-            QgsProcessingParameterFeatureSource(
-                self.ungaugedSubcatchments,
-                self.tr('Ungauged subcatchments with geofactors'),
-                [QgsProcessing.TypeVectorPolygon],
-                defaultValue=QgsProject.instance().mapLayersByName("Ungauged subcatch geofactors")[0].id() if QgsProject.instance().mapLayersByName("Ungauged subcatch geofactors") else None
+                defaultValue=QgsProject.instance().mapLayersByName("Ungauged subcatch")[0].id() if QgsProject.instance().mapLayersByName("Ungauged subcatch") else None
             )
         )
 
@@ -150,6 +159,98 @@ class CalculateFlow(QgsProcessingAlgorithm):
                 self.tr('Fixed river network'),
                 [QgsProcessing.TypeVectorLine],
                 defaultValue=QgsProject.instance().mapLayersByName("Fixed river network")[0].id() if QgsProject.instance().mapLayersByName("Fixed river network") else None
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.gaugingStations,
+                self.tr('Gauging stations'),
+                [QgsProcessing.TypeVectorPoint]
+            )
+        )
+
+        # mean flow
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.meanFlow,
+                description=self.tr('Select Mean Flow field'),
+                parentLayerParameterName=self.gaugingStations,
+                type=QgsProcessingParameterField.Any
+            )
+        )
+
+        # mean low flow
+        self.addParameter(
+            QgsProcessingParameterField(
+                self.MNQ,
+                description=self.tr('Select Mean Low Flow field'),
+                parentLayerParameterName=self.gaugingStations,
+                type=QgsProcessingParameterField.Any
+            )
+        )
+
+        # DEM
+        self.addParameter(
+            QgsProcessingParameterRasterLayer(
+                self.DGM,
+                self.tr('Digital surface model'),
+                [QgsProcessing.TypeRaster]
+            )
+        )
+
+        # water area
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.waterArea,
+                self.tr('Water area'),
+                [QgsProcessing.TypeVectorPolygon]
+            )
+        )
+
+        # forest area
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.forestArea,
+                self.tr('Forest area'),
+                [QgsProcessing.TypeVectorPolygon]
+            )
+        )
+
+        # settlement area
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.settlementArea,
+                self.tr('Settlement area'),
+                [QgsProcessing.TypeVectorPolygon]
+            )
+        )
+
+        # precipitation data
+        self.addParameter(
+            QgsProcessingParameterFile(
+                self.precipitationData,
+                self.tr('Precipitation data (folder)'),
+                behavior=QgsProcessingParameterFile.Folder
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.aggregated,
+                self.tr('The folder contains an aggregated file'),
+                defaultValue=False
+            )
+        )
+
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.dryMonth,
+                self.tr('Driest month (1=Jan, 2=Feb, ..., 12=Dec). This information is used for expected low flow conditions.'),
+                type=QgsProcessingParameterNumber.Integer,
+                defaultValue=8,
+                minValue=1,
+                maxValue=12
             )
         )
 
@@ -197,6 +298,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # We add a feature sink in which to store our processed features (this
         # usually takes the form of a newly created vector layer when the
         # algorithm is run in QGIS).
+        # flow estimated at subcatchment level
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_catch,
@@ -204,6 +306,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             )
         )
 
+        # flow estimated at river level
         self.addParameter(
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_river,
@@ -211,15 +314,100 @@ class CalculateFlow(QgsProcessingAlgorithm):
             )
         )
 
+        # optional: ungauged subcatchments with geofactors
+        self.addParameter(
+            QgsProcessingParameterFeatureSink(
+                self.OUTPUTungauged,
+                self.tr('Ungauged subcatch geofactors'),
+                QgsProcessing.TypeVectorPolygon,
+                optional=True,
+                createByDefault=False))
+
+        # optional: gauged subcatchments with geofactors
+        self.addParameter(
+            QgsProcessingParameterFeatureSink(
+                self.OUTPUTgauged,
+                self.tr('Gauged subcatch geofactors'),
+                QgsProcessing.TypeVectorPolygon,
+                optional=True,
+                createByDefault=False))
+
+    def createRaster(self, parameters, context, feedback, outfn, xmax, xmin, xres, ymax, ymin, yres, spatref, raster):
+        # create Raster
+        driver = gdal.GetDriverByName('GTiff')
+        wkt = spatref.toWkt()
+        nbands = 1
+        nodata = -999
+        dtype = gdal.GDT_Float32
+        xsize = abs(int((xmax - xmin) / xres))
+        ysize = abs(int((ymax - ymin) / yres))
+        ds = driver.Create(outfn, xsize, ysize, nbands, dtype)
+        ds.GetRasterBand(1).WriteArray(raster)
+        ds.SetProjection(wkt)
+        ds.SetGeoTransform([xmin, xres, 0, ymax, 0, -yres])
+        ds.GetRasterBand(1).SetNoDataValue(nodata)
+        ds.FlushCache()
+        ds = None
+
+    def processProportions(self, parameters, context, feedback, catchments, outputDir, fileName, fieldName, target, calcOption):
+        # Calculates intersection of subcatchments and area/length
+        feedback.setProgressText("\nCalculate statistics based on " + fileName + "...")
+        intersections = processing.run("native:intersection", {
+            'INPUT': target,
+            'OVERLAY': catchments,
+            'OVERLAY_FIELDS': 'ID_SC',
+            'OVERLAY_FIELDS_PREFIX': "",
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+            }, context=context)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(intersections)
+
+        # Calculates area/length of target parts
+        provider = intersections.dataProvider()
+        field = QgsField(fieldName+"_SC", QVariant.Double, 'double', 20, 3)
+        provider.addAttributes([field])
+        intersections.updateFields()
+        idx = provider.fieldNameIndex(fieldName+"_SC")
+        all_changes = {}
+        for feature in intersections.getFeatures():
+            if calcOption == 0:  # 0=area; 1=length/perimeter
+                geom = feature.geometry().area()
+            else:
+                geom = feature.geometry().length()
+            all_changes[feature.id()] = {idx: geom}
+        intersections.dataProvider().changeAttributeValues(all_changes)
+
+        # Summarizes the target field based on the ID_SC field
+        Summarize = processing.run("qgis:statisticsbycategories", {
+            'INPUT': intersections,
+            'VALUES_FIELD_NAME': fieldName+"_SC",
+            'CATEGORIES_FIELD_NAME': 'ID_SC',
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+            }, context=context)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(Summarize)
+
+        # Joins the sum of area information to catchments
+        JoinCatchmentsSummarize = processing.run("qgis:joinattributestable", {
+            'INPUT': catchments,
+            'FIELD': 'ID_SC',
+            'INPUT_2': Summarize,
+            'FIELD_2': 'ID_SC',
+            'FIELDS_TO_COPY': 'sum',
+            'METHOD': 1,
+            'DISCARD_NONMATCHING': False,
+            'PREFIX': fieldName+'_',
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+            }, context=context)['OUTPUT']
+        context.temporaryLayerStore().addMapLayer(JoinCatchmentsSummarize)
+        del intersections, Summarize
+        return JoinCatchmentsSummarize
+
     def processAlgorithm(self, parameters, context, feedback):
         """
-        Here is where the processing itself takes place.
+        Calculate contributing area of gauging stations
         """
-        # import libraries for flow estimation model
-        # Standard library imports (always available)
+        # scikit-learn imports — checked early so a missing dependency is reported
+        # before any heavy computation begins
         from math import sqrt
-
-        # scikit-learn imports
         try:
             from sklearn.model_selection import train_test_split
             from sklearn.preprocessing import StandardScaler
@@ -233,20 +421,852 @@ class CalculateFlow(QgsProcessingAlgorithm):
             )
             raise QgsProcessingException("Missing dependency: scikit-learn")
 
-        # Input data
-        gaug_stat = self.parameterAsSource(parameters, self.gaugedSubcatchments, context)
-        warnow_subcatch_gf = self.parameterAsVectorLayer(parameters, self.ungaugedSubcatchments, context)
-        river_network = self.parameterAsSource(parameters, self.riverNetwork, context)
+        '''loading the subcatchments'''
+        feedback.setProgressText(self.tr("Loading subcatchments..\n "))
+        subcatch = self.parameterAsVectorLayer(parameters, self.catchmentAreas, context)
+        if subcatch is None:
+            raise QgsProcessingException(self.invalidSourceError(parameters, self.catchmentAreas))
+        river_layer = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
+        MQ_field = self.parameterAsString(parameters, self.meanFlow, context)
+        MNQ_field = self.parameterAsString(parameters, self.MNQ, context)
+
+        """
+        The river network file can present multiple river sections within a subcatchment.
+        Every river section needs to be associated with one subcatchment only and a subcatchment needs to be associated with one river section only.
+        """
+        # fix subcatchment geometries
+        geos_version_str = Qgis.geosVersion()
+        major, minor = (int(x) for x in geos_version_str.split('.')[:2])
+        method = 1 if (major > 3 or (major == 3 and minor >= 10)) else 0
+        feedback.pushInfo(f"GEOS version: {geos_version_str}")
+
+        subcatch_fixed = processing.run("native:fixgeometries", {
+            'INPUT': subcatch,
+            'METHOD': method,
+            'OUTPUT': 'TEMPORARY_OUTPUT'},
+            context=context, feedback=feedback)["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(subcatch_fixed)
+
+        '''loading the network'''
+        feedback.setProgressText(self.tr("Loading network..\n "))
+        waternet = river_layer
+
+        '''loading the gauging stations'''
+        gaug_stat = self.parameterAsVectorLayer(parameters, self.gaugingStations, context)
+        if gaug_stat is None or gaug_stat.featureCount() == 0:
+            raise QgsProcessingException("No gauging stations found. Please provide a valid gauging station layer.")
+
+        # Field indices for the network data array.
+        # DataArr layout: [NET_ID, NET_ID, NET_TO, qgis_fid]
+        #   col 0 = segment id (NET_ID)
+        #   col 1 = same as col 0 (used as MARKER during traversal)
+        #   col 2 = downstream target (NET_TO)
+        #   col 3 = QGIS feature id
+        id_field = "NET_ID"
+        to_field = "NET_TO"
+
+        idxId = waternet.fields().indexFromName(id_field)
+        idxTo = waternet.fields().indexFromName(to_field)
+
+        if idxId == -1 or idxTo == -1:
+            raise QgsProcessingException("Required fields (NET_ID, NET_TO) not found in river network.")
+
+        subcat_layer = subcatch_fixed
+        feedback.pushInfo(f"\nNumber of features in the subcat_layer: {subcat_layer.featureCount()}")
+
+        # Identify CRS of subcatchment layer
+        subcat_crs = subcat_layer.crs()
+        feedback.pushInfo(f"Subcatchment layer CRS: {subcat_crs.authid()}")
+
+        # Reproject gauging station layer to match subcatchment CRS
+        gaug_reprojected = processing.run("native:reprojectlayer", {
+            'INPUT': gaug_stat,
+            'TARGET_CRS': subcat_crs,
+            'CONVERT_CURVED_GEOMETRIES': False,
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+        })
+        gaug_stat = gaug_reprojected["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(gaug_stat)
+        feedback.pushInfo(f"Gauging stations reprojected to CRS: {gaug_stat.crs().authid()}")
+
+        # we do the same with the gauging stations. So we have the same IDs to identify river network, gauging stations and subcatchments
+        gaug_result = processing.run("native:joinattributesbylocation", {
+            'INPUT': gaug_stat,
+            'PREDICATE': [0],
+            'JOIN': subcat_layer,
+            'JOIN_FIELDS': ['CATCH_ID'],
+            'METHOD': 0,
+            'DISCARD_NONMATCHING': True,
+            'PREFIX': '',
+            'OUTPUT': 'TEMPORARY_OUTPUT'})
+        gaug_id = gaug_result["OUTPUT"]
+        context.temporaryLayerStore().addMapLayer(gaug_id)
+
+        feedback.pushInfo(f"\nNumber of features in the gaug_id: {gaug_id.featureCount()}")
+
+        gauged_fields = QgsFields(subcat_layer.fields())
+        gauged_fields.append(QgsField("Mean_Flow", QVariant.Double))
+        gauged_fields.append(QgsField("M_Low_Flow", QVariant.Double))
+
+        # create an in-memory layer for gauged subcatchments (intermediate result, not exposed as output)
+        gauged_subcatch_layer = QgsVectorLayer(
+            "Polygon?crs={}".format(subcat_layer.sourceCrs().authid()),
+            "gauged_subcatch",
+            "memory"
+        )
+        gauged_subcatch_layer.dataProvider().addAttributes(list(gauged_fields))
+        gauged_subcatch_layer.updateFields()
+
+        def nextFtsSel(Sect, MARKER2):
+            if Sect == 'U':
+                clm_current = 1
+                clm_search = 2
+            if Sect == 'D':
+                clm_current = 2
+                clm_search = 1
+            vtx_connect = DataArr[np.where(DataArr[:, 0] == MARKER2)[0].tolist(), clm_current][0]  # connecting vertex of actual segment
+            rows_connect = np.where(DataArr[:, clm_search] == vtx_connect)[0].tolist()  # find rows in DataArr with matching vertices to vtx_connect
+            unconnected_errors = [DataArr[x, 3] for x in rows_connect if DataArr[x, clm_current] == 'unconnected']  # this can only happen after manual editing
+            if len(unconnected_errors) > 0:
+                waternet.removeSelection()
+                waternet.selectByIds(unconnected_errors, waternet.SelectBehavior(1))
+                raise QgsProcessingException(
+                    'The selected features in the flow are marked as \'unconnected\' '
+                    + '(most likely because of manual editing). Please delete the columns with the network information ('
+                    + id_field
+                    + ', '
+                    + to_field
+                    + ') and run tool 1 \"Water Network Constructor\" again.'
+                )
+            return (rows_connect)
+
+        def find_closest_river_section(outlet_point, spatial_index, river_map, feedback):
+            '''
+            Finds the closest river section to the gauging station
+            '''
+            # convert the outlet_point to QgsGeometry
+            outlet_geometry = QgsGeometry.fromPointXY(outlet_point)
+            nearest_ids = spatial_index.nearestNeighbor(outlet_geometry, 5)  # get the 5 nearest features
+            closest_section = None
+            min_distance = float("inf")
+
+            # iterate through the closest matches and find the closest section
+            for fid in nearest_ids:
+                feature = river_map[fid]
+                section_geom = feature.geometry()
+                distance = section_geom.distance(outlet_geometry)
+
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_section = feature
+
+            if closest_section:
+                feedback.pushInfo(f"\nClosest section found: [NET_ID]: {closest_section['NET_ID']} \n Distance: {min_distance}")
+            else:
+                feedback.pushInfo("\nNo closest section found.")
+
+            return closest_section
+
+        # build a spatial index
+        spatial_index = QgsSpatialIndex()
+        river_map = {}
+
+        for feature in waternet.getFeatures():
+            fid = feature.id()
+            river_map[fid] = feature
+            spatial_index.addFeature(feature)
+
+        # build the network data array once — it is read-only during the upstream traversal
+        Data = [[str(f.attribute(idxId)), str(f.attribute(idxId)), str(f.attribute(idxTo)), f.id()] for f in waternet.getFeatures()]
+        DataArr = np.array(Data, dtype='object')
+        feedback.setProgress(3)
+
+        '''Find upstream network for each gauging station'''
+        feedback.setProgressText("Processing gauging stations...")
+        river_crs = waternet.crs()
+        outlet_crs = gaug_id.crs()
+
+        if outlet_crs is not river_crs:
+            feedback.pushInfo(f"CRS mismatch detected. Reprojecting gauging stations to the river network CRS: {river_crs}.")
+            gaug_reproject = processing.run("native:reprojectlayer", {
+                'INPUT': gaug_id,
+                'TARGET_CRS': river_crs,
+                'CONVERT_CURVED_GEOMETRIES': False,
+                'OUTPUT': 'TEMPORARY_OUTPUT'
+                })["OUTPUT"]
+            context.temporaryLayerStore().addMapLayer(gaug_reproject)
+        else:
+            gaug_reproject = gaug_id
+
+        # iterate over gauging stations and find contributing subcatchments for each
+        n_stations = max(gaug_reproject.featureCount(), 1)
+        for station_idx, station in enumerate(gaug_reproject.getFeatures()):
+            feedback.setProgress(3 + station_idx / n_stations * 12)
+            feedback.pushInfo(f"\nProcessing gauging station ID: {station.id()}")
+
+            outlet_point = station.geometry().asPoint()
+            closest_feature = find_closest_river_section(outlet_point, spatial_index, river_map, feedback)
+
+            # raise an error in case closest feature is none?
+
+            '''getting the selected segment'''
+            startF = closest_feature  # feature to start with
+            if not startF:
+                feedback.reportError(self.tr('{0}: No river network found close to the gauging station ').format(self.displayName()))
+                raise QgsProcessingException()
+            else:
+                startId = startF.id()
+                if startF.attributes()[idxId] is not None:
+                    StartMarker = startF.attributes()[idxId]
+                else:
+                    feedback.reportError('This segment has an invalid ID (NULL)')
+                    raise QgsProcessingException()
+                if startF.attributes()[idxTo] == 'unconnected':
+                    feedback.reportError(self.tr('{0}: Unconnected segment selected.').format(self.displayName()))
+                    raise QgsProcessingException()
+
+            '''selection: flow path upstream/downstream
+            downstream: 1
+            upstream: 0  # in this case, only upstream is interesting
+            '''
+            Section = 'U'
+            Section_long = 'upstream'
+
+            '''this was planned as an option: should the first selected segment be part of the final selection?
+            at the moment it´s permanently part of the final selection'''
+            first_in_selection = True
+            if not first_in_selection:
+                net_route = list()
+            else:
+                net_route = [startId]
+
+            '''find flow path upstream or downstream'''
+            MARKER = str(StartMarker)  # NET_ID of first segment
+            safe = ["X"]  # a list to safe segments when the net separates; "X" indicates an empty list and works as a MARKER for the while loop below
+            forks = []  # a list for forks in flow path...because forks are interesting....
+            origins = []  # a list for origins/river heads upstream
+
+            while str(MARKER) != 'X':
+                if feedback.isCanceled():
+                    break
+                next_rows = nextFtsSel(Section, MARKER)
+                if len(next_rows) > 0:  # sometimes segments are saved in net_route...then they are deleted
+                    next_rows = [Z for Z in next_rows if DataArr[Z, 3] not in net_route]
+                    net_route = net_route + DataArr[next_rows, 3].tolist()
+                if len(next_rows) > 1:
+                    if Section == 'D':
+                        forks = forks + [MARKER]
+                    MARKER = DataArr[next_rows[0], 0]  # change MARKER to the NET_ID of one of the next segments
+                    safe = safe + DataArr[next_rows[1:], 0].tolist()
+                if len(next_rows) == 1:
+                    MARKER = DataArr[next_rows[0], 0]
+                if len(next_rows) == 0:
+                    if Section == 'U':
+                        origins = origins + [MARKER]
+                    MARKER = safe[-1]  # change MARKER to the last "saved" NET_ID
+                    safe = safe[: -1]  # delete used NET_ID from "safe"-list
+
+            # little debugging
+            feedback.pushInfo(f"\nPrint net_route: {net_route}")
+
+            # convert net_route (feature IDs) to a set for a faster loop
+            net_route_set = set(net_route)
+
+            # extract corresponding CATCH_ID values
+            net_id_values = []
+            for feature in waternet.getFeatures():
+                if feature.id() in net_route_set:
+                    net_id_values.append(feature["CATCH_ID"])
+
+            # little debugging
+            feedback.pushInfo(f"Extracted CATCH_ID values: {net_id_values}")
+
+            # construct the expression to filter the subcatchment based on the IDs stored in net_id_values
+            net_id_str = ", ".join(map(str, net_id_values))  # convert IDs to a comma-separeted string
+            expression = f'"CATCH_ID" IN ({net_id_str})'
+
+            # extract upstream subcatchments
+            upstream_catch_result = processing.run("native:extractbyexpression", {
+                'INPUT': subcat_layer,
+                'EXPRESSION': expression,
+                'OUTPUT': 'TEMPORARY_OUTPUT'})
+            upstream_catch = upstream_catch_result["OUTPUT"]
+            context.temporaryLayerStore().addMapLayer(upstream_catch)
+
+            # dissolve the contributing subcatchments into one polygon per station
+            dissolve_result = processing.run("native:dissolve", {
+                'INPUT': upstream_catch,
+                'FIELD': [],
+                'SEPARATE_DISJOINT': False,
+                'OUTPUT': 'TEMPORARY_OUTPUT'
+                })
+            dissolve_layer = dissolve_result["OUTPUT"]
+            feedback.pushInfo("\ndissolve_layer = done")
+
+            # identify which subcatchment the gauging station sits in
+            net_id_gaug = station["CATCH_ID"]
+
+            # find the subcatchment with the same CATCH_ID
+            matching_attributes = None
+            for feature in subcat_layer.getFeatures():
+                if feature["CATCH_ID"] == net_id_gaug:
+                    matching_attributes = feature.attributes()
+                    break
+
+            if not matching_attributes:
+                feedback.pushInfo(f"\nWarning: no subcatchment found with CATCH_ID {net_id_gaug}. Skipping.")
+                continue
+
+            # use the dissolved geometry with the attributes from the matching subcatchment
+            dissolve_feature = next(dissolve_layer.getFeatures())
+            dissolve_geom = dissolve_feature.geometry()
+
+            # find the gauging station record and write to sink with flow attributes
+            for gaug in gaug_reproject.getFeatures():
+                if gaug["CATCH_ID"] == net_id_gaug:
+                    gauged_feature = QgsFeature(gauged_fields)
+                    gauged_feature.setGeometry(dissolve_geom)
+                    gauged_feature.setAttributes(matching_attributes + [gaug[MQ_field], gaug[MNQ_field]])
+                    gauged_subcatch_layer.dataProvider().addFeatures([gauged_feature])
+
+        """
+        Calculate geofactors
+        """
+        # Get data
+        feedback.setProgressText("\nStart with ungauged subcatchments...")
+        feedback.setProgress(15)
+        ungaugedSourceName = subcatch.name()
+
+        # Get virtual output directory and output sink
+        outputDir = "/vsimem/"
+
+        # Calculates zonal statistics based on DEM
+        feedback.setProgressText("\nCalculate Zonal statistics...")
+        catchments_ungauged = processing.run("native:zonalstatisticsfb", {
+            'INPUT_RASTER': parameters[self.DGM],
+            'RASTER_BAND': 1,
+            'INPUT': parameters[self.catchmentAreas],
+            'COLUMN_PREFIX': "H_",
+            'STATISTICS': [2, 4, 5],
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+            }, context=context)['OUTPUT']
+        context.temporaryLayerStore().addMapLayer(catchments_ungauged)
+
+        # Set area and perimeter field to layer
+        provider = catchments_ungauged.dataProvider()
+        id_field = QgsField("ID_SC", QVariant.Int, 'int')
+        area_field = QgsField("AREA_SC", QVariant.Double, 'double', 20, 3)
+        perimeter_field = QgsField("PERIM_SC", QVariant.Double, 'double', 20, 3)
+        shapeFactor_field = QgsField("SHAPE_SC", QVariant.Double, 'double', 20, 3)
+        provider.addAttributes([id_field, area_field, perimeter_field, shapeFactor_field])
+        catchments_ungauged.updateFields()
+        # Calculate area and perimeter
+        idxID = provider.fieldNameIndex('ID_SC')
+        idxArea = provider.fieldNameIndex('AREA_SC')
+        idxPerimeter = provider.fieldNameIndex('PERIM_SC')
+        idxShapeFactor = provider.fieldNameIndex('SHAPE_SC')
+        all_changes = {}
+        for feature in catchments_ungauged.getFeatures():
+            geomArea = feature.geometry().area()
+            geomPeri = feature.geometry().length()
+            geomShapeFactor = geomPeri ** 2 / (2 * math.pi * geomArea)
+            all_changes[feature.id()] = {
+                idxID: feature.id(),
+                idxArea: geomArea,
+                idxPerimeter: geomPeri,
+                idxShapeFactor: geomShapeFactor,
+            }
+        catchments_ungauged.dataProvider().changeAttributeValues(all_changes)
+
+        # calculate slope
+        slope = processing.run("native:slope", {
+            'INPUT': parameters[self.DGM],
+            'Z_FACTOR': 1,
+            'OUTPUT': 'TEMPORARY_OUTPUT'})["OUTPUT"]
+
+        # Calculates zonal statistics based on the slope raster
+        feedback.setProgressText("\nCalculate slope statistics...")
+        processing.run("native:zonalstatistics", {
+            'INPUT_RASTER': slope,
+            'RASTER_BAND': 1,
+            'INPUT_VECTOR': catchments_ungauged,
+            'COLUMN_PREFIX': "Slp_",
+            'STATISTICS': [2, 4]
+            }, context=context)
+
+        # Calculates statistics based on river network
+        JoinCatchmentsRiverSummarize = self.processProportions(parameters, context, feedback, catchments_ungauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork], 1)
+        del catchments_ungauged
+
+        # Calculates statistics based on water area
+        JoinCatchmentsWaterAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WatAr", parameters[self.waterArea], 0)
+        del JoinCatchmentsRiverSummarize
+
+        # Calculates statistics based on forest area
+        JoinCatchmentsForestAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsWaterAreaSummarize, outputDir, "ForestArea", "ForAr", parameters[self.forestArea], 0)
+        del JoinCatchmentsWaterAreaSummarize
+
+        # Calculates statistics based on settlement area
+        JoinCatchmentsSettlementAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SettlementArea", "SettAr", parameters[self.settlementArea], 0)
+        del JoinCatchmentsForestAreaSummarize
+
+        # Calculates river network density (rnd), proportion of water area (pwa), forest share and settlemet share
+        feedback.setProgressText("\nCalculate river network density (rnd) and proportion of water area (pwa)...")
+        provider = JoinCatchmentsSettlementAreaSummarize.dataProvider()
+        rnd_field = QgsField("RivNetDens", QVariant.Double, 'double', 20, 3)
+        pwa_field = QgsField("PropWatAr", QVariant.Double, 'double', 20, 3)
+        fs_field = QgsField("Forest %", QVariant.Double, 'double', 20, 3)
+        ss_field = QgsField("Settl %", QVariant.Double, 'double', 20, 3)
+        provider.addAttributes([rnd_field, pwa_field, fs_field, ss_field])
+        JoinCatchmentsSettlementAreaSummarize.updateFields()
+        idxRND = provider.fieldNameIndex('RivNetDens')
+        idxPWA = provider.fieldNameIndex('PropWatAr')
+        idxFS = provider.fieldNameIndex('Forest %')
+        idxSS = provider.fieldNameIndex('Settl %')
+        idxRN_Sum = provider.fieldNameIndex('RivNe_sum')
+        idxWA_Sum = provider.fieldNameIndex('WatAr_sum')
+        idxFA_Sum = provider.fieldNameIndex('ForAr_sum')
+        idxSA_Sum = provider.fieldNameIndex('SettAr_sum')
+        for feature in JoinCatchmentsSettlementAreaSummarize.getFeatures():
+            area_sc = feature["AREA_SC"]
+            if not area_sc or area_sc <= 0:
+                feedback.pushWarning(f"Skipping feature {feature.id()}: AREA_SC is {area_sc}. Assigning 0 to derived fields.")
+                attrs = {idxRND: 0, idxPWA: 0, idxFS: 0, idxSS: 0, idxRN_Sum: 0, idxWA_Sum: 0, idxFA_Sum: 0, idxSA_Sum: 0}
+                JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id(): attrs})
+                continue
+            RNval = feature["RivNe_sum"]
+            if RNval is not None and not isinstance(RNval, QVariant):
+                calcRND = (RNval / area_sc) * 100
+                RNsum = RNval
+            else:
+                calcRND = 0
+                RNsum = 0
+            WAval = feature["WatAr_sum"]
+            if WAval is not None and not isinstance(WAval, QVariant):
+                calcPWA = (WAval / area_sc) * 100
+                WAsum = WAval
+            else:
+                calcPWA = 0
+                WAsum = 0
+            FAval = feature["ForAr_sum"]
+            if FAval is not None and not isinstance(FAval, QVariant):
+                calcFS = (FAval / area_sc) * 100
+                FAsum = FAval
+            else:
+                calcFS = 0
+                FAsum = 0
+            SAval = feature["SettAr_sum"]
+            if SAval is not None and not isinstance(SAval, QVariant):
+                calcSS = (SAval / area_sc) * 100
+                SAsum = SAval
+            else:
+                calcSS = 0
+                SAsum = 0
+            attrs = {idxRND: calcRND, idxPWA: calcPWA, idxFS: calcFS, idxSS: calcSS, idxRN_Sum: RNsum, idxWA_Sum: WAsum, idxFA_Sum: FAsum, idxSA_Sum: SAsum}
+            JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id(): attrs})
+
+        if not JoinCatchmentsSettlementAreaSummarize.isValid():
+            feedback.reportError("Error: JoinCatchmentsSettlementAreaSummarize is not valid!", fatalError=True)
+
+        # Calculation of precipitation
+        feedback.setProgressText("\nCalculate precipitation")
+        feedback.setProgress(27)
+        netcdf_dir = self.parameterAsString(parameters, self.precipitationData, context)
+        aggregated_selection = self.parameterAsBoolean(parameters, self.aggregated, context)
+        dry_month = self.parameterAsInt(parameters, self.dryMonth, context)
+        days_per_month = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+        days_in_dry_month = days_per_month[dry_month - 1]
+        month_names = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
+        dry_month_name = month_names[dry_month - 1]
+        feedback.pushInfo(f"Dry month: {dry_month_name} (month {dry_month}, {days_in_dry_month} days)")
+        # list of all .nc file in the directory
+        netcdf_files = QDir(netcdf_dir).entryList(["*.nc"], QDir.Files)
+
+        # Variables
+        firstFile = True
+        spatref = None
+        xres = None
+        yres = None
+        xmin = None
+        xmax = None
+        ymin = None
+        ymax = None
+
+        if aggregated_selection:
+            if not netcdf_files:
+                feedback.reportError("No NetCDF file found in the selected folder", fatalError=True)  # change in order to have only one .nc file in the folder
+                return {}
+
+            netcdf_file = os.path.join(netcdf_dir, netcdf_files[0])
+            subset_path = 'NETCDF:"{}":tp'.format(netcdf_file)  # check if it is correct or if "tp" is the variable name
+            raster_layer = QgsRasterLayer(subset_path, "Precipitation (all bands)")
+            raster_ds = gdal.Open(raster_layer.source())
+
+            if not raster_layer.isValid():
+                feedback.reportError("The NetCDF raster layer is not valid.", fatalError=True)
+                return {}
+
+            # spatial metadata
+            spatref = raster_layer.crs() if raster_layer.crs().isValid() else QgsCoordinateReferenceSystem('EPSG:4326')
+            xres = raster_layer.rasterUnitsPerPixelX()
+            yres = raster_layer.rasterUnitsPerPixelY()
+            ext = raster_layer.extent()
+            xmin = ext.xMinimum()
+            xmax = ext.xMaximum()
+            ymin = ext.yMinimum()
+            ymax = ext.yMaximum()
+
+            # number of bands
+            raster_count = raster_ds.RasterCount
+            feedback.pushInfo(f"Number of bands: {raster_count}")
+            num_years = raster_count // 12
+
+            # initialize arrays
+            yearly_sum = None
+            dry_sum = None
+
+            # sum all bands
+            for b in range(1, raster_count + 1):
+                band_array = raster_ds.GetRasterBand(b).ReadAsArray()
+                if yearly_sum is None:
+                    yearly_sum = band_array
+                else:
+                    yearly_sum += band_array
+
+            # final yearly average
+            finalYearlyMeanRaster = yearly_sum*1000*30.4375 / num_years  # 30.4375 is the average number of days in a month over a 30 years time series with 7.5 leap years
+
+            # dry month mean
+            for i in range(num_years):
+                dry_band_index = i * 12 + dry_month
+                band_array = raster_ds.GetRasterBand(dry_band_index).ReadAsArray()
+
+                if dry_sum is None:
+                    dry_sum = band_array
+                else:
+                    dry_sum += band_array
+
+            # final dry month average
+            finalDryMeanRaster = dry_sum*1000*days_in_dry_month / num_years
+
+        if not aggregated_selection:
+            yearly_means = []
+            dry_means = []
+            for filename in netcdf_files:
+                netcdf_file = os.path.join(netcdf_dir, filename)
+                subdataset_path = 'NETCDF:"{}":pr'.format(netcdf_file)
+                raster_layer_unc = QgsRasterLayer(subdataset_path, "Annual precipitation")
+                rasterDataSource = gdal.Open(str(raster_layer_unc.source()))
+                if firstFile:
+                    spatref = raster_layer_unc.crs()
+                    xres = raster_layer_unc.rasterUnitsPerPixelX()
+                    yres = raster_layer_unc.rasterUnitsPerPixelY()
+                    ext = raster_layer_unc.extent()
+                    xmin = ext.xMinimum()
+                    xmax = ext.xMaximum()
+                    ymin = ext.yMinimum()
+                    ymax = ext.yMaximum()
+                    firstFile = False
+                year_sum = None
+                for band_i in range(1, rasterDataSource.RasterCount + 1):
+                    band_arr = rasterDataSource.GetRasterBand(band_i).ReadAsArray().astype(np.float64)
+                    year_sum = band_arr if year_sum is None else year_sum + band_arr
+                yearly_means.append(year_sum)
+                dry_means.append(rasterDataSource.GetRasterBand(dry_month).ReadAsArray())
+
+            finalYearlyMeanRaster = np.mean(np.stack(yearly_means), axis=0)
+            finalDryMeanRaster = np.mean(np.stack(dry_means), axis=0)
+
+        outfnYearly = outputDir+ungaugedSourceName+'_yearlyPrecipitation.tif'
+        outfnDry = outputDir+ungaugedSourceName+'_dryMonthPrecipitation.tif'
+
+        # validate raster data before writing
+        if finalYearlyMeanRaster is None:
+            feedback.reportError("Error: finalYearlyMeanRaster is None!", fatalError=True)
+            return {}
+        if finalDryMeanRaster is None:
+            feedback.reportError("Error: finalDryMeanRaster is None!", fatalError=True)
+            return {}
+
+        # create yearly precipitation raster
+        self.createRaster(parameters, context, feedback, outfnYearly, xmax, xmin, xres, ymax, ymin, yres, spatref, finalYearlyMeanRaster)
+
+        # create dry month precipitation raster
+        self.createRaster(parameters, context, feedback, outfnDry, xmax, xmin, xres, ymax, ymin, yres, spatref, finalDryMeanRaster)
+
+        # save as raster layer
+        precipitationYearlyLayer = QgsRasterLayer(outfnYearly, "precipitationYearly")
+        if not precipitationYearlyLayer.isValid():
+            feedback.reportError("Error: precipitationYearlyLayer is not valid!", fatalError=True)
+
+        precipitationDryLayer = QgsRasterLayer(outfnDry, "precipitationDryMonth")
+        if not precipitationDryLayer.isValid():
+            feedback.reportError("Error: precipitationDryLayer is not valid!", fatalError=True)
+
+        feedback.setProgressText("\nStart the zonal statistic of yearly precipitation")
+        precipitation_yearly_ungauged = processing.run("native:zonalstatisticsfb", {
+            'INPUT_RASTER': precipitationYearlyLayer,
+            'RASTER_BAND': 1,
+            'INPUT': JoinCatchmentsSettlementAreaSummarize,
+            'COLUMN_PREFIX': "PrecYearly_",
+            'STATISTICS': [2],  # mean
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+            }, context=context)['OUTPUT']
+        context.temporaryLayerStore().addMapLayer(precipitation_yearly_ungauged)
+
+        feedback.setProgressText("\nStart the zonal statistic of dry month precipitation")
+        finalLayer_ungauged = processing.run("native:zonalstatisticsfb", {
+            'INPUT_RASTER': precipitationDryLayer,
+            'RASTER_BAND': 1,
+            'INPUT': precipitation_yearly_ungauged,
+            'COLUMN_PREFIX': "PrecDry_",
+            'STATISTICS': [2],  # mean
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+            }, context=context)['OUTPUT']
+        context.temporaryLayerStore().addMapLayer(finalLayer_ungauged)
+
+        del JoinCatchmentsSettlementAreaSummarize, precipitation_yearly_ungauged
+
+        # Remove "MEAN" from the column name if it exists
+        if 'PrecYearly_mean' in [field.name() for field in finalLayer_ungauged.fields()]:
+            with edit(finalLayer_ungauged):
+                idx = finalLayer_ungauged.fields().indexOf('PrecYearly_mean')
+                finalLayer_ungauged.renameAttribute(idx, 'PrecYearly')
+
+        if 'PrecDry_mean' in [field.name() for field in finalLayer_ungauged.fields()]:
+            with edit(finalLayer_ungauged):
+                idx = finalLayer_ungauged.fields().indexOf('PrecDry_mean')
+                finalLayer_ungauged.renameAttribute(idx, 'PrecDry')
+
+        feedback.setProgressText("\nRemoving field")
+        # remove unwanted fields
+        fields_to_remove = ["RivNe_sum", "WatAr_sum", "ForAr_sum", "SettAr_sum", "ID_SC"]
+        field_indices = [finalLayer_ungauged.fields().indexOf(field) for field in fields_to_remove]
+
+        if field_indices:
+            with edit(finalLayer_ungauged):
+                finalLayer_ungauged.dataProvider().deleteAttributes(field_indices)
+                finalLayer_ungauged.updateFields()
+        else:
+            feedback.pushInfo("No matching field found to delete")
+
+        # keep in memory for flow estimation; write to optional output if requested
+        feedback.setProgressText("\nSaving the output")
+        (sink_ungauged, dest_id_ungauged) = self.parameterAsSink(
+            parameters, self.OUTPUTungauged, context, finalLayer_ungauged.fields(), finalLayer_ungauged.wkbType(), finalLayer_ungauged.sourceCrs()
+            )
+        if sink_ungauged is not None:
+            for feat in finalLayer_ungauged.getFeatures():
+                sink_ungauged.addFeature(feat)
+        ungauged_subcatch_geofactors = finalLayer_ungauged
+        feedback.setProgressText("\nSuccess: ungauged_subcatchments_geofactors.shp file was created successfully!")
+        feedback.setProgress(35)
+
+        """
+        Gauged subcatchments
+        """
+        feedback.setProgressText("\nStarting gauged subcatchments")
+
+        # Calculates zonal statistics based on DEM
+        feedback.setProgressText("\nCalculate Zonal statistics...")
+        catchments_gauged = processing.run("native:zonalstatisticsfb", {
+            'INPUT_RASTER': parameters[self.DGM],
+            'RASTER_BAND': 1,
+            'INPUT': gauged_subcatch_layer,
+            'COLUMN_PREFIX': "H_",
+            'STATISTICS': [2, 4, 5],
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+            }, context=context)['OUTPUT']
+        context.temporaryLayerStore().addMapLayer(catchments_gauged)
+
+        # Set area and perimeter field to layer
+        provider = catchments_gauged.dataProvider()
+        provider.addAttributes([id_field, area_field, perimeter_field, shapeFactor_field])
+        catchments_gauged.updateFields()
+        # Calculate area and perimeter
+        idxID = provider.fieldNameIndex('ID_SC')
+        idxArea = provider.fieldNameIndex('AREA_SC')
+        idxPerimeter = provider.fieldNameIndex('PERIM_SC')
+        idxShapeFactor = provider.fieldNameIndex('SHAPE_SC')
+        all_changes = {}
+        for feature in catchments_gauged.getFeatures():
+            geomArea = feature.geometry().area()
+            geomPeri = feature.geometry().length()
+            geomShapeFactor = geomPeri ** 2 / (2 * math.pi * geomArea)
+            all_changes[feature.id()] = {
+                idxID: feature.id(),
+                idxArea: geomArea,
+                idxPerimeter: geomPeri,
+                idxShapeFactor: geomShapeFactor,
+            }
+        catchments_gauged.dataProvider().changeAttributeValues(all_changes)
+
+        # Calculates zonal statistics based on the slope raster
+        feedback.setProgressText("\nCalculate slope statistics...")
+        processing.run("native:zonalstatistics", {
+            'INPUT_RASTER': slope,
+            'RASTER_BAND': 1,
+            'INPUT_VECTOR': catchments_gauged,
+            'COLUMN_PREFIX': "Slp_",
+            'STATISTICS': [2, 4]
+            }, context=context)
+
+        # Calculates statistics based on river network
+        JoinCatchmentsRiverSummarize = self.processProportions(parameters, context, feedback, catchments_gauged, outputDir, "RiverNetwork", "RivNe", parameters[self.riverNetwork], 1)
+        del catchments_gauged, slope
+
+        # Calculates statistics based on water area
+        JoinCatchmentsWaterAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsRiverSummarize, outputDir, "WaterArea", "WatAr", parameters[self.waterArea], 0)
+        del JoinCatchmentsRiverSummarize
+
+        # Calculates statistics based on forest area
+        JoinCatchmentsForestAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsWaterAreaSummarize, outputDir, "ForestArea", "ForAr", parameters[self.forestArea], 0)
+        del JoinCatchmentsWaterAreaSummarize
+
+        # Calculates statistics based on settlement area
+        JoinCatchmentsSettlementAreaSummarize = self.processProportions(parameters, context, feedback, JoinCatchmentsForestAreaSummarize, outputDir, "SettlementArea", "SettAr", parameters[self.settlementArea], 0)
+        del JoinCatchmentsForestAreaSummarize
+
+        # Calculates river network density (rnd), proportion of water area (pwa), forest share and settlemet share
+        feedback.setProgressText("\nCalculate river network density (rnd) and proportion of water area (pwa)...")
+        provider = JoinCatchmentsSettlementAreaSummarize.dataProvider()
+        rnd_field = QgsField("RivNetDens", QVariant.Double, 'double', 20, 3)
+        pwa_field = QgsField("PropWatAr", QVariant.Double, 'double', 20, 3)
+        fs_field = QgsField("Forest %", QVariant.Double, 'double', 20, 3)
+        ss_field = QgsField("Settl %", QVariant.Double, 'double', 20, 3)
+        provider.addAttributes([rnd_field, pwa_field, fs_field, ss_field])
+        JoinCatchmentsSettlementAreaSummarize.updateFields()
+        idxRND = provider.fieldNameIndex('RivNetDens')
+        idxPWA = provider.fieldNameIndex('PropWatAr')
+        idxFS = provider.fieldNameIndex('Forest %')
+        idxSS = provider.fieldNameIndex('Settl %')
+        idxRN_Sum = provider.fieldNameIndex('RivNe_sum')
+        idxWA_Sum = provider.fieldNameIndex('WatAr_sum')
+        idxFA_Sum = provider.fieldNameIndex('ForAr_sum')
+        idxSA_Sum = provider.fieldNameIndex('SettAr_sum')
+        for feature in JoinCatchmentsSettlementAreaSummarize.getFeatures():
+            area_sc = feature["AREA_SC"]
+            if not area_sc or area_sc <= 0:
+                feedback.pushWarning(f"Skipping feature {feature.id()}: AREA_SC is {area_sc}. Assigning 0 to derived fields.")
+                attrs = {idxRND: 0, idxPWA: 0, idxFS: 0, idxSS: 0, idxRN_Sum: 0, idxWA_Sum: 0, idxFA_Sum: 0, idxSA_Sum: 0}
+                JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id(): attrs})
+                continue
+            RNval = feature["RivNe_sum"]
+            if RNval is not None and not isinstance(RNval, QVariant):
+                calcRND = (RNval / area_sc) * 100
+                RNsum = RNval
+            else:
+                calcRND = 0
+                RNsum = 0
+            WAval = feature["WatAr_sum"]
+            if WAval is not None and not isinstance(WAval, QVariant):
+                calcPWA = (WAval / area_sc) * 100
+                WAsum = WAval
+            else:
+                calcPWA = 0
+                WAsum = 0
+            FAval = feature["ForAr_sum"]
+            if FAval is not None and not isinstance(FAval, QVariant):
+                calcFS = (FAval / area_sc) * 100
+                FAsum = FAval
+            else:
+                calcFS = 0
+                FAsum = 0
+            SAval = feature["SettAr_sum"]
+            if SAval is not None and not isinstance(SAval, QVariant):
+                calcSS = (SAval / area_sc) * 100
+                SAsum = SAval
+            else:
+                calcSS = 0
+                SAsum = 0
+            attrs = {idxRND: calcRND, idxPWA: calcPWA, idxFS: calcFS, idxSS: calcSS, idxRN_Sum: RNsum, idxWA_Sum: WAsum, idxFA_Sum: FAsum, idxSA_Sum: SAsum}
+            JoinCatchmentsSettlementAreaSummarize.dataProvider().changeAttributeValues({feature.id(): attrs})
+
+        if not JoinCatchmentsSettlementAreaSummarize.isValid():
+            feedback.reportError("Error: JoinCatchmentsSettlementAreaSummarize is not valid!", fatalError=True)
+
+        # Calculation of precipitation
+        feedback.setProgressText("\nCalculate precipitation")
+        feedback.setProgress(48)
+
+        # Reuse precipitation raster layers from ungauged section (identical data)
+
+        # zonal statistics
+        feedback.setProgressText("\nStart the zonal statistic of yearly precipitation")
+        precipitation_yearly_gauged = processing.run("native:zonalstatisticsfb", {
+            'INPUT_RASTER': precipitationYearlyLayer,
+            'RASTER_BAND': 1,
+            'INPUT': JoinCatchmentsSettlementAreaSummarize,
+            'COLUMN_PREFIX': "PrecYearly_",
+            'STATISTICS': [2],  # mean
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+            }, context=context)['OUTPUT']
+        context.temporaryLayerStore().addMapLayer(precipitation_yearly_gauged)
+
+        feedback.setProgressText("\nStart the zonal statistic of dry month precipitation")
+        finalLayer_gauged = processing.run("native:zonalstatisticsfb", {
+            'INPUT_RASTER': precipitationDryLayer,
+            'RASTER_BAND': 1,
+            'INPUT': precipitation_yearly_gauged,
+            'COLUMN_PREFIX': "PrecDry_",
+            'STATISTICS': [2],  # mean
+            'OUTPUT': 'TEMPORARY_OUTPUT'
+            }, context=context)['OUTPUT']
+        context.temporaryLayerStore().addMapLayer(finalLayer_gauged)
+
+        del JoinCatchmentsSettlementAreaSummarize, precipitation_yearly_gauged
+
+        # Remove "mean" from the column name if it exists
+        if 'PrecYearly_mean' in [field.name() for field in finalLayer_gauged.fields()]:
+            with edit(finalLayer_gauged):
+                idx = finalLayer_gauged.fields().indexOf('PrecYearly_mean')
+                finalLayer_gauged.renameAttribute(idx, 'PrecYearly')
+
+        if 'PrecDry_mean' in [field.name() for field in finalLayer_gauged.fields()]:
+            with edit(finalLayer_gauged):
+                idx = finalLayer_gauged.fields().indexOf('PrecDry_mean')
+                finalLayer_gauged.renameAttribute(idx, 'PrecDry')
+
+        # remove unwanted fields
+        fields_to_remove = ["RivNe_sum", "WatAr_sum", "ForAr_sum", "SettAr_sum", "ID_SC"]
+        field_indices = [finalLayer_gauged.fields().indexOf(field) for field in fields_to_remove]
+        if field_indices:
+            with edit(finalLayer_gauged):
+                finalLayer_gauged.dataProvider().deleteAttributes(field_indices)
+                finalLayer_gauged.updateFields()
+        else:
+            feedback.pushInfo("No matching field found to delete")
+
+        # write to optional gauged geofactors output if requested; keep in memory for flow estimation
+        (sink_gauged_gf, dest_id_gauged_gf) = self.parameterAsSink(
+            parameters, self.OUTPUTgauged, context,
+            finalLayer_gauged.fields(), finalLayer_gauged.wkbType(), finalLayer_gauged.sourceCrs()
+        )
+        if sink_gauged_gf is not None:
+            for feat in finalLayer_gauged.getFeatures():
+                sink_gauged_gf.addFeature(feat)
+        gauged_subcatch_geofactors = finalLayer_gauged
+        feedback.setProgressText("\nSuccess: gauged_subcatchments_geofactors.shp file was created successfully!")
+        feedback.setProgress(55)
+
+        """
+        Flow estimation
+        """
+        
+        # Input data for flow estimation — use in-memory layers produced by the
+        # geofactors section above instead of re-reading from parameters
+        gaug_stat = gauged_subcatch_geofactors
+        warnow_subcatch_gf = ungauged_subcatch_geofactors
+        river_network = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         selected_indices = self.parameterAsEnums(parameters, self.selectedGeofactors, context)
         selected_display_names = [self.geofactor_options[i] for i in selected_indices]
         selected_geofactors = [self.geofactor_mapping[name] for name in selected_display_names]     # convert display names to actual column names
-        river_layer_original = self.parameterAsVectorLayer(parameters, self.riverNetwork, context)
         region_idx = self.parameterAsEnum(parameters, self.regionSelection, context)
         selected_region = self.REGION_OPTIONS[region_idx]
 
         def flow_estimation(flow, final_output):
 
-            if selected_region == 'Estimate from gauged_subcatch_geofactors.shp':
+            if selected_region == 'Estimate from gauging stations data':
                 # FIRST PART OF THE MODEL
                 # Selecting input (predictors) and output
                 # In this part of the code, we select the number of predictors that will be used in the model and drop
@@ -266,6 +1286,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
 
                 # create dataframe
                 gaug_stat_df = pd.DataFrame(data, columns=field_names)
+
+                # Convert all columns to numeric to handle QVariant objects from QGIS
+                for col in gaug_stat_df.columns:
+                    gaug_stat_df[col] = pd.to_numeric(gaug_stat_df[col], errors='coerce')
 
                 # filterCol = ['H_mean', 'H_stdev', 'H_min', 'AREA_SC', 'PERIM_SC', 'SHAPE_SC', 'Slp_mean', 'Slp_stdev', 'RivNetDens', 'PropWatAr', 'Forest %', 'Settl %', 'PrecYearly', 'PrecAugust']
                 # select number of features (predictors) and dependent variable
@@ -390,26 +1414,12 @@ class CalculateFlow(QgsProcessingAlgorithm):
             # Now it is time to run the model with the ungauged subcatchments and make an estimation of the flow.
             # First, we select the predictors of the model (geofactors) and we drop all the other columns that are not necessaries.
 
-            # Get the field names
-            field_names = [field.name() for field in warnow_subcatch_gf.fields()]
-
-            # extract attribute data from the layer
-            features = warnow_subcatch_gf.getFeatures()
-            data = []
-
-            for feature in features:
-                # collect the attribute values for each feature
-                data.append([feature[field] for field in field_names])
-
-            # create dataframe
-            warnow_subcatch_gf_df = pd.DataFrame(data, columns=field_names)
-
-            # select the geofactors for prediction
+            # select the geofactors for prediction (dataframe pre-built before this function)
             x_catch = warnow_subcatch_gf_df.filter(items=selected_geofactors)
             feedback.setProgressText(f"\nDatabase columns: {x_catch.columns} ")
 
             # scale the data and predict
-            if selected_region != 'Estimate from gauged_subcatch_geofactors.shp' and _avg_bundles is not None:
+            if selected_region != 'Estimate from gauging stations data' and _avg_bundles is not None:
                 # average predictions from all available regional models
                 all_preds = []
                 for name, m, s in _avg_bundles:
@@ -471,12 +1481,20 @@ class CalculateFlow(QgsProcessingAlgorithm):
             # saving changes
             final_output.commitChanges()
 
-        # create new shapefile
+        # create new shapefile and pre-build the ungauged geofactors DataFrame once
+        # (shared by both flow_estimation calls — avoids reading the layer twice)
         crs = warnow_subcatch_gf.sourceCrs()
         final_output = QgsVectorLayer("Polygon?crs={}".format(crs.authid()), "output test", "memory")
+        _ung_field_names = [field.name() for field in warnow_subcatch_gf.fields()]
+        _ung_data = [[feature[f] for f in _ung_field_names] for feature in warnow_subcatch_gf.getFeatures()]
+        warnow_subcatch_gf_df = pd.DataFrame(_ung_data, columns=_ung_field_names)
+        for col in warnow_subcatch_gf_df.columns:
+            warnow_subcatch_gf_df[col] = pd.to_numeric(warnow_subcatch_gf_df[col], errors='coerce')
+        del _ung_field_names, _ung_data
 
         flow_estimation("Mean_Flow", final_output)
         flow_estimation("M_Low_Flow", final_output)
+        feedback.setProgress(60)
 
         """
         Distribute the estimated flow from subcatchment to river level
@@ -536,15 +1554,14 @@ class CalculateFlow(QgsProcessingAlgorithm):
             river_layer.commitChanges()
 
         # create an independent copy of the river layer
-        crs = river_layer_original.crs().authid()
+        crs = river_network.crs().authid()
         river_layer = QgsVectorLayer("LineString?crs={}".format(crs), "river_layer_copy", "memory")
         # copy attributes
         provider = river_layer.dataProvider()
-        provider.addAttributes(river_layer_original.fields())
+        provider.addAttributes(river_network.fields())
         river_layer.updateFields()
-        # copy features
-        feats = [f for f in river_layer_original.getFeatures()]
-        provider.addFeatures(feats)
+        # copy features (stream directly without materialising the full feature list)
+        provider.addFeatures(river_network.getFeatures())
 
         # calculate flow distribution in river sections
         flow_fields = ["Mean_Flow", "M_Low_Flow"]
@@ -613,6 +1630,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             MARKER = DataArr[Start_Row, 0]  # set MARKER to ID of the first segment  # noqa: F821
             Weg = [Start_Row]
             i = 0
+            out = [Weg]  # default: end point (no downstream segments)
             while i != len(DataArr):  # noqa: F821
                 next_rows = nextFtsCalc(MARKER)  # noqa: F821
                 if len(next_rows) > 1:  # deviding flow path
@@ -642,7 +1660,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             DataArr[Fl_pth[0], 3] = DataArr[Fl_pth[0], 3] + amount  # Add the amount to the calculated flow path  # noqa: F821
             calc_segm = calc_segm[1:]  # delete used segment
             calc_segm = list(set(calc_segm))  # delete duplicate values
-            feedback.setProgress((1-(len(calc_segm)/total2))*100)
+            feedback.setProgress(60 + (1 - len(calc_segm) / max(total2, 1)) * 20)
 
         '''add new field'''
         MQ_field_name = 'acc_Mean'
@@ -708,7 +1726,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
             DataArr[Fl_pth[0], 3] = DataArr[Fl_pth[0], 3] + amount  # Add the amount to the calculated flow path
             calc_segm = calc_segm[1:]  # delete used segment
             calc_segm = list(set(calc_segm))  # delete duplicate values
-            feedback.setProgress((1-(len(calc_segm)/total2))*100)
+            feedback.setProgress(80 + (1 - len(calc_segm) / max(total2, 1)) * 12)
 
         '''add new field'''
         MNQ_field_name = 'acc_M_Low'
@@ -735,26 +1753,27 @@ class CalculateFlow(QgsProcessingAlgorithm):
             waternet.updateFeature(feature)
         waternet.commitChanges()
 
-        # compute CATCH_TO from the river network topology (NET_ID/NET_TO → CATCH_ID mapping)
+        # compute CATCH_TO — single pass over river_network builds both look-up tables
         river_to_catch = {}
-        for f in river_layer_original.getFeatures():
+        _catch_net_to = []
+        for f in river_network.getFeatures():
             net_id = f["NET_ID"]
             catch_id = f["CATCH_ID"]
+            net_to = f["NET_TO"]
             if net_id is not None and catch_id is not None:
                 river_to_catch[str(net_id)] = str(catch_id)
+            if catch_id is not None and net_to is not None:
+                _catch_net_to.append((str(catch_id), str(net_to)))
 
         catch_to_lookup = {}
-        for f in river_layer_original.getFeatures():
-            catch_id = str(f["CATCH_ID"]) if f["CATCH_ID"] is not None else None
-            net_to = f["NET_TO"]
-            if catch_id is None or net_to is None:
-                continue
-            if str(net_to) == "Out":
+        for catch_id, net_to in _catch_net_to:
+            if net_to == "Out":
                 catch_to_lookup.setdefault(catch_id, "Out")
-            elif str(net_to) != "unconnected":
-                dest_catch = river_to_catch.get(str(net_to))
+            elif net_to != "unconnected":
+                dest_catch = river_to_catch.get(net_to)
                 if dest_catch is not None and dest_catch != catch_id:
                     catch_to_lookup[catch_id] = dest_catch
+        del _catch_net_to
 
         # define output fields with CATCH_TO inserted right after CATCH_ID
         out_fields = QgsFields()
@@ -786,71 +1805,42 @@ class CalculateFlow(QgsProcessingAlgorithm):
             sink_river.addFeature(out_feat, QgsFeatureSink.FastInsert)
 
         """
-        Accumulate Mean Flow and Mean Low Flow at subcatchment level
+        Transfer accumulated flow from river sections to subcatchment level.
+        For each CATCH_ID, take the maximum acc_Mean / acc_M_Low across all river
+        sections that belong to it — the section with the highest accumulated value
+        represents the subcatchment outlet, ensuring consistency with the river output.
         """
-        feedback.setProgressText(self.tr("Accumulating flow at subcatchment level...\n"))
+        feedback.setProgressText(self.tr("Transferring accumulated flow to subcatchment level...\n"))
 
-        # build ordered CATCH_ID list from the geofactors layer
-        subcatch_order = []
-        for f in warnow_subcatch_gf.getFeatures():
-            subcatch_order.append(str(f["CATCH_ID"]))
+        acc_mean_by_catch = {}
+        acc_mlow_by_catch = {}
+        for f in waternet.getFeatures():
+            cid = f["CATCH_ID"]
+            if cid is None:
+                continue
+            cid = str(cid)
+            val_mean = f["acc_Mean"]
+            val_mlow = f["acc_M_Low"]
+            if val_mean is not None:
+                acc_mean_by_catch[cid] = max(acc_mean_by_catch.get(cid, 0.0), float(val_mean))
+            if val_mlow is not None:
+                acc_mlow_by_catch[cid] = max(acc_mlow_by_catch.get(cid, 0.0), float(val_mlow))
 
-        # fill in "Out" for any subcatchments not yet in catch_to_lookup
-        for cid in subcatch_order:
-            catch_to_lookup.setdefault(cid, "Out")
+        final_output.startEditing()
+        existing_fields = [field.name() for field in final_output.fields()]
+        if "acc_Mean" not in existing_fields:
+            final_output.addAttribute(QgsField("acc_Mean", QVariant.Double))
+        if "acc_M_Low" not in existing_fields:
+            final_output.addAttribute(QgsField("acc_M_Low", QVariant.Double))
+        final_output.updateFields()
+        for feature in final_output.getFeatures():
+            cid = str(feature["CATCH_ID"])
+            feature.setAttribute("acc_Mean", acc_mean_by_catch.get(cid, 0.0))
+            feature.setAttribute("acc_M_Low", acc_mlow_by_catch.get(cid, 0.0))
+            final_output.updateFeature(feature)
+        final_output.commitChanges()
 
-        for flow_field, acc_field in [("Mean_Flow", "acc_Mean"), ("M_Low_Flow", "acc_M_Low")]:
-            # build per-subcatchment flow lookup from final_output
-            flow_lookup = {}
-            for f in final_output.getFeatures():
-                cid = str(f["CATCH_ID"])
-                val = f[flow_field]
-                flow_lookup[cid] = val if val is not None else 0
-
-            # build DataArr: [CATCH_ID, CATCH_ID (prev=id), CATCH_TO, flow, row_index]
-            Data_catch = [[
-                cid,
-                cid,
-                catch_to_lookup.get(cid, "Out"),
-                flow_lookup.get(cid, 0),
-                i
-            ] for i, cid in enumerate(subcatch_order)]
-            DataArr = np.array(Data_catch, dtype='object')
-            DataArr[np.equal(DataArr[:, 3], None), 3] = 0
-
-            calc_column = np.copy(DataArr[:, 3])
-            calc_segm = np.where(calc_column > 0)[0].tolist()
-            calc_segm = [i for i in calc_segm if DataArr[i, 2] != 'unconnected']
-            DataArr[:, 3] = 0
-
-            total2 = len(calc_segm)
-            while len(calc_segm) > 0:
-                if feedback.isCanceled():
-                    break
-                StartRow = calc_segm[0]
-                amount = calc_column[StartRow]
-                calc_column[StartRow] = 0
-                Fl_pth = FlowPath(StartRow, amount)
-                if len(Fl_pth) == 2:
-                    calc_segm = calc_segm + Fl_pth[1]
-                DataArr[Fl_pth[0], 3] = DataArr[Fl_pth[0], 3] + amount
-                calc_segm = calc_segm[1:]
-                calc_segm = list(set(calc_segm))
-                feedback.setProgress(int((1 - (len(calc_segm) / total2)) * 100))
-
-            # write accumulated values back to final_output
-            final_output.startEditing()
-            if acc_field not in [f.name() for f in final_output.fields()]:
-                final_output.addAttribute(QgsField(acc_field, QVariant.Double))
-            final_output.updateFields()
-            acc_by_catch = {subcatch_order[i]: float(DataArr[i, 3]) for i in range(len(subcatch_order))}
-            for feature in final_output.getFeatures():
-                cid = str(feature["CATCH_ID"])
-                feature.setAttribute(acc_field, acc_by_catch.get(cid, 0.0))
-                final_output.updateFeature(feature)
-            final_output.commitChanges()
-
-        del nextFtsCalc, FlowPath, DataArr
+        del nextFtsCalc, FlowPath
 
         final_output_acc = final_output
 
@@ -884,8 +1874,10 @@ class CalculateFlow(QgsProcessingAlgorithm):
         # return the result
         return {
             self.OUTPUT_catch: dest_id_catch,
-            self.OUTPUT_river: dest_id_river
-            }
+            self.OUTPUT_river: dest_id_river,
+            self.OUTPUTungauged: dest_id_ungauged,
+            self.OUTPUTgauged: dest_id_gauged_gf
+        }
 
     def name(self):
         """
@@ -895,7 +1887,7 @@ class CalculateFlow(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return '4 - Flow estimation'
+        return '2 - Flow estimation'
 
     def displayName(self):
         """
@@ -929,4 +1921,4 @@ class CalculateFlow(QgsProcessingAlgorithm):
         return QCoreApplication.translate('Processing', string)
 
     def createInstance(self):
-        return CalculateFlow()
+        return FlowEstimation()

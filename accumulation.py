@@ -82,23 +82,29 @@ class Accumulation(QgsProcessingAlgorithm):
     def shortHelpString(self):
         return self.tr(
             """
-            This tool combines the output of '4 - Flow Estimation' with the output of '6 - Emission Loads'. In this part, the load of the\
-            selected APIs is transferred to the river network and the concentration for mean flow and mean low flow condition is calculated.
+            This tool combines the output of '2 - Flow Estimation' with the output of '3 - Emission Loads'. In this part, the load of the\
+            selected APIs is transferred to the river network and the concentration for mean flow and mean low flow condition is calculated.\
+            Optionally, dilution ratio and concentration at monitoring points are calculated.
 
             The tool supports two types of river network inputs:
-            - **Line geometry**: Standard river network (e.g., output of '4 - Flow Estimation'). The tool will split river sections at emission points and create sub-sections.
-            - **Polygon geometry**: Subcatchment-based flow data (e.g., Finnish hydrological model output). Emission points are connected to the closest polygon without splitting. Points can be inside or near polygons (within 500m).
+            - *Line geometry*: Standard river network (e.g., output of '2 - Flow Estimation'). The tool will split river sections at emission points and create sub-sections.
+            - *Polygon geometry*: Subcatchment-based flow data. Emission points are connected to the closest polygon without splitting. Points can be inside or near polygons (within 500m).
 
             Workflow:
             1. Choose 'emission_loads.shp' as input for 'API load'
             2. Select the fields contanining APIs to accumulate. This selection should include only columns containing load of APIs in kg/a.
             3. Choose 'river_level.shp' (lines) or polygon-based flow data as input for 'River network'.
-            4. Select the correct field of the river network. In case is the output of '4 - Flow Estimation', fill as follow:
+            4. Select the correct field of the river network. In case is the output of '2 - Flow Estimation', fill as follow:
                 - ID Field -> NET_ID
                 - Next Field -> NET_TO
                 - Acc. Mean Flow -> acc_Mean
                 - Acc. Mean Low Flow -> acc_M_Low
-            5. Click on 'Run'
+            5. Optionally, add a point shapefile containing the monitoring stations to calculate loads and concentration values.
+            6. If a monitoring stations file has been added, click on the three dots in the output "Monitoring station with modelled values"\
+            and select "Create Temporary Layer" or "Save to File"
+            7. If in tool 3 the wastewater flow has been added, click on the three dots in the output "Dilution Ratio" and select\
+            "Create Temporary Layer" or "Save to File"
+            8. Click on 'Run'
 
             Note for polygon networks: The polygon layer must have NET_ID and NET_TO fields defining the connectivity between subcatchments.
             """)
@@ -2199,7 +2205,7 @@ class Accumulation(QgsProcessingAlgorithm):
         return {self.OUTPUT_dil: dil_dest_id}
 
     def name(self):
-        return '7 - Accumulation'
+        return '4 - Accumulation'
 
     def displayName(self):
         return self.tr(self.name())
