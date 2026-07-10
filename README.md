@@ -1,4 +1,4 @@
-![Network Algorithm](/help/images/APRIORA_Logo_Standard-large.png)
+![Network Algorithm](/APRIORA_Logo_Standard-large.png)
 # APRIORA
 In the project APRIORA, environmental protection agencies and wastewater treatment plants get equipped with a GIS-based risk assessment system to monitor and model concentrations of active pharmaceutical ingredients (APIs) in order to improve water management and reduce emissions. Here in this repository there is the code of the plugin. It contains several tools for different purposes: **flow estimation**, **emission loads**, **API accumulation** and **risk assessment**.
 
@@ -17,13 +17,15 @@ The purpose of this set of tools is to estimate load, concentration and perform 
 *7 - API accumulation*: it calculates the accumulation and the concentration of the APIs load at each discharge point and at each river section. <br><br>
 *8 - Risk assessment*: identifies the extent of risk assessment of each API by calculating environmental, human health, antimicrobial resistance and Component Cumulative Risk Index. <br><br>
 
+## Documentation
+A detailed manual is published on [ReadTheDocs](https://hosting-apriora-manual.readthedocs.io/en/latest/index.html)
+
 ## Development / Funding
 If you have any suggestions for improvements feel free to write an issue or create a fork.
 The plugin is being developed under the project [APRIORA](https://interreg-baltic.eu/project/apriora/). This project is funded by the Interreg Baltic Sea Region
 Programme. Co-founded by the European Union (ERDF), this #MadeWithInterreg project helps to remove pollutants from our waters.
 
 ## Credits
-
 This plugin incorporates logic and code adapted from the **WaterNetAnalyzer** plugin, originally developed by **Jannik Schilling**.
 Specifically, the functions for tool 1, 2, 4 and 7 are the ones containing such methods.
 
@@ -31,3 +33,6 @@ Specifically, the functions for tool 1, 2, 4 and 7 are the ones containing such 
 * [GitHub repository](https://github.com/Jannik-Schilling/WaterNetAnalyzer)
 * Copyright (C) 2020 by Jannik Schilling
 * License: GNU General Public License v2
+
+## License
+This project is licensed under the GPLv2 License; see the [LICENSE.rst](LICENSE.rst) file for details
