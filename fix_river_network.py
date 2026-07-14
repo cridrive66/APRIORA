@@ -159,7 +159,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
                 self.tr('Fixed river network'),
-                QgsProcessing.TypeVectorPolygon
+                QgsProcessing.TypeVectorLine
             )
         )
 
