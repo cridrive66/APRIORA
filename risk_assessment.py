@@ -35,7 +35,7 @@ import pandas as pd
 import numpy as np
 from qgis.PyQt.QtCore import QCoreApplication, QVariant, Qt, QUrl
 from qgis.PyQt.QtWidgets import QMessageBox, QMenu, QAction, QFileDialog
-from qgis.PyQt.QtGui import QDesktopServices
+from qgis.PyQt.QtGui import QDesktopServices, QStandardItemModel, QStandardItem
 from qgis.PyQt import uic, QtWidgets
 from qgis.core import (NULL,
                        QgsFeature,
@@ -44,7 +44,6 @@ from qgis.core import (NULL,
                        QgsProject,
                        QgsVectorLayer,
                        QgsWkbTypes)
-from PyQt5.QtGui import QStandardItemModel, QStandardItem
 
 # Load the Qt Designer UI file for the PNEC configuration dialog
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -102,7 +101,7 @@ class RiskAssessment(QgsProcessingAlgorithm):
 
             # Create and show the dialog
             dialog = RiskAssessmentDialog(iface.mainWindow())
-            dialog.exec_()
+            dialog.exec()
 
             feedback.pushInfo("Risk Assessment tool opened and closed.")
 
@@ -198,7 +197,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
                 if isinstance(layer, QgsVectorLayer):
                     # Only include Line and Polygon geometries (filter out Points)
                     geom_type = layer.geometryType()
-                    if geom_type in (QgsWkbTypes.LineGeometry, QgsWkbTypes.PolygonGeometry):
+                    if geom_type in (QgsWkbTypes.GeometryType.LineGeometry, QgsWkbTypes.GeometryType.PolygonGeometry):
                         self.RiverAccumulationcomboBox.addItem(layer.name(), layer.id())
                         
                         # Track index for default value
@@ -227,12 +226,12 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
             self.APIListWidget.clear()
             for field in layer.fields():
                 item = QtWidgets.QListWidgetItem(field.name())
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 # Check by default if it starts with conc_ or conL_, but exclude conc_unit (unit field)
                 if (field.name().startswith("conc_") or field.name().startswith("conL_")) and field.name() != "conc_unit":
-                    item.setCheckState(Qt.Checked)
+                    item.setCheckState(Qt.CheckState.Checked)
                 else:
-                    item.setCheckState(Qt.Unchecked)
+                    item.setCheckState(Qt.CheckState.Unchecked)
                 self.APIListWidget.addItem(item)
 
         # Populate ID field combo
@@ -388,7 +387,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
         """Apply risk assessment style to the output layer based on geometry type."""
         try:
             # Choose style based on geometry type
-            if river_layer.geometryType() == QgsWkbTypes.PolygonGeometry:
+            if river_layer.geometryType() == QgsWkbTypes.GeometryType.PolygonGeometry:
                 style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_ERA_polygon.qml')
             else:  # LineGeometry
                 style_path = os.path.join(os.path.dirname(__file__), 'styles/risk_assessment_ERA_line.qml')
@@ -455,7 +454,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
         model = table_view.model()
         if model is None or model.rowCount() == 0:
             return None
-        headers = [model.headerData(c, Qt.Horizontal) for c in range(model.columnCount())]
+        headers = [model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())]
         data = [[model.index(r, c).data() for c in range(model.columnCount())]
                 for r in range(model.rowCount())]
         return pd.DataFrame(data, columns=headers)
@@ -465,7 +464,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
         model = table_view.model()
         if model is None:
             return
-        headers = [model.headerData(c, Qt.Horizontal) for c in range(model.columnCount())]
+        headers = [model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())]
         data = [[model.index(r, c).data() for c in range(model.columnCount())]
                 for r in range(model.rowCount())]
         df = pd.DataFrame(data, columns=headers)
@@ -501,7 +500,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
         if model:
             new_items = [QStandardItem("") for _ in range(model.columnCount())]
             for item in new_items:
-                item.setFlags(item.flags() | Qt.ItemIsEditable)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
             model.appendRow(new_items)
 
     def _remove_row(self, table_view):
@@ -822,7 +821,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
         if hasattr(self, "APIListWidget"):
             for i in range(self.APIListWidget.count()):
                 item = self.APIListWidget.item(i)
-                if item.checkState() == Qt.Checked:
+                if item.checkState() == Qt.CheckState.Checked:
                     selected_api_fields.append(item.text())
 
         if not selected_api_fields:
@@ -840,7 +839,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # Show progress dialog
         progress = QtWidgets.QProgressDialog("Calculating risk assessment...", None, 0, 0, self)
-        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.show()
         QtWidgets.QApplication.processEvents()
 

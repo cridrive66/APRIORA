@@ -32,7 +32,7 @@ __revision__ = '$Format:%H$'
 
 import os
 from qgis.core import QgsProcessingProvider
-from PyQt5.QtGui import QIcon
+from qgis.PyQt.QtGui import QIcon
 from .emission_loads import EmissionLoadsAlgorithm
 from .fix_river_network import FixRiverNetwork
 from .flow_estimation import FlowEstimation

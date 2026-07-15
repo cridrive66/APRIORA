@@ -114,7 +114,7 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.APIload,
                 self.tr('API Load'),
-                [QgsProcessing.TypeVectorPoint],
+                [QgsProcessing.SourceType.TypeVectorPoint],
                 defaultValue=QgsProject.instance().mapLayersByName("Emission Loads")[0].id() if QgsProject.instance().mapLayersByName("Emission Loads") else None
             )
         )
@@ -125,7 +125,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.tr('Select APIs to accumulate'),
                 parentLayerParameterName=self.APIload,
                 allowMultiple=True,
-                type=QgsProcessingParameterField.Any,
+                type=QgsProcessingParameterField.DataType.Any,
                 defaultValue=[
                     f.name() for f in QgsProject.instance().mapLayersByName("Emission Loads")[0].fields() if f.name().endswith("[kg/a]")
                 ] if QgsProject.instance().mapLayersByName("Emission Loads") else []
@@ -136,7 +136,7 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('River network'),
-                [QgsProcessing.TypeVectorLine, QgsProcessing.TypeVectorPolygon],
+                [QgsProcessing.SourceType.TypeVectorLine, QgsProcessing.SourceType.TypeVectorPolygon],
                 defaultValue=QgsProject.instance().mapLayersByName("River level")[0].id() if QgsProject.instance().mapLayersByName("River level") else None
             )
         )
@@ -147,7 +147,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.tr("ID Field"),
                 parentLayerParameterName=self.riverNetwork,
                 defaultValue='NET_ID',
-                type=QgsProcessingParameterField.Any,
+                type=QgsProcessingParameterField.DataType.Any,
             )
         )
 
@@ -157,7 +157,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.tr("Next Field"),
                 parentLayerParameterName=self.riverNetwork,
                 defaultValue='NET_TO',
-                type=QgsProcessingParameterField.Any,
+                type=QgsProcessingParameterField.DataType.Any,
             )
         )
 
@@ -167,7 +167,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.tr("Acc. Mean Flow"),
                 parentLayerParameterName=self.riverNetwork,
                 defaultValue='acc_Mean',
-                type=QgsProcessingParameterField.Any,
+                type=QgsProcessingParameterField.DataType.Any,
             )
         )
 
@@ -177,7 +177,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 self.tr("Acc. Mean Low Flow"),
                 parentLayerParameterName=self.riverNetwork,
                 defaultValue='acc_M_Low',
-                type=QgsProcessingParameterField.Any,
+                type=QgsProcessingParameterField.DataType.Any,
             )
         )
 
@@ -185,7 +185,7 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.monPoint,
                 self.tr('Monitoring Point'),
-                [QgsProcessing.TypeVectorPoint],
+                [QgsProcessing.SourceType.TypeVectorPoint],
                 optional=True
             )
         )
@@ -194,7 +194,7 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
                 self.tr('River accumulation'),
-                QgsProcessing.TypeVectorAnyGeometry
+                QgsProcessing.SourceType.TypeVectorAnyGeometry
             )
         )
 
@@ -202,7 +202,7 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_mon,
                 self.tr('Monitoring station with modelled values'),
-                QgsProcessing.TypeVectorPoint,
+                QgsProcessing.SourceType.TypeVectorPoint,
                 optional=True,
                 createByDefault=False
             )
@@ -212,7 +212,7 @@ class Accumulation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_dil,
                 self.tr('Dilution Ratio'),
-                QgsProcessing.TypeVectorAnyGeometry,
+                QgsProcessing.SourceType.TypeVectorAnyGeometry,
                 optional=True,
                 createByDefault=False))
 
@@ -238,7 +238,7 @@ class Accumulation(QgsProcessingAlgorithm):
 
         # Detect geometry type of river network
         river_geom_type = river_layer.geometryType()
-        is_polygon_network = (river_geom_type == QgsWkbTypes.PolygonGeometry)
+        is_polygon_network = (river_geom_type == QgsWkbTypes.GeometryType.PolygonGeometry)
 
         if is_polygon_network:
             feedback.pushInfo("\n=== POLYGON RIVER NETWORK DETECTED ===")
@@ -1033,7 +1033,7 @@ class Accumulation(QgsProcessingAlgorithm):
             river_geom = point_data[0][1]
 
             # skip non-line geometries
-            if river_geom.type() != QgsWkbTypes.LineGeometry:
+            if river_geom.type() != QgsWkbTypes.GeometryType.LineGeometry:
                 feedback.pushInfo(
                     f"Skipping section {section_id}: not a line geometry")
                 continue
@@ -2026,8 +2026,9 @@ class Accumulation(QgsProcessingAlgorithm):
                             wfeat = waternet_feat_dict.get(nn_ids[0])
                             if wfeat and wfeat.geometry().distance(em_geom) <= tolerance:
                                 chosen_fid = nn_ids[0]
-                    except Exception:  # nosec B110
-                        pass  # nearest-neighbour lookup is best-effort
+                    except Exception as e:  # nosec B110
+                        feedback.pushDebugInfo(
+                            f"Nearest-neighbour lookup failed for emission point (best-effort): {str(e)}")
 
             else:
                 # Line network: find the two closest sections and pick the downstream one
@@ -2041,8 +2042,9 @@ class Accumulation(QgsProcessingAlgorithm):
                         for x in nn:
                             if x not in candidate_ids:
                                 candidate_ids.append(x)
-                    except Exception:
-                        pass
+                    except Exception as e:  # nosec B110
+                        feedback.pushDebugInfo(
+                            f"Nearest-neighbour lookup failed for line network (best-effort): {str(e)}")
 
                 candidates = []
                 for fid in candidate_ids:
@@ -2051,7 +2053,9 @@ class Accumulation(QgsProcessingAlgorithm):
                         continue
                     try:
                         dist = wfeat.geometry().distance(em_geom)
-                    except Exception:
+                    except Exception as e:  # nosec B110
+                        feedback.pushDebugInfo(
+                            f"Distance calculation failed for water feature (using inf): {str(e)}")
                         dist = float('inf')
                     candidates.append((fid, dist))
 
@@ -2188,7 +2192,7 @@ class Accumulation(QgsProcessingAlgorithm):
             new_feat['acc_Mean'] = acc_mean_annual
             new_feat['unit'] = 'm\u00b3/a'
             new_feat['DR'] = dr
-            dil_sink.addFeature(new_feat, QgsFeatureSink.FastInsert)
+            dil_sink.addFeature(new_feat, QgsFeatureSink.Flag.FastInsert)
 
         feedback.pushInfo("Dilution ratio calculation completed.")
         return {self.OUTPUT_dil: dil_dest_id}

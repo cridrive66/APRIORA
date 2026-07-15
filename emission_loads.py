@@ -44,9 +44,9 @@ from qgis.core import (
     QgsFeature,
     QgsFields
 )
-from PyQt5.QtWidgets import QStyle, QAbstractItemView, QMenu, QAction, QCheckBox, QVBoxLayout, QScrollArea, QWidget, QWidgetAction
-from PyQt5.QtCore import QSortFilterProxyModel
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QDesktopServices, QCursor
+from qgis.PyQt.QtWidgets import QStyle, QAbstractItemView, QMenu, QAction, QCheckBox, QVBoxLayout, QScrollArea, QWidget, QWidgetAction
+from qgis.PyQt.QtCore import QSortFilterProxyModel
+from qgis.PyQt.QtGui import QStandardItemModel, QStandardItem, QDesktopServices, QCursor
 
 # This loads your .ui file so that PyQt can populate your plugin with the elements from Qt Designer
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -106,7 +106,7 @@ class EmissionLoadsAlgorithm(QgsProcessingAlgorithm):
 
             # Create and show the dialog (now in same file)
             dialog = ConsumptionSelectionDialog(iface.mainWindow())
-            dialog.exec_()
+            dialog.exec()
 
             feedback.pushInfo("API Parameter Selection tool opened and closed.")
 
@@ -401,7 +401,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             if model is None:
                 return
             
-            headers = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+            headers = [model.headerData(col, Qt.Orientation.Horizontal) for col in range(model.columnCount())]
             data = []
             # Read ALL rows (both visible and hidden) to get complete data
             for row in range(model.rowCount()):
@@ -416,8 +416,6 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             unique_values = sorted(updated_df.iloc[:, column].unique().astype(str))
             
             # Create a custom widget to hold checkboxes
-            from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton
-            
             filter_widget = QWidget()
             layout = QVBoxLayout(filter_widget)
             layout.setContentsMargins(5, 5, 5, 5)
@@ -500,7 +498,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             menu.addAction(menu_action)
             
             # Show menu at cursor position
-            menu.exec_(QCursor.pos())
+            menu.exec(QCursor.pos())
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Could not create filter menu: {e}")
 
@@ -561,7 +559,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.critical(self, "Error", "Selection view not found in UI.")
             return
         self.selection_view.setModel(self.selection_model)
-        self.selection_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.selection_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
         # Progress bar setup
         if hasattr(self, "progressBar"):
@@ -583,8 +581,8 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             # Strip (*) mandatory markers from DataFrame columns for clean code access
             self.df.columns = [c.replace(' (*)', '') for c in self.df.columns]
             # enable full-row selection so the user can highlight rows to add
-            self.excelTableView.setSelectionBehavior(QAbstractItemView.SelectRows)
-            self.excelTableView.setSelectionMode(QAbstractItemView.ExtendedSelection)
+            self.excelTableView.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            self.excelTableView.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
             # removal rate
             self.df_RR = pd.read_csv(RR_file, sep=",")
             self.load_table(self.df_RR, self.RRTableView)
@@ -727,7 +725,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             return
 
         # find column indices for the required fields
-        headers = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+        headers = [model.headerData(col, Qt.Orientation.Horizontal) for col in range(model.columnCount())]
         headers = [h.replace(' (*)', '') if h else h for h in headers]
         required = ["API name", "year", "country", "region", "Excreted emission (mg/inh./a)"]
         col_indices = {}
@@ -798,7 +796,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             cols = model.columnCount()
             new_items = [QStandardItem("") for _ in range(cols)]
             for item in new_items:
-                item.setFlags(item.flags() | Qt.ItemIsEditable)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
             model.appendRow(new_items)
             # Set modification flag based on which table was modified
             if table_view == self.excelTableView:
@@ -822,7 +820,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         if model is None:
             return None
 
-        headers = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+        headers = [model.headerData(col, Qt.Orientation.Horizontal) for col in range(model.columnCount())]
         data = []
         for row in range(model.rowCount()):
             row_data = [model.index(row, col).data() for col in range(model.columnCount())]
@@ -888,7 +886,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         model = self.excelTableView.model()
         if model is None:
             return
-        headers = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+        headers = [model.headerData(col, Qt.Orientation.Horizontal) for col in range(model.columnCount())]
         headers = [h.replace(' (*)', '') if h else h for h in headers]
         mandatory_fields = ["API name", "year", "country", "region", "Excreted emission (mg/inh./a)"]
         mandatory_indices = []
@@ -994,7 +992,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def populate_layer_combo(self):
         self.WWTPcomboBox.clear()
-        layers = [layer for layer in QgsProject.instance().mapLayers().values() if layer.type() == QgsMapLayer.VectorLayer and layer.geometryType() == QgsWkbTypes.PointGeometry]
+        layers = [layer for layer in QgsProject.instance().mapLayers().values() if layer.type() == QgsMapLayer.LayerType.VectorLayer and layer.geometryType() == QgsWkbTypes.GeometryType.PointGeometry]
         self.vector_layers = layers
         for layer in layers:
             self.WWTPcomboBox.addItem(layer.name())
@@ -1098,7 +1096,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                     api_items.append(rr_item)
 
                 for item in (id_item, name_item, tech_item):
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 model.appendRow(api_items)
 
             self.wwtpTableView.setModel(model)
@@ -1117,7 +1115,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
         try:
             # extract header
-            headers = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+            headers = [model.headerData(col, Qt.Orientation.Horizontal) for col in range(model.columnCount())]
 
             # extract rows
             data = []
@@ -1140,7 +1138,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         model = table_view.model()
         if model is None or model.rowCount() == 0:
             return None
-        headers = [model.headerData(c, Qt.Horizontal) for c in range(model.columnCount())]
+        headers = [model.headerData(c, Qt.Orientation.Horizontal) for c in range(model.columnCount())]
         data = []
         for r in range(model.rowCount()):
             data.append([model.index(r, c).data() for c in range(model.columnCount())])
@@ -1151,7 +1149,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         Let the user pick a folder, write the API_parameters CSV there,
         and add it as a layer in the active QGIS project.
         """
-        from PyQt5.QtWidgets import QFileDialog
+        from qgis.PyQt.QtWidgets import QFileDialog
 
         save_dir = QFileDialog.getExistingDirectory(self, "Select output folder")
         if not save_dir:
@@ -1189,7 +1187,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         Export a table to a user-chosen CSV file and add it to the QGIS project.
         Intended for sharing consumption or removal rate tables with colleagues.
         """
-        from PyQt5.QtWidgets import QFileDialog
+        from qgis.PyQt.QtWidgets import QFileDialog
 
         df = self._table_view_to_df(table_view)
         if df is None:
@@ -1221,7 +1219,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def _import_external_consumption(self):
         """Import an external consumption CSV and replace the current dataset."""
-        from PyQt5.QtWidgets import QFileDialog
+        from qgis.PyQt.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(
             self, "Import consumption table", "", "CSV files (*.csv)"
         )
@@ -1261,7 +1259,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
     def _import_external_rr(self):
         """Import an external removal rates CSV and replace the current dataset."""
         import re
-        from PyQt5.QtWidgets import QFileDialog
+        from qgis.PyQt.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(
             self, "Import removal rate table", "", "CSV files (*.csv)"
         )
@@ -1304,7 +1302,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def _import_external_wwtp(self):
         """Import an external API parameters/WWTP CSV and load it into the WWTP table."""
-        from PyQt5.QtWidgets import QFileDialog
+        from qgis.PyQt.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(
             self, "Import API parameters table", "", "CSV files (*.csv)"
         )
@@ -1486,19 +1484,19 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
         if modified_tabs:
             tabs_list = "\n".join([f"  \u2022 {tab[0]}" for tab in modified_tabs])
             msg_box = QMessageBox(self)
-            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setIcon(QMessageBox.Icon.Warning)
             msg_box.setWindowTitle("Unsaved Changes")
             msg_box.setText("You have unsaved changes. Do you want to save before closing?")
             msg_box.setInformativeText(tabs_list)
-            msg_box.setStandardButtons(QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
-            msg_box.setDefaultButton(QMessageBox.Save)
-            reply = msg_box.exec_()
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.Save)
+            reply = msg_box.exec()
 
-            if reply == QMessageBox.Cancel:
+            if reply == QMessageBox.StandardButton.Cancel:
                 # Cancel close event
                 event.ignore()
                 return
-            elif reply == QMessageBox.Save:
+            elif reply == QMessageBox.StandardButton.Save:
                 # Save all modified tabs
                 for tab_name, save_func in modified_tabs:
                     try:
@@ -1508,9 +1506,9 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
                             self,
                             "Save Error",
                             f"Failed to save {tab_name}:\n{e}\n\nDo you want to close anyway?",
-                            QMessageBox.Yes | QMessageBox.No
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                         )
-                        if error_reply == QMessageBox.No:
+                        if error_reply == QMessageBox.StandardButton.No:
                             event.ignore()
                             return
 
