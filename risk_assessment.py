@@ -909,6 +909,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # Build PNEC dicts per RA type
         PNEC_dicts = {}
+        skipped_count = 0
         for ra_label, pnec_col, _, _ in selected_ra_types:
             ra_dict = {}
             for _, row in df_PNEC.iterrows():
@@ -917,9 +918,22 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
                     numeric_val = float(val)
                     if numeric_val > 0:
                         ra_dict[row['API name']] = numeric_val
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as e:  # nosec B110
+                    # Skip invalid PNEC values (empty cells or non-numeric entries)
+                    api_name = row['API name']
+                    if str(val).strip():  # Only warn if value is not empty
+                        QMessageBox.warning(
+                            self, "Invalid PNEC Value",
+                            f"Could not convert PNEC value for {api_name} ({ra_label}): '{val}'. "
+                            f"Skipping this entry. Error: {str(e)}")
+                        skipped_count += 1
             PNEC_dicts[ra_label] = ra_dict
+        
+        if skipped_count > 0:
+            QMessageBox.information(
+                self, "PNEC Data Info",
+                f"Skipped {skipped_count} invalid PNEC entries (non-numeric values). "
+                f"Risk assessment will continue with valid entries only.")
 
         # Add RQ fields
         rq_field_entries = []

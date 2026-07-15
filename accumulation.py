@@ -383,8 +383,9 @@ class Accumulation(QgsProcessingAlgorithm):
                             if dist <= tolerance:
                                 nearest_polygon = polygon_feat
                                 min_distance = dist
-                except Exception:  # nosec B110
-                    pass  # nearest-neighbour lookup is best-effort; failure is non-fatal
+                except Exception as e:  # nosec B110
+                    feedback.pushDebugInfo(
+                        f"Nearest-neighbor lookup failed for emission point (best-effort): {str(e)}")
             if nearest_polygon is None or (
                     min_distance > tolerance and not is_inside):
                 point_id = point_feat[0]
@@ -787,8 +788,9 @@ class Accumulation(QgsProcessingAlgorithm):
                                 dist = wfeat.geometry().distance(mon_geom)
                                 if dist <= tolerance:
                                     chosen_feat = wfeat
-                    except Exception:  # nosec B110
-                        pass  # nearest-neighbour lookup is best-effort; failure is non-fatal
+                    except Exception as e:  # nosec B110
+                        feedback.pushDebugInfo(
+                            f"Nearest-neighbor lookup failed for monitoring point (best-effort): {str(e)}")
 
                 if chosen_feat is None:
                     feedback.pushWarning(
