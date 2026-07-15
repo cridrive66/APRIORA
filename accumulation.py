@@ -552,8 +552,7 @@ class Accumulation(QgsProcessingAlgorithm):
 
                 if len(set(last_segments)) < 10 and len(last_segments) == 100:
                     feedback.reportError(
-                        f"Stuck loop detected! Repeated segments: {
-                            set(last_segments)}")
+                        f"Stuck loop detected! Repeated segments: {set(last_segments)}")
                     net_ids_debug = []
                     for feature_id in set(last_segments):
                         net_id_debug = DataArr[feature_id, 0]
