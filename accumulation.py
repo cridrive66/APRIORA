@@ -397,8 +397,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 # Add debug information about the actual distance found
                 if nearest_polygon is not None:
                     feedback.pushWarning(
-                        f"Warning: Point {point_id} is {
-                            min_distance:.2f}m from nearest polygon (limit: {tolerance}m)")
+                        f"Warning: Point {point_id} is {min_distance:.2f}m from nearest polygon (limit: {tolerance}m)")
                 else:
                     feedback.pushWarning(
                         f"Warning: no polygon found for point {point_id}")
@@ -409,13 +408,10 @@ class Accumulation(QgsProcessingAlgorithm):
             polygon_net_id = nearest_polygon[id_field]
             if is_inside:
                 feedback.pushInfo(
-                    f"Point {
-                        point_feat[0]} is INSIDE polygon {polygon_net_id}")
+                    f"Point {point_feat[0]} is INSIDE polygon {polygon_net_id}")
             else:
                 feedback.pushInfo(
-                    f"Point {
-                        point_feat[0]} is {
-                        min_distance:.2f}m from polygon {polygon_net_id}")
+                    f"Point {point_feat[0]} is {min_distance:.2f}m from polygon {polygon_net_id}")
 
             if polygon_net_id not in polygon_to_loads:
                 polygon_to_loads[polygon_net_id] = []
@@ -606,8 +602,7 @@ class Accumulation(QgsProcessingAlgorithm):
             feedback.setProgressText(f"{new_field_name} written successfully")
 
         if max_iterations_flag:
-            feedback.reportError(
-                f"Emergency break: exceeded {max_iterations} iterations")
+            feedback.reportError(f"Emergency break: exceeded {max_iterations} iterations")
 
         # Add acc_unit column right after all acc_ fields
         waternet.dataProvider().addAttributes(
@@ -990,10 +985,7 @@ class Accumulation(QgsProcessingAlgorithm):
             feedback.pushInfo(
                 "\nChecking if the snapping process was successfull and each emission point is assigned to the closest river section.")
             feedback.pushInfo(
-                f"DEBUG: point ID {
-                    point_feat[0]} is at a distance {
-                    river_geom.distance(point_geom): .6f} from river section {
-                    nearest_river[id_field]}")
+                f"DEBUG: point ID {point_feat[0]} is at a distance {river_geom.distance(point_geom): .6f} from river section {nearest_river[id_field]}")
 
             # double check intersection or proximity
             if river_geom.intersects(
@@ -1137,8 +1129,7 @@ class Accumulation(QgsProcessingAlgorithm):
         non_null_geom_layer.updateExtents()
 
         feedback.pushInfo(
-            f"Number of features after splitting: {
-                non_null_geom_layer.featureCount()}")
+            f"Number of features after splitting: {non_null_geom_layer.featureCount()}")
 
         # We create new river sections at each emission point. We need to update the name of the section (NET_ID) and
         # the relationship with the other river sections (NET_TO). We create a new naming system where if section 1001
@@ -1522,8 +1513,7 @@ class Accumulation(QgsProcessingAlgorithm):
                 # check if it stuck on the same segment
                 if len(set(last_segments)) < 10 and len(last_segments) == 100:
                     feedback.reportError(
-                        f"Stuck loop detected! Repeated segments: {
-                            set(last_segments)}")
+                        f"Stuck loop detected! Repeated segments: {set(last_segments)}")
                     # convert feature IDs to NET_IDs for selection
                     net_ids_debug = []
                     for feature_id in set(last_segments):
