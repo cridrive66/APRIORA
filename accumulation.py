@@ -282,9 +282,9 @@ class Accumulation(QgsProcessingAlgorithm):
         # Reproject emission load layer if CRS doesn't match river network
         if load_original.crs().authid() != river_crs.authid():
             feedback.pushInfo(
-                f"Reprojecting emission load layer from {
-                    load_original.crs().authid()} to {
-                    river_crs.authid()}...")
+                f"Reprojecting emission load layer from "
+                f"{load_original.crs().authid()} to "
+                f"{river_crs.authid()}...")
             load_original = processing.run("native:reprojectlayer", {
                 'INPUT': load_original,
                 'TARGET_CRS': river_crs,
@@ -297,9 +297,9 @@ class Accumulation(QgsProcessingAlgorithm):
             # Reproject monitoring points if CRS doesn't match
             if mon_point.crs().authid() != river_crs.authid():
                 feedback.pushInfo(
-                    f"Reprojecting monitoring point layer from {
-                        mon_point.crs().authid()} to {
-                        river_crs.authid()}...")
+                    f"Reprojecting monitoring point layer from "
+                    f"{mon_point.crs().authid()} to "
+                    f"{river_crs.authid()}...")
                 mon_point = processing.run("native:reprojectlayer", {
                     'INPUT': mon_point,
                     'TARGET_CRS': river_crs,
@@ -879,9 +879,9 @@ class Accumulation(QgsProcessingAlgorithm):
         # Reproject emission load layer if CRS doesn't match river network
         if load_original.crs().authid() != river_crs.authid():
             feedback.pushInfo(
-                f"Reprojecting emission load layer from {
-                    load_original.crs().authid()} to {
-                    river_crs.authid()}...")
+                f"Reprojecting emission load layer from "
+                f"{load_original.crs().authid()} to "
+                f"{river_crs.authid()}...")
             load_original = processing.run("native:reprojectlayer", {
                 'INPUT': load_original,
                 'TARGET_CRS': river_crs,
@@ -897,9 +897,9 @@ class Accumulation(QgsProcessingAlgorithm):
             # Reproject monitoring points if CRS doesn't match
             if mon_point.crs().authid() != river_crs.authid():
                 feedback.pushInfo(
-                    f"Reprojecting monitoring point layer from {
-                        mon_point.crs().authid()} to {
-                        river_crs.authid()}...")
+                    f"Reprojecting monitoring point layer from "
+                    f"{mon_point.crs().authid()} to "
+                    f"{river_crs.authid()}...")
                 mon_point = processing.run("native:reprojectlayer", {
                     'INPUT': mon_point,
                     'TARGET_CRS': river_crs,
