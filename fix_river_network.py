@@ -32,8 +32,7 @@ __revision__ = '$Format:%H$'
 
 import processing
 from collections import Counter
-from PyQt5.QtCore import QVariant
-from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtCore import QCoreApplication, QVariant
 from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessing,
                        QgsProcessingException,
@@ -115,7 +114,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.catchmentAreas,
                 self.tr('Catchment area'),
-                [QgsProcessing.TypeVectorPolygon]
+                [QgsProcessing.SourceType.TypeVectorPolygon]
             )
         )
 
@@ -123,7 +122,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('River network'),
-                [QgsProcessing.TypeVectorLine]
+                [QgsProcessing.SourceType.TypeVectorLine]
             )
         )
 
@@ -139,7 +138,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             rad_type = Qgis.ProcessingNumberParameterType.Double
         except AttributeError:
             # for qgis prior to version 3.36
-            rad_type = QgsProcessingParameterNumber.Double
+            rad_type = QgsProcessingParameterNumber.Type.Double
         param_Radius = QgsProcessingParameterNumber(
                 self.SEARCH_RADIUS,
                 self.tr("Search Radius for Connections"),
@@ -149,7 +148,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
                 maxValue=10,
                 optional=True
             )
-        param_Radius.setFlags(param_Radius.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        param_Radius.setFlags(param_Radius.flags() | QgsProcessingParameterDefinition.Flag.FlagAdvanced)
         self.addParameter(param_Radius)
 
         # We add a feature sink in which to store our processed features (this
@@ -159,7 +158,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT,
                 self.tr('Fixed river network'),
-                QgsProcessing.TypeVectorLine
+                QgsProcessing.SourceType.TypeVectorLine
             )
         )
 
@@ -168,7 +167,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUT_ungauged,
                 self.tr('Ungauged subcatch'),
-                QgsProcessing.TypeVectorPolygon
+                QgsProcessing.SourceType.TypeVectorPolygon
             )
         )
 
@@ -834,7 +833,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
             else:
                 ft_data = get_features_data(feature)
                 outFt.setAttributes(feature.attributes()+[str(ft_data[-1]), 'unconnected'])
-            sink.addFeature(outFt, QgsFeatureSink.FastInsert)
+            sink.addFeature(outFt, QgsFeatureSink.Flag.FastInsert)
 
         # initialize the feature sink for ungauged subcatchments
         (sink_ungauged, dest_id_ungauged) = self.parameterAsSink(
@@ -850,7 +849,7 @@ class FixRiverNetwork(QgsProcessingAlgorithm):
         catch_ids_in_river = {f["CATCH_ID"] for f in dissolve_layer.getFeatures() if f["CATCH_ID"]}
         for feat in subcatch_with_id.getFeatures():
             if feat["CATCH_ID"] in catch_ids_in_river:
-                sink_ungauged.addFeature(feat, QgsFeatureSink.FastInsert)
+                sink_ungauged.addFeature(feat, QgsFeatureSink.Flag.FastInsert)
 
         return {
             self.OUTPUT: dest_id,

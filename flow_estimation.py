@@ -30,8 +30,7 @@ __copyright__ = '(C) 2024 by Cristiano Guidi'
 
 __revision__ = '$Format:%H$'
 
-from qgis.PyQt.QtCore import QCoreApplication, QDir
-from PyQt5.QtCore import QVariant
+from qgis.PyQt.QtCore import QCoreApplication, QDir, QVariant
 from qgis.core import (QgsProcessingAlgorithm,
                        QgsProcessing,
                        QgsProcessingException,
@@ -148,7 +147,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.catchmentAreas,
                 self.tr('Ungauged subcatchments'),
-                [QgsProcessing.TypeVectorPolygon],
+                [QgsProcessing.SourceType.TypeVectorPolygon],
                 defaultValue=QgsProject.instance().mapLayersByName("Ungauged subcatch")[0].id() if QgsProject.instance().mapLayersByName("Ungauged subcatch") else None
             )
         )
@@ -157,7 +156,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.riverNetwork,
                 self.tr('Fixed river network'),
-                [QgsProcessing.TypeVectorLine],
+                [QgsProcessing.SourceType.TypeVectorLine],
                 defaultValue=QgsProject.instance().mapLayersByName("Fixed river network")[0].id() if QgsProject.instance().mapLayersByName("Fixed river network") else None
             )
         )
@@ -166,7 +165,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.gaugingStations,
                 self.tr('Gauging stations'),
-                [QgsProcessing.TypeVectorPoint]
+                [QgsProcessing.SourceType.TypeVectorPoint]
             )
         )
 
@@ -176,7 +175,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
                 self.meanFlow,
                 description=self.tr('Select Mean Flow field'),
                 parentLayerParameterName=self.gaugingStations,
-                type=QgsProcessingParameterField.Any
+                type=QgsProcessingParameterField.DataType.Any
             )
         )
 
@@ -186,7 +185,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
                 self.MNQ,
                 description=self.tr('Select Mean Low Flow field'),
                 parentLayerParameterName=self.gaugingStations,
-                type=QgsProcessingParameterField.Any
+                type=QgsProcessingParameterField.DataType.Any
             )
         )
 
@@ -195,7 +194,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterRasterLayer(
                 self.DGM,
                 self.tr('Digital surface model'),
-                [QgsProcessing.TypeRaster]
+                [QgsProcessing.SourceType.TypeRaster]
             )
         )
 
@@ -204,7 +203,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.waterArea,
                 self.tr('Water area'),
-                [QgsProcessing.TypeVectorPolygon]
+                [QgsProcessing.SourceType.TypeVectorPolygon]
             )
         )
 
@@ -213,7 +212,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.forestArea,
                 self.tr('Forest area'),
-                [QgsProcessing.TypeVectorPolygon]
+                [QgsProcessing.SourceType.TypeVectorPolygon]
             )
         )
 
@@ -222,7 +221,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSource(
                 self.settlementArea,
                 self.tr('Settlement area'),
-                [QgsProcessing.TypeVectorPolygon]
+                [QgsProcessing.SourceType.TypeVectorPolygon]
             )
         )
 
@@ -231,7 +230,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterFile(
                 self.precipitationData,
                 self.tr('Precipitation data (folder)'),
-                behavior=QgsProcessingParameterFile.Folder
+                behavior=QgsProcessingParameterFile.Behavior.Folder
             )
         )
 
@@ -247,7 +246,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.dryMonth,
                 self.tr('Driest month (1=Jan, 2=Feb, ..., 12=Dec). This information is used for expected low flow conditions.'),
-                type=QgsProcessingParameterNumber.Integer,
+                type=QgsProcessingParameterNumber.Type.Integer,
                 defaultValue=8,
                 minValue=1,
                 maxValue=12
@@ -292,7 +291,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
         )
 
         # set it as advanced parameter
-        param_geofactors.setFlags(param_geofactors.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        param_geofactors.setFlags(param_geofactors.flags() | QgsProcessingParameterDefinition.Flag.FlagAdvanced)
         self.addParameter(param_geofactors)
 
         # We add a feature sink in which to store our processed features (this
@@ -319,7 +318,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUTungauged,
                 self.tr('Ungauged subcatch geofactors'),
-                QgsProcessing.TypeVectorPolygon,
+                QgsProcessing.SourceType.TypeVectorPolygon,
                 optional=True,
                 createByDefault=False))
 
@@ -328,7 +327,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             QgsProcessingParameterFeatureSink(
                 self.OUTPUTgauged,
                 self.tr('Gauged subcatch geofactors'),
-                QgsProcessing.TypeVectorPolygon,
+                QgsProcessing.SourceType.TypeVectorPolygon,
                 optional=True,
                 createByDefault=False))
 
@@ -880,7 +879,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
         dry_month_name = month_names[dry_month - 1]
         feedback.pushInfo(f"Dry month: {dry_month_name} (month {dry_month}, {days_in_dry_month} days)")
         # list of all .nc file in the directory
-        netcdf_files = QDir(netcdf_dir).entryList(["*.nc"], QDir.Files)
+        netcdf_files = QDir(netcdf_dir).entryList(["*.nc"], QDir.Filter.Files)
 
         # Variables
         firstFile = True
@@ -1802,7 +1801,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
             out_feat = QgsFeature(out_fields)
             out_feat.setGeometry(feature.geometry())
             out_feat.setAttributes(attrs)
-            sink_river.addFeature(out_feat, QgsFeatureSink.FastInsert)
+            sink_river.addFeature(out_feat, QgsFeatureSink.Flag.FastInsert)
 
         """
         Transfer accumulated flow from river sections to subcatchment level.
