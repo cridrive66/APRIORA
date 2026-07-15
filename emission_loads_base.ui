@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>690</width>
+    <width>867</width>
     <height>486</height>
    </rect>
   </property>
@@ -99,7 +99,7 @@
         <widget class="QPushButton" name="restoreButton_1">
          <property name="maximumSize">
           <size>
-           <width>100</width>
+           <width>150</width>
            <height>16777215</height>
           </size>
          </property>
@@ -269,7 +269,7 @@
         <widget class="QPushButton" name="restoreButton_2">
          <property name="maximumSize">
           <size>
-           <width>100</width>
+           <width>150</width>
            <height>16777215</height>
           </size>
          </property>
@@ -282,7 +282,7 @@
         <widget class="QLabel" name="label_11">
          <property name="maximumSize">
           <size>
-           <width>140</width>
+           <width>200</width>
            <height>16777215</height>
           </size>
          </property>
@@ -342,129 +342,6 @@
        <string>Emission loads</string>
       </attribute>
       <layout class="QGridLayout" name="gridLayout_3">
-       <item row="0" column="0">
-        <widget class="QLabel" name="label_16">
-         <property name="minimumSize">
-          <size>
-           <width>105</width>
-           <height>0</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>105</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>WWTP locations table</string>
-         </property>
-        </widget>
-       </item>
-       <item row="0" column="1">
-        <widget class="QToolButton" name="exportMenuButton_tab3">
-         <property name="text">
-          <string>...</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="0" colspan="2">
-        <widget class="QLabel" name="label_7">
-         <property name="minimumSize">
-          <size>
-           <width>150</width>
-           <height>0</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>150</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>Select WWTP file</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="2">
-        <widget class="QLabel" name="label_8">
-         <property name="maximumSize">
-          <size>
-           <width>115</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>ID field</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="3">
-        <widget class="QLabel" name="label_9">
-         <property name="maximumSize">
-          <size>
-           <width>115</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>Name field</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="4" colspan="2">
-        <widget class="QLabel" name="label_10">
-         <property name="maximumSize">
-          <size>
-           <width>115</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>Technical Class</string>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="7">
-        <widget class="QPushButton" name="help_tab3">
-         <property name="text">
-          <string>Help</string>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="0" colspan="2">
-        <widget class="QComboBox" name="WWTPcomboBox">
-         <property name="minimumSize">
-          <size>
-           <width>150</width>
-           <height>0</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>150</width>
-           <height>16777215</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item row="2" column="2">
-        <widget class="QComboBox" name="IDcomboBox">
-         <property name="minimumSize">
-          <size>
-           <width>100</width>
-           <height>0</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>100</width>
-           <height>16777215</height>
-          </size>
-         </property>
-        </widget>
-       </item>
        <item row="2" column="3">
         <widget class="QComboBox" name="NamecomboBox">
          <property name="minimumSize">
@@ -478,6 +355,25 @@
            <width>100</width>
            <height>16777215</height>
           </size>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="0">
+        <widget class="QLabel" name="label_16">
+         <property name="minimumSize">
+          <size>
+           <width>105</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>220</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>WWTP locations table</string>
          </property>
         </widget>
        </item>
@@ -504,26 +400,35 @@
          </property>
         </widget>
        </item>
-       <item row="2" column="7">
-        <widget class="QPushButton" name="restoreButton_3">
-         <property name="text">
-          <string>Restore original</string>
-         </property>
-        </widget>
-       </item>
-       <item row="3" column="0" colspan="8">
-        <widget class="QTableView" name="wwtpTableView"/>
-       </item>
-       <item row="4" column="0" colspan="2">
-        <widget class="QLabel" name="label_44">
+       <item row="1" column="3">
+        <widget class="QLabel" name="label_9">
          <property name="maximumSize">
           <size>
-           <width>135</width>
+           <width>115</width>
            <height>16777215</height>
           </size>
          </property>
          <property name="text">
-          <string>Connected inhabitants field</string>
+          <string>Name field</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="0" colspan="2">
+        <widget class="QLabel" name="label_7">
+         <property name="minimumSize">
+          <size>
+           <width>150</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>150</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Select WWTP file</string>
          </property>
         </widget>
        </item>
@@ -537,14 +442,74 @@
          </property>
          <property name="maximumSize">
           <size>
-           <width>220</width>
+           <width>275</width>
            <height>16777215</height>
           </size>
+         </property>
+         <property name="accessibleName">
+          <string/>
+         </property>
+         <property name="accessibleDescription">
+          <string/>
          </property>
          <property name="text">
           <string>WWTP annual effluent flow [m³/a] [optional]</string>
          </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
         </widget>
+       </item>
+       <item row="2" column="2">
+        <widget class="QComboBox" name="IDcomboBox">
+         <property name="minimumSize">
+          <size>
+           <width>100</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>100</width>
+           <height>16777215</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="0" colspan="2">
+        <widget class="QComboBox" name="ConnInhcomboBox_3">
+         <property name="minimumSize">
+          <size>
+           <width>135</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>200</width>
+           <height>16777215</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="0" colspan="2">
+        <widget class="QLabel" name="label_44">
+         <property name="maximumSize">
+          <size>
+           <width>200</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Connected inhabitants field</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0" colspan="8">
+        <widget class="QTableView" name="wwtpTableView"/>
        </item>
        <item row="4" column="4" rowspan="2">
         <spacer name="verticalSpacer">
@@ -558,6 +523,85 @@
           </size>
          </property>
         </spacer>
+       </item>
+       <item row="1" column="2">
+        <widget class="QLabel" name="label_8">
+         <property name="maximumSize">
+          <size>
+           <width>115</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>ID field</string>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="2" colspan="2">
+        <widget class="QComboBox" name="EffluentcomboBox_3">
+         <property name="minimumSize">
+          <size>
+           <width>135</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>135</width>
+           <height>16777215</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="7">
+        <widget class="QPushButton" name="restoreButton_3">
+         <property name="text">
+          <string>Restore original</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QToolButton" name="exportMenuButton_tab3">
+         <property name="text">
+          <string>...</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="7">
+        <widget class="QPushButton" name="help_tab3">
+         <property name="text">
+          <string>Help</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="4" colspan="2">
+        <widget class="QLabel" name="label_10">
+         <property name="maximumSize">
+          <size>
+           <width>115</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Technical Class</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0" colspan="2">
+        <widget class="QComboBox" name="WWTPcomboBox">
+         <property name="minimumSize">
+          <size>
+           <width>150</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>150</width>
+           <height>16777215</height>
+          </size>
+         </property>
+        </widget>
        </item>
        <item row="4" column="5" rowspan="2" colspan="3">
         <widget class="QPushButton" name="EmissionLoadspushButton_3">
@@ -580,38 +624,6 @@
          </property>
          <property name="text">
           <string>Calculate emission loads</string>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="0" colspan="2">
-        <widget class="QComboBox" name="ConnInhcomboBox_3">
-         <property name="minimumSize">
-          <size>
-           <width>135</width>
-           <height>0</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>135</width>
-           <height>16777215</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="2" colspan="2">
-        <widget class="QComboBox" name="EffluentcomboBox_3">
-         <property name="minimumSize">
-          <size>
-           <width>135</width>
-           <height>0</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>135</width>
-           <height>16777215</height>
-          </size>
          </property>
         </widget>
        </item>
