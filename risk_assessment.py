@@ -561,8 +561,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
                 if df_amr is not None:
                     df_amr.to_csv(os.path.join(file_path, "PNEC_AMR_export.csv"), index=False)
 
-            QMessageBox.information(self, "Export Successful", 
-                                   f"PNEC tables exported to:\n{file_path}")
+            QMessageBox.information(self, "Export Successful", f"PNEC tables exported to:\n{file_path}")
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", f"Error exporting PNEC tables: {str(e)}")
 
@@ -609,8 +608,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
                 df_era = self._table_view_to_df(self.ERATableView)
                 if df_era is not None:
                     df_era.to_csv(os.path.join(file_path, "PNEC_ERA_export.csv"), index=False)
-                    QMessageBox.information(self, "Export Successful", 
-                                           f"ERA table exported to:\n{file_path}")
+                    QMessageBox.information(self, "Export Successful", f"ERA table exported to:\n{file_path}")
                 else:
                     QMessageBox.warning(self, "Export Failed", "No data in ERA table.")
         except Exception as e:
@@ -681,8 +679,7 @@ class RiskAssessmentDialog(QtWidgets.QDialog, FORM_CLASS):
                 df_amr = self._table_view_to_df(self.AMRTableView)
                 if df_amr is not None:
                     df_amr.to_csv(os.path.join(file_path, "PNEC_AMR_export.csv"), index=False)
-                    QMessageBox.information(self, "Export Successful", 
-                                           f"AMR-RA table exported to:\n{file_path}")
+                    QMessageBox.information(self, "Export Successful", f"AMR-RA table exported to:\n{file_path}")
                 else:
                     QMessageBox.warning(self, "Export Failed", "No data in AMR-RA table.")
         except Exception as e:
