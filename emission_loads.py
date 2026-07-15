@@ -1020,6 +1020,7 @@ class ConsumptionSelectionDialog(QtWidgets.QDialog, FORM_CLASS):
             self.ConnInhcomboBox_3.addItems(field_names)
         if hasattr(self, "EffluentcomboBox_3"):
             self.EffluentcomboBox_3.clear()
+            self.EffluentcomboBox_3.addItem("")  # Add empty option (optional field)
             self.EffluentcomboBox_3.addItems(field_names)
 
     def load_wwtp_table(self):
