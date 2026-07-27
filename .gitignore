@@ -1,4 +1,4 @@
-__pycache__/
-/datasets/custom_dataset/*.csv
-/user_selection.txt
-/field_selection.txt
+/apriora/__pycache__/
+/apriora/datasets/custom_dataset/*.csv
+/apriora/user_selection.txt
+/apriora/field_selection.txt
