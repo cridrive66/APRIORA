@@ -1,4 +1,4 @@
-![Network Algorithm](/APRIORA_Logo_Standard-large.png)
+![Network Algorithm](apriora/APRIORA_Logo_Standard-large.png)
 # APRIORA
 In the project APRIORA, environmental protection agencies and wastewater treatment plants get equipped with a GIS-based risk assessment system to monitor and model concentrations of active pharmaceutical ingredients (APIs) in order to improve water management and reduce emissions. Here in this repository there is the code of the plugin. It contains several tools for different purposes: **flow estimation**, **emission loads**, **API accumulation** and **risk assessment**.
 
