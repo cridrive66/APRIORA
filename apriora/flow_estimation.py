@@ -90,7 +90,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
     OUTPUTgauged = 'OUTPUTgauged'
     OUTPUTungauged = 'OUTPUTungauged'
 
-    # mapping: display name -> file prefix used in "hydrological model parameters" folder
+    # mapping: display name -> file prefix used in "hydrological_model_parameters" folder
     # 'Estimate from gauging stations data' means: train the model on the spot from the provided gauged subcatchments
     REGION_OPTIONS = [
         'Estimate from gauging stations data',
@@ -1371,7 +1371,7 @@ class FlowEstimation(QgsProcessingAlgorithm):
 
             else:
                 plugin_folder = os.path.dirname(__file__)
-                save_dir = os.path.join(plugin_folder, "hydrological model parameters")
+                save_dir = os.path.join(plugin_folder, "hydrological_model_parameters")
                 os.makedirs(save_dir, exist_ok=True)
 
                 if selected_region == '[Pre-trained] Average of all regions':
