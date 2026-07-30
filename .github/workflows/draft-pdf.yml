@@ -1,0 +1,28 @@
+name: Draft PDF
+on:
+  push:
+    paths:
+      - 'joss_paper/**'
+      - '.github/workflows/draft-paper.yml'
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    name: Paper Draft
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build draft PDF
+        uses: openjournals/openjournals-draft-action@master
+        with:
+          journal: joss
+          # Point this directly to your paper folder location
+          paper-path: joss_paper/paper.md
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: joss-paper-pdf
+          # The output PDF will be created inside the same folder
+          path: joss_paper/paper.pdf
