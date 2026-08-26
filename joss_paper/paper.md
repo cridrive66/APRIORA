@@ -53,7 +53,7 @@ The `APRIORA` plugin is an open-source QGIS extension designed to make pharmaceu
 
 A scheme of the plugin is illustrated in \autoref{fig:plugin_scheme}.
 
-![APRIORA plugin scheme.\label{fig:plugin_scheme}](images/plugin_scheme.png)
+![APRIORA plugin scheme.\label{fig:plugin_scheme}](images/plugin_scheme.svg)
 
 To make the tool useful across different regions, several practical trade-offs were built into the software design. First, the Hydro-Module works with standard European databases like Copernicus DEM, ERA5 precipitation and CORINE Land Cover, while still allowing users to use local data. Because precipitation data formats can differ between sources (such as ERA5 using single multi-year NetCDF files and local agencies like the German Weather Service using annual rasters), the interface includes a flexible toggle switch so users do not have to manually reformat their files.
 Additionally, spatial data structures can vary country by country. While downstream routing usually relies on line networks, some databases (like Finland's Vemala model [@huttunenNationalScaleNutrientLoading2016]) store hydrological data as polygons. Because of this reason, *4 - Accumulation* and *5 - Risk Assessment* were designed to accept both linear river networks and polygon layers, letting users choose whichever spatial format fits best.
