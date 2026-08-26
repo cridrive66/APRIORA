@@ -14,7 +14,7 @@ risk assessment in each river section. A scheme of the plugin is illustrated in 
 .. _scheme-fig:
 
 .. figure::
-    images/poster_scheme_big.svg
+    images/plugin_scheme.svg
     
     Scheme of the APRIORA plugin.
 
@@ -25,21 +25,24 @@ Getting Started
 ---------------
 Please find instructions on how to install the plugin in the :ref:`Installation` section.
 
-Support, contributing and testing
----------------------------------
-Please contribute using `Github <https://github.com/cridrive66/APRIORA>`_. Create a branch, add commits and *open a pull request*.
+Contributing
+------------
+Your contribution is very welcome! 
+You can help to improve *APRIORA* for everyone by:
 
-Reporting bugs or suggesting improvements
------------------------------------------
-If you find a bug in the APRIORA plugin, please open a `new issue <https://github.com/cridrive66/APRIORA/issues>`_ and tag it "bug".
-If you want to suggest a new feature or an improvement of a current feature, please open a new issue and tag it "improvement".
-For both cases, you can always send an email to cristiano.guidi2@uni-rostock.de.
+- making a question or comment
+- reporting a bug
+- requesting a feature
+- providing code
+
+See `here <https://github.com/cridrive66/APRIORA?tab=contributing-ov-file>`_ how to engage, ensuring a smooth and transparent process.
 
 Latest changhes
 ---------------
 This section contains the most recent changes and updates to the plugin. More detailed description can be found on the
 `Github release page <https://github.com/cridrive66/APRIORA/releases>`_.
 
+*   v.1.2.1: Fixed installation for MAC users: fixed SyntaxError: EOL while scanning string literal. Added empty field for WWTP effluent in "3 - Emission Loads".
 *   v.1.2.0: fixed error in "subcatchment_level.shp" of "Flow Estimation" tool. Tool 2-3-4 are now merged in one tool.
     Tool 5 and 6 are also merged in one tool. "PNEC" window moved to "Risk assessment" tool. New filter function 
     available for consumption dataset in Tool 3.
