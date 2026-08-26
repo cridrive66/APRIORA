@@ -9,6 +9,11 @@ You can help to improve _APRIORA_ for everyone by:
 
 See below how to engage, ensuring a smooth and transparent process.
 
+## Code of Conduct
+We are committed to providing a welcoming, inclusive, and harassment-free environment for everyone. Please be respectful, constructive, and professional in all interactions (issues, pull requests, and discussions). 
+
+If you encounter unacceptable behavior, please report it by contacting the developer at <cristiano.guidi2@uni-rostock.de>.
+
 ## Making questions or comments
 Do you have a question about how to use _APRIORA_ or want to share feedback? 
 Follow these steps:
@@ -68,7 +73,22 @@ Would you like to contribute with your own code?
 - The review will be addressed as soon as possible, but some patience from your side might be needed
 - Be aware that only pull requests approved by the authors/maintainers will be merged
 
+## Contributing Documentation
+Documentation improvements are always welcome! You can:
+
+- Fix typos or clarify existing documentation
+- Add examples or tutorials
+- Improve the user guide
+
+Documentation source files are in the `docs/` directory
+
 ## Acknowledgment of contributors
 All contributions to _APRIORA_ are greatly appreciated!
-
 - If you committed a change, this will be reflected in the [Github contributors list](https://github.com/cridrive66/APRIORA/graphs/contributors).
+
+## Contact
+For direct inquiries:
+- **Cristiano Guidi** - <cristiano.guidi2@uni-rostock.de>
+
+## License
+By contributing to _APRIORA_, you agree that your contributions will be licensed under the [GNU General Public License v2.0](LICENSE).
