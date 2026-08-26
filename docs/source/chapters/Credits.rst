@@ -12,3 +12,10 @@ and :ref:`accumulation` are the ones containing such methods.
 * `GitHub repository <https://github.com/Jannik-Schilling/WaterNetAnalyzer>`_
 * Copyright (C) 2020 by Jannik Schilling
 * License: GNU General Public License v2
+
+Development / Funding
+=====================
+
+If you have any suggestions for improvements feel free to write an issue or create a fork on the `GitHub page <https://github.com/cridrive66/APRIORA/issues>`_.
+The plugin is being developed under the project [APRIORA](https://interreg-baltic.eu/project/apriora/). This project is funded by the Interreg Baltic Sea Region
+Programme. Co-founded by the European Union (ERDF), this #MadeWithInterreg project helps to remove pollutants from our waters.
