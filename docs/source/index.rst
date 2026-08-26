@@ -6,7 +6,7 @@
 .. figure:: images/APRIORA_Horizontal_Standard-medium.png
 
 *******************************************
-APRIORA plugin manual (v.1.2.0)
+APRIORA plugin manual (v.1.2.1)
 *******************************************
 
 .. toctree::
