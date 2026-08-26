@@ -19,7 +19,7 @@ and :ref:`accumulation` are the ones containing such methods.
 Funding
 -------
 
-The plugin is being developed under the project [APRIORA](https://interreg-baltic.eu/project/apriora/). This project is funded by the Interreg Baltic Sea Region
+The plugin is being developed under the project `APRIORA <https://interreg-baltic.eu/project/apriora/>`_. This project is funded by the Interreg Baltic Sea Region
 Programme. Co-founded by the European Union (ERDF), this #MadeWithInterreg project helps to remove pollutants from our waters.
 
 Acknowledgments
