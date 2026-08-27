@@ -17,12 +17,12 @@ jobs:
         uses: openjournals/openjournals-draft-action@master
         with:
           journal: joss
-          # Point this directly to your paper folder location
+          # Path to the paper within your repo
           paper-path: joss_paper/paper.md
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Commit PDF to repository
+        uses: EndBug/add-and-commit@v9
         with:
-          name: joss-paper-pdf
-          # The output PDF will be created inside the same folder
-          path: joss_paper/paper.pdf
+          message: '(auto) Update JOSS draft PDF'
+          # Path to the compiled PDF to commit back to the repo
+          add: 'joss_paper/paper.pdf'
