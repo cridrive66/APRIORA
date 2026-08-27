@@ -1,19 +1,60 @@
 .. _Installation:
 
-Installation for Windows
-========================
+Installation
+============
 
 Extra library required
 ----------------------
 | To run the :ref:`Hydro_Module` tool, an extra library called `scikit-learn <https://scikit-learn.org/stable/>`_ is necessary and 
  is not included in the standard QGIS installation. In case you already have regionalized flow data, you can skip this step. To run the whole tool,
  an extra library called `pandas <https://pandas.pydata.org/>`_ is necessary too.
- To install the missing packages:
+ To install the missing packages, follow the guide for your OS in the next paragraphs.
+
+Windows
+^^^^^^^
 
 1. Open "OSGeo4W Shell", you can find it already installed with QGIS.
 2. Digit::
 
       python -m pip install scikit-learn pandas
+
+  Note: If the command throws a permission error, run pip3 with the --user flag::
+
+      python -m pip install --user scikit-learn pandas
+
+3. Press *Enter*
+
+macOS
+^^^^^
+
+1. Open the Terminal application (press Cmd + Space, type Terminal, and press Enter)
+2. Digit::
+
+      /Applications/QGIS.app/Contents/MacOS/bin/pip3 install scikit-learn pandas
+
+  Note: If the command throws a permission error, run pip3 with the --user flag::
+
+      /Applications/QGIS.app/Contents/MacOS/bin/pip3 install --user scikit-learn pandas
+  
+3. Press *Enter*
+
+Linux
+^^^^^
+
+1. Open your Terminal
+2. Run the command matching your distribution's package manager:
+
+  * Ubuntu / Debian / Linux Mint::
+  
+        sudo apt update && sudo apt install python3-sklearn python3-pandas
+
+  * Fedora::
+
+        sudo dnf install python3-scikit-learn python3-pandas
+
+  * Arch Linux::
+
+        sudo pacman -S python-scikit-learn python-pandas
 
 3. Press *Enter*
 
