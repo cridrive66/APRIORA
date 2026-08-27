@@ -130,13 +130,17 @@ In case the user would like to import one of the PNEC tables from other users:
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/risk_assessment.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of the <i>Risk Assessment</i> tool.</figcaption>
-   </figure>
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/43NVqf4d-A8"
+      title="Workflow of the Risk Assessment tool."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of the <i>Risk Assessment</i> tool.</figcaption>
+  </figure>
 
 Output data:
 

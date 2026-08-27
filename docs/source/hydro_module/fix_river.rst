@@ -57,13 +57,17 @@ Workflow
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/fix_river_network.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of the <i>Fix River Network</i> tool.</figcaption>
-   </figure>
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/p_UIVit_hWY"
+      title="Workflow of the Fix River Network tool."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of the <i>Fix River Network</i> tool.</figcaption>
+  </figure>
 
 Output data:
 

@@ -28,14 +28,17 @@ Upgrade the treatment type means, for example, that a WWTP is upgraded from a te
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/mitig_option_I.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of <i>Mitigation Option I</i>.</figcaption>
-   </figure>
-
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/2Ub17s_DLro"
+      title="Workflow of Mitigation Option I."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of <i>Mitigation Option I</i>.</figcaption>
+  </figure>
 
 .. _optionII:
 
@@ -55,14 +58,17 @@ Another mitigation option could be to relocate the WWTP to other larger faciliti
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/mitig_option_II.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of <i>Mitigation Option II</i>.</figcaption>
-   </figure>
-
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/2Ub17s_DLro"
+      title="Workflow of Mitigation Option II."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of <i>Mitigation Option II</i>.</figcaption>
+  </figure>
 
 .. _optionIII:
 
@@ -80,10 +86,14 @@ The steps to do this are:
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/mitig_option_III.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of <i>Mitigation Option III</i>.</figcaption>
-   </figure>
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/2Ub17s_DLro"
+      title="Workflow of Mitigation Option III."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of <i>Mitigation Option III</i>.</figcaption>
+  </figure>

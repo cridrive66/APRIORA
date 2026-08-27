@@ -97,13 +97,17 @@ Optional:
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/accumulation.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of the <i>Accumulation</i> tool.</figcaption>
-   </figure>
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/wHNWsz_VIas"
+      title="Workflow of the Accumulation tool."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of the <i>Accumulation</i> tool.</figcaption>
+  </figure>
 
 Output data:
 

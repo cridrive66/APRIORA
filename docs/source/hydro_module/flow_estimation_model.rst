@@ -173,13 +173,17 @@ Workflow
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/flow_estimation.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of the <i>Flow Estimation</i> tool.</figcaption>
-   </figure>
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/TWoHbuRqP-Y"
+      title="Workflow of the Flow Estimation tool."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of the <i>Flow Estimation</i> tool.</figcaption>
+  </figure>
 
 Output data:
 

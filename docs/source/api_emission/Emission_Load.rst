@@ -69,13 +69,17 @@ In case the user would like to share the consumption table with other users or i
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/consumption_data.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of the <i>Consumption data</i> window in the <i>Emission Loads</i> tool.</figcaption>
-   </figure>
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/0Bnd1SeY5Jk"
+      title="Workflow of the 'Consumption data' window in the Emission Loads tool."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of the <i>Consumption data</i> window in the <i>Emission Loads</i> tool.</figcaption>
+  </figure>
 
 .. _removal_rate:
 
@@ -107,13 +111,17 @@ In case the user would like to share the removal rate table with other users or 
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/removal_rate.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of the <i>Removal rate</i> window in the <i>Emission Loads</i> tool.</figcaption>
-   </figure>
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/fQTD_ip7Iwg"
+      title="Workflow of the 'Removal rate' window in the Emission Loads tool."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of the <i>Removal rate</i> window in the <i>Emission Loads</i> tool.</figcaption>
+  </figure>
 
 .. _emission_loads_window:
 
@@ -210,13 +218,17 @@ After making (or not) all the necessary changes, the user can then proceed by:
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/emission_loads.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: Worflow of the <i>Emission Loads</i> window in the <i>Emission Loads</i> tool.</figcaption>
-   </figure>
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/IPTMiqraXGk"
+      title="Workflow of the 'Emission Loads' window in the Emission Loads tool."
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: Workflow of the <i>Emission Loads</i> window in the <i>Emission Loads</i> tool.</figcaption>
+  </figure>
 
 Output data:
 

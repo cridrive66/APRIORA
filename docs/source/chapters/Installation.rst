@@ -68,13 +68,17 @@ In case you still have problems with the installation, check the video-tutorial 
 
 .. raw:: html
 
-   <figure>
-     <video width="700" height="370" controls>
-       <source src="../_static/video/installation.mp4" type="video/mp4">
-       Your browser does not support the video tag.
-     </video>
-     <figcaption>Video: How to install the APRIORA plugin.</figcaption>
-   </figure>
+  <figure>
+    <iframe 
+      width="700"
+      height="370"
+      src="https://www.youtube.com/embed/LX5WO6Q4jGM"
+      title="How to install the APRIORA plugin"
+      allow="picture-in-picture"
+      allowfullscreen>
+    </iframe>
+    <figcaption>Video: How to install the APRIORA plugin.</figcaption>
+  </figure>
 
 Installation via .zip file
 --------------------------
