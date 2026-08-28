@@ -48,12 +48,13 @@ A fundamental requirement across all these tools is accurate hydrological flow d
 # Software design
 
 The `APRIORA` plugin is an open-source QGIS extension designed to make pharmaceutical risk modelling easy to use for regional decision-makers and environmental agencies working under the UWWTD. Its main design goal is to provide a low technical barrier to entry by using mostly publicly available data and fitting directly into standard QGIS workflows. The plugin is organized into two main modules containing five total tools:
+
 - Hydro-Module: preprocesses stream vector lines (*1 - Fix River Network*) and estimates $\text{MQ}_a$ and $\text{MLQ}_a$ in data-scarce catchments (*2 - Flow Estimation*)
 - API Emission: calculates pollutant loads from WWTP (*3 - Emission Loads*), routes these loads downstream (*4 - Accumulation*) and perform risk assessment (*5 - Risk Assessment*)
 
 A scheme of the plugin is illustrated in \autoref{fig:plugin_scheme}.
 
-![APRIORA plugin scheme.\label{fig:plugin_scheme}](images/plugin_scheme.svg){width="80%"}
+![APRIORA plugin scheme.\label{fig:plugin_scheme}](images/plugin_scheme.png){width="80%"}
 
 To make the tool useful across different regions, several practical trade-offs were built into the software design. First, the Hydro-Module works with standard European databases like Copernicus DEM, ERA5 precipitation and CORINE Land Cover, while still allowing users to use local data. Because precipitation data formats can differ between sources (such as ERA5 using single multi-year NetCDF files and local agencies like the German Weather Service using annual rasters), the interface includes a flexible toggle switch so users do not have to manually reformat their files.
 Additionally, spatial data structures can vary country by country. While downstream routing usually relies on line networks, some databases (like Finland's Vemala model [@huttunenNationalScaleNutrientLoading2016]) store hydrological data as polygons. Because of this reason, *4 - Accumulation* and *5 - Risk Assessment* were designed to accept both linear river networks and polygon layers, letting users choose whichever spatial format fits best.
