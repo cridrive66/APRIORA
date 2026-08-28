@@ -62,7 +62,7 @@ Another mitigation option could be to relocate the WWTP to other larger faciliti
     <iframe 
       width="700"
       height="370"
-      src="https://www.youtube.com/embed/2Ub17s_DLro"
+      src="https://www.youtube.com/embed/NjxvYDVrfWE"
       title="Workflow of Mitigation Option II."
       allow="picture-in-picture"
       allowfullscreen>
@@ -90,7 +90,7 @@ The steps to do this are:
     <iframe 
       width="700"
       height="370"
-      src="https://www.youtube.com/embed/2Ub17s_DLro"
+      src="https://www.youtube.com/embed/QfWvpIfOc-A"
       title="Workflow of Mitigation Option III."
       allow="picture-in-picture"
       allowfullscreen>
