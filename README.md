@@ -17,10 +17,15 @@ The purpose of this set of tools is to estimate load, concentration and perform 
 ## Documentation
 A detailed manual is published on [ReadTheDocs](https://hosting-apriora-manual.readthedocs.io/en/latest/index.html)
 
-## Development / Funding
-If you have any suggestions for improvements feel free to write an issue or create a fork.
-The plugin is being developed under the project [APRIORA](https://interreg-baltic.eu/project/apriora/). This project is funded by the Interreg Baltic Sea Region
-Programme. Co-founded by the European Union (ERDF), this #MadeWithInterreg project helps to remove pollutants from our waters.
+## Contributing
+Your contribution is very welcome! You can help to improve APRIORA for everyone by:
+
+- making a question or comment
+- reporting a bug
+- requesting a feature
+- providing code
+
+See [here](CONTRIBUTING.md) how to engage, ensuring a smooth and transparent process.
 
 ## Credits
 This plugin incorporates logic and code adapted from the **WaterNetAnalyzer** plugin, originally developed by **Jannik Schilling**.
@@ -30,6 +35,10 @@ Specifically, the functions for tool 1, 2, and 4 are the ones containing such me
 * [GitHub repository](https://github.com/Jannik-Schilling/WaterNetAnalyzer)
 * Copyright (C) 2020 by Jannik Schilling
 * License: GNU General Public License v2
+
+## Funding
+The plugin is being developed under the project [APRIORA](https://interreg-baltic.eu/project/apriora/). This project is funded by the Interreg Baltic Sea Region
+Programme. Co-founded by the European Union (ERDF), this #MadeWithInterreg project helps to remove pollutants from our waters.
 
 ## License
 This project is licensed under the GPLv2 License; see the [LICENSE.rst](LICENSE.rst) file for details
