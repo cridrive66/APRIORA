@@ -2,3 +2,4 @@
 /apriora/datasets/custom_dataset/*.csv
 /apriora/user_selection.txt
 /apriora/field_selection.txt
+apriora/user_selection.txt
